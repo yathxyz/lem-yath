@@ -25,8 +25,8 @@ Status legend:
 | marginalia | partial | M-x keybindings, buffer paths, and provider-specific LSP/Lisp details exist; no general category annotation layer |
 | consult | ported/partial | project buffers `SPC SPC`, project-grep, isearch; no preview-on-move |
 | consult-eglot | gap | `SPC p s` currently invokes document symbols, not the configured workspace-symbol search |
-| corfu (TTY via Emacs 31) | partial | Lem has an ncurses popup, correct display/filter/insert metadata, acceptance callbacks, stale-result rejection, and LSP trigger-character completion; automatic identifier completion after a 3-character/0.2-second threshold remains open |
-| cape | partial | dynamic abbrev `M-/` exists; no composed file + dabbrev fallback source chain |
+| corfu (TTY via Emacs 31) | ported/partial | Lem has an ncurses popup, correct display/filter/insert metadata, acceptance callbacks, stale-result rejection, and automatic identifier completion after the configured 3-character/0.2-second threshold; Orderless separator input remains open |
+| cape | ported/partial | automatic same-major-mode dabbrev then file-at-point fallbacks are composed and TUI-tested; Cape's broader provider library is not ported |
 | yasnippet (+ snippets) | gap | no snippet parser, placeholder session, mirrored fields, or imported private/community snippets |
 | prescient (+vertico-) | ported/partial | prompt literal/regexp/initialism filtering and persistent recency/frequency ranking are implemented; interactive toggles and char folding remain gaps |
 | embark (+consult) | gap | Lem has context menus and LSP code-action menus, but no generic target classifier/action maps behind `SPC e a` |

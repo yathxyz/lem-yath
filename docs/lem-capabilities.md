@@ -282,6 +282,10 @@ popup. Automatic contexts also keep a cancellable spinner, remember their origin
 buffer, display rather than insert synchronous singletons, and carry their own
 row-limit and cycling policy. Every asynchronous refresh revalidates its buffer,
 modification tick, and point before changing the menu.
+Synchronous prompt providers may atomically normalize their input before
+returning candidates; `scripts/prompt-completion-test.sh` verifies that file
+refresh still retains path-aware candidates while asynchronous validation stays
+strict.
 The LSP adapter consequently honors plain `filterText`, `insertText`,
 `TextEdit`, and `InsertReplaceEdit` new-text precedence. Tracked replacement
 ranges, snippet expansion, completion resolve, additional edits, and completion

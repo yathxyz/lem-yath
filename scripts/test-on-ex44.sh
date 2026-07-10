@@ -49,8 +49,11 @@ case "$test_name" in
   editing)
     remote_command='nix run path:$PWD#editing-test'
     ;;
+  prompt-completion)
+    remote_command='nix run path:$PWD#prompt-completion-test'
+    ;;
   *)
-    echo "Usage: $0 [all|check|compile|boot|completion|completion-lifecycle|auto-completion|interactive|structural|notes|editing]" >&2
+    echo "Usage: $0 [all|check|compile|boot|completion|completion-lifecycle|auto-completion|prompt-completion|interactive|structural|notes|editing]" >&2
     exit 2
     ;;
 esac

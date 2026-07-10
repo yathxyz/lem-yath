@@ -69,10 +69,10 @@ Use `docs/parity-ledger.tsv` for behavior-level planning: its dispositions are
 
 ## Testing
 
-`nix flake check` runs the package, compile, boot, completion,
-completion-lifecycle, automatic-completion, editing, notes, and parity-ledger
-checks. The ledger can also be validated directly, and the interactive TUI
-checks are exposed as flake apps:
+`nix flake check` runs the package, compile, boot, prompt and in-buffer
+completion, completion-lifecycle, automatic-completion, editing, notes, and
+parity-ledger checks. The ledger can also be validated directly, and the
+interactive TUI checks are exposed as flake apps:
 
 ```sh
 nix flake check
@@ -80,6 +80,7 @@ python3 scripts/check-parity-ledger.py
 nix run .#compile-check
 nix run .#boot-test
 nix run .#completion-test
+nix run .#prompt-completion-test
 nix run .#completion-lifecycle-test
 nix run .#auto-completion-test
 nix run .#editing-test
@@ -98,7 +99,7 @@ worktree to the dedicated cache directory on `ex44` and run the full gate there:
 ./scripts/test-on-ex44.sh
 ```
 
-Pass `check`, `compile`, `boot`, `completion`, `completion-lifecycle`,
-`auto-completion`, `editing`, `interactive`, `structural`, or `notes` to run
-only that gate. `LEM_YATH_TEST_HOST` and `LEM_YATH_REMOTE_ROOT` override the SSH
-host and remote cache directory.
+Pass `check`, `compile`, `boot`, `completion`, `prompt-completion`,
+`completion-lifecycle`, `auto-completion`, `editing`, `interactive`,
+`structural`, or `notes` to run only that gate. `LEM_YATH_TEST_HOST` and
+`LEM_YATH_REMOTE_ROOT` override the SSH host and remote cache directory.

@@ -329,7 +329,7 @@ index 1e90e52..e4977f1 100644
        (multiple-value-bind (start end)
            (completion-item-range (current-point) (first last-items))
          (cond ((and n (plusp n) (< (count-characters start end) n))
-@@ -294,79 +388,133 @@
+@@ -294,79 +388,136 @@
          result)))
 
  (defun compute-completion-items (context then)
@@ -410,8 +410,11 @@ index 1e90e52..e4977f1 100644
 +       (when (and (eq context *completion-context*)
 +                  (= generation (context-generation context)))
 +         (if (and (eq origin-buffer (current-buffer))
-+                  (= origin-tick (buffer-modified-tick origin-buffer))
-+                  (= origin-position (position-at-point (current-point))))
++                  (or (not (spec-async-p (context-spec context)))
++                      (and
++                       (= origin-tick (buffer-modified-tick origin-buffer))
++                       (= origin-position
++                          (position-at-point (current-point))))))
 +             (progn
 +               (setf (context-last-items context) items)
 +               (cond ((null items)

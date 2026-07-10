@@ -144,6 +144,8 @@
             structural-test = mkTestApp "lem-yath-structural-test" "structural-test.sh";
             notes-test = mkTestApp "lem-yath-notes-test" "notes-test.sh";
             editing-test = mkTestApp "lem-yath-editing-test" "editing-test.sh";
+            prompt-completion-test =
+              mkTestApp "lem-yath-prompt-completion-test" "prompt-completion-test.sh";
           };
 
           checks = {
@@ -157,6 +159,8 @@
               mkCheck "auto-completion" "auto-completion-test.sh";
             notes = mkCheck "notes" "notes-test.sh";
             editing = mkCheck "editing" "editing-test.sh";
+            prompt-completion =
+              mkCheck "prompt-completion" "prompt-completion-test.sh";
             parity-ledger =
               pkgs.runCommand "lem-yath-parity-ledger-check"
                 { nativeBuildInputs = [ pkgs.python3 ]; }
