@@ -498,7 +498,7 @@ Loads (and caches) the contractor list on a background thread when needed."
            (let* ((labels (mapcar #'car cache))
                   (choice (prompt-for-string
                            prompt
-                           :completion-function (lambda (s) (orderless-filter s labels))
+                           :completion-function (lambda (s) (prescient-filter s labels))
                            :test-function (lambda (s) (member s labels :test #'string=))))
                   (entry (assoc choice cache :test #'string=)))
              (if entry (funcall continuation entry)

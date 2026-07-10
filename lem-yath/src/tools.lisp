@@ -34,7 +34,7 @@ Runs from the project root; the worker runs on a background thread."
       (return-from lem-yath-project-buffers))
     (let ((choice (prompt-for-string
                    "Project buffer: "
-                   :completion-function (lambda (s) (orderless-filter s names))
+                   :completion-function (lambda (s) (prescient-filter s names))
                    :test-function (lambda (s) (member s names :test #'string=)))))
       (when choice
         (switch-to-buffer (get-buffer choice))))))

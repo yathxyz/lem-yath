@@ -162,7 +162,7 @@ When MESSAGE is non-NIL, echo a `rev k/N: date subject' line."
            (choice (prompt-for-string
                     "Revision: "
                     :completion-function
-                    (lambda (input) (orderless-filter input labels))
+                    (lambda (input) (prescient-filter input labels))
                     :test-function
                     (lambda (name) (member name labels :test #'string=))))
            (index (position choice labels :test #'string=)))

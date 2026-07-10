@@ -271,11 +271,11 @@ if boot_with_file "$S6" "$SCRATCH" 'first known line' "06-find-file"; then
 fi
 
 # ===========================================================================
-# Check 7: M-x orderless. Send M-x, type "roam find", assert completion popup
+# Check 7: M-x Prescient. Send M-x, type "roam find", assert completion popup
 #   shows "lem-yath-roam-find".
 # ===========================================================================
 S7="lem-yath-it7-$id"
-if boot_with_file "$S7" "$SCRATCH" 'first known line' "07-mx-orderless"; then
+if boot_with_file "$S7" "$SCRATCH" 'first known line' "07-mx-prescient"; then
   tmux_cmd send-keys -t "$S7" Escape
   sleep "$KEY_DELAY"
   tmux_cmd send-keys -t "$S7" M-x
@@ -284,14 +284,14 @@ if boot_with_file "$S7" "$SCRATCH" 'first known line' "07-mx-orderless"; then
     send_text "$S7" "roam find"
     sleep 0.8
     if lem_wait_for "$S7" 'lem-yath-roam-find' "$WAIT_TIMEOUT"; then
-      pass "07-mx-orderless" "'roam find' matched lem-yath-roam-find"
+      pass "07-mx-prescient" "'roam find' matched lem-yath-roam-find"
     else
-      fail "07-mx-orderless" "lem-yath-roam-find not in completion popup" "$S7"
+      fail "07-mx-prescient" "lem-yath-roam-find not in completion popup" "$S7"
     fi
     tmux_cmd send-keys -t "$S7" Escape
     sleep "$KEY_DELAY"
   else
-    fail "07-mx-orderless" "M-x did not open a Command prompt" "$S7"
+    fail "07-mx-prescient" "M-x did not open a Command prompt" "$S7"
   fi
 fi
 
@@ -659,7 +659,7 @@ fi
 echo
 echo "================ SUMMARY ================"
 order=(01-boot-normal 02-insert-roundtrip 03-leader-compile 04-gc-operator \
-       05-snipe 06-find-file 07-mx-orderless 08-native-delete \
+       05-snipe 06-find-file 07-mx-prescient 08-native-delete \
        09-native-change 10-evil-surround 11-visual-leader \
        12-visual-operators 13-doubled-operators 14-count-repeat \
        15-snipe-parity 16-insert-C-u 17-fill-paragraph 18-org-id \

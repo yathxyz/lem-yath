@@ -1,9 +1,14 @@
 # Emacs Configuration Feature Inventory ("lem-yath")
 
-Authoritative inventory for porting this Emacs config (config name: **lem-yath**, user `yanni`/`yath`) to the Lem editor (Common Lisp). Built from the elisp under `home/config/emacs/` and the Nix package declarations in `home/default.nix`.
+Authoritative inventory for porting this Emacs config (config name: **lem-yath**, user `yanni`/`yath`) to the Lem editor (Common Lisp). Built from the elisp under `home/config/emacs/` and the Nix package declarations in `lib/emacs-profile.nix`.
 
 Source root: `/home/yanni/proj/nix/computer/home/config/emacs/`
 Packages provided by Nix/Home-Manager (`package-enable-at-startup nil`); `use-package-always-ensure nil`.
+
+Completion behavior was refreshed against computer commit
+`883f9737f82359e2f634973e10dbab761e2b5138` and the running Emacs 31 daemon on
+2026-07-10. Other sections still require row-by-row refresh through
+`docs/parity-ledger.tsv` rather than being assumed current.
 
 Key environment:
 - `WORKDIR` env var (default `~/work`) is the notes/org root. `org-directory` = `$WORKDIR`.
@@ -160,21 +165,25 @@ Note: avy commands are bound but `avy` is **not** an explicitly declared/configu
 | Package | Status | Config |
 |---|---|---|
 | **vertico** | active (`after-init`) | `vertico-count 20`, `vertico-cycle t`, `vertico-resize t`, `vertico-scroll-margin 0` |
-| **orderless** | active | `completion-styles '(orderless)`; `completion-category-overrides '((file (styles partial-completion)))`; `completion-category-defaults nil` |
+| **orderless** | active globally | `completion-styles '(orderless)` outside Vertico; files initially override this with `partial-completion` |
 | **marginalia** | active (`after-init`) | annotations, defaults |
-| **corfu** | active | `corfu-auto t` (in-buffer popup completion) |
-| **corfu-terminal** | active | `corfu-terminal-mode 1` (corfu in TTY) |
-| **cape** | deferred | adds to `completion-at-point-functions`: `cape-file`, `cape-dabbrev`, `cape-yasnippet` |
+| **corfu** | active | global, automatic in-buffer popup; live defaults use a 3-character prefix, 0.2-second delay, 10 rows, and no cycling |
+| **TTY Corfu rendering** | active | Emacs 31 native `tty-child-frames`; no `corfu-terminal` package or mode is installed |
+| **cape** | deferred providers | prepends `cape-file` and `cape-dabbrev` to `completion-at-point-functions`; no Cape snippet provider |
 | **yasnippet** | active (`after-init`, `yas-global-mode`) | snippet dir = `user-emacs-directory/snippets/` |
 | **yasnippet-snippets** | active if installed | community snippets |
-| **prescient / vertico-prescient** | declared; `vertico-prescient` loads `:after prescient` but is **never enabled** (no `vertico-prescient-mode` call). Sorting effectively orderless-only. |
-| **consult** | declared in nix, **no use-package block**. Commands used: `consult-project-buffer` (`SPC SPC`), `consult-eglot-symbols`/`consult-eglot` (via `consult-eglot`), `consult-outline` (dir-local `C-c i`). |
-| **consult-eglot** | deferred, `:after eglot` | provides `consult-eglot-symbols` (`SPC p s`) |
-| **embark** | declared; only `embark-act` bound (`SPC e a`), no explicit config |
-| **embark-consult** | declared, no explicit config (defaults) |
+| **prescient / vertico-prescient** | active | persistent usage data; Vertico locally uses Prescient literal/regexp/initialism filtering and learned sorting instead of the global Orderless style |
+| **consult** | deferred/autoloaded | `consult-project-buffer` (`SPC SPC`); `consult-outline` is bound by `.dir-locals.el` but has a cold-start autoload defect in Emacs that Lem should not reproduce |
+| **consult-eglot** | deferred/autoloaded | `consult-eglot-symbols` (`SPC p s`) performs workspace-symbol search |
+| **embark** | deferred/autoloaded | only `embark-act` is exposed (`SPC e a` and `M-x`); no minibuffer binding or custom action maps |
+| **embark-consult** | installed only | no load/configuration path in the current config |
 | **wgrep** | deferred; `wgrep-change-to-wgrep-mode` (editable grep buffers) |
 
-Core completion settings (`init.el`): `completion-ignore-case t`, `completions-detailed t`, `tab-always-indent 'complete`.
+Core completion settings (`init.el`): `completion-ignore-case t`,
+`completions-detailed t`, `tab-always-indent 'complete`. In effect there are two
+pipelines: Vertico + Marginalia + Prescient for minibuffers, and Corfu +
+Orderless + mode/Cape CAPFs in ordinary buffers. Yasnippet expands separately
+through `TAB`; it is not a Cape candidate source.
 
 ---
 
@@ -378,7 +387,8 @@ Core: **gptel** (deferred), heavily customized in `init-ai.el` (~1400 lines).
 - **Evil/vim modal editing** (normal/insert/visual states, `undo-redo`) — Lem has vi-mode; map states + the `C-n`/`C-p` unbinding behavior.
 - **`SPC` leader scheme** (general.el bindings) — the entire §1.2 table is the muscle-memory core. Highest-value port target.
 - **evil-surround, evil-snipe (f/t/s overrides), evil-nerd-commenter (`gc`), expreg (`SPC v`)** — text-object/operator layer.
-- **Completion: vertico + orderless + marginalia + corfu + cape** (minibuffer + in-buffer completion with orderless matching).
+- **Completion**: Vertico/Marginalia/Prescient minibuffers plus automatic
+  Corfu/Orderless/Cape in-buffer completion and separate Yasnippet expansion.
 - **consult/project navigation** (`SPC p f/g/p/s`, `SPC SPC`, `project-find-file/regexp/switch`).
 - **Editing defaults**: spaces (no tabs, width 4), electric-pair, ws-butler, delete-selection, vundo, relative line numbers on code.
 - **Lisp structural editing** (lispy/lispyville) — relevant since Lem is Common Lisp; map to Lem's paredit-like features.
@@ -411,4 +421,10 @@ Core: **gptel** (deferred), heavily customized in `init-ai.el` (~1400 lines).
 
 ## Packages declared in Nix but with NO explicit elisp config (defaults / vestigial)
 
-`consult` (used via commands, no use-package), `embark`/`embark-consult` (only `embark-act` bound), `multiple-cursors` (internal overlay use only), `prescient`/`vertico-prescient` (loaded but mode never enabled), `nov`, `pgmacs`/`pg`, `eldoc-box`, `org-ref`, `org-contrib`, `ob-async`, `yaml-mode`, `meson-mode`, `nginx-mode`, `just-mode`, `cider`, `clojure-ts-mode`, `go-mode` (hooked but no use-package), `typst-ts-mode`, `engrave-faces`, `tree-sitter-langs`/`tsc`, `cdlatex` (declared, no hook). `doom-modeline` is referenced in `custom.el` but is **not** in the package list and never loaded (dead reference).
+`embark-consult`, `multiple-cursors` (internal overlay use only), `nov`,
+`pgmacs`/`pg`, `eldoc-box`, `org-ref`, `org-contrib`, `ob-async`, `yaml-mode`,
+`meson-mode`, `nginx-mode`, `just-mode`, `cider`, `clojure-ts-mode`, `go-mode`
+(hooked but no use-package), `typst-ts-mode`, `engrave-faces`,
+`tree-sitter-langs`/`tsc`, `cdlatex` (declared, no hook). `doom-modeline` is
+referenced in `custom.el` but is **not** in the package list and never loaded
+(dead reference).

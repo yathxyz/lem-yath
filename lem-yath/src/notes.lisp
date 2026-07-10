@@ -1,14 +1,23 @@
 ;;;; Notes layer: org-roam / org-roam-dailies / org-journal / org-capture,
 ;;;; reduced to their actually-used workflows over the same on-disk layout:
 ;;;;   $WORKDIR/roam/          org+md notes (roam, incl. md-roam)
-;;;;   $WORKDIR/roam/daily/    dailies (%Y-%m-%d.org)
+;;;;   $WORKDIR/roam/          dailies (%Y-%m-%d.org, no daily/ subdirectory)
 ;;;;   $WORKDIR/roam/journal/  org-journal (%Y%m%d.org)
 ;;;;   $WORKDIR/{inbox,todo,readlist}.org   capture targets
+;;;;   $PUBLIC_ORG_DIR/inbox.org            public TODO capture target
 
 (in-package :lem-yath)
 
 (defun roam-directory ()
   (uiop:ensure-directory-pathname (merge-pathnames "roam/" (workdir))))
+
+(defun public-org-directory ()
+  "The public notes root, mirroring $PUBLIC_ORG_DIR (default ~/public-org)."
+  (uiop:ensure-directory-pathname
+   (let ((configured (uiop:getenv "PUBLIC_ORG_DIR")))
+     (if (and configured (plusp (length configured)))
+         configured
+         (merge-pathnames "public-org/" (user-homedir-pathname))))))
 
 (defun note-files ()
   "Relative paths of all org/md notes under the roam directory.
@@ -34,7 +43,7 @@ Uses fd when available (as org-roam did), else find."
       (message "No notes found under ~a" (roam-directory))
       (return-from prompt-for-note nil))
     (prompt-for-string prompt
-                       :completion-function (lambda (s) (orderless-filter s files))
+                       :completion-function (lambda (s) (prescient-filter s files))
                        :test-function (lambda (s) (plusp (length s)))
                        :history-symbol 'lem-yath-roam)))
 
@@ -137,26 +146,76 @@ Org-style link in .org buffers, markdown-style otherwise."
             (format nil "~4,'0d~2,'0d~2,'0d" year month day)
             (elt #("Mon" "Tue" "Wed" "Thu" "Fri" "Sat" "Sun") day-of-week))))
 
+(defun inactive-org-timestamp (&optional (time (get-universal-time)))
+  "Return TIME in the same minute-precision inactive form as Org's %U."
+  (multiple-value-bind (sec min hour day month year day-of-week)
+      (decode-universal-time time)
+    (declare (ignore sec))
+    (format nil "[~4,'0d-~2,'0d-~2,'0d ~a ~2,'0d:~2,'0d]"
+            year month day
+            (elt #("Mon" "Tue" "Wed" "Thu" "Fri" "Sat" "Sun") day-of-week)
+            hour min)))
+
+(defun leap-year-p (year)
+  (and (zerop (mod year 4))
+       (or (not (zerop (mod year 100)))
+           (zerop (mod year 400)))))
+
+(defun days-in-month (month year)
+  (case month
+    ((1 3 5 7 8 10 12) 31)
+    ((4 6 9 11) 30)
+    (2 (if (leap-year-p year) 29 28))
+    (otherwise 0)))
+
+(defun ascii-digits-p (text start end)
+  (loop :for index :from start :below end
+        :for character := (char text index)
+        :always (char<= #\0 character #\9)))
+
+(defun valid-iso-date-p (text)
+  "Whether TEXT is exactly YYYY-MM-DD and denotes a real calendar date."
+  (and (stringp text)
+       (= (length text) 10)
+       (char= (char text 4) #\-)
+       (char= (char text 7) #\-)
+       (ascii-digits-p text 0 4)
+       (ascii-digits-p text 5 7)
+       (ascii-digits-p text 8 10)
+       (let ((year (parse-integer text :start 0 :end 4))
+             (month (parse-integer text :start 5 :end 7))
+             (day (parse-integer text :start 8 :end 10)))
+         (and (plusp year)
+              (<= 1 month 12)
+              (<= 1 day (days-in-month month year))))))
+
+(defun daily-note-path (date)
+  "Return DATE's daily path directly under the roam root.
+Signal an error before constructing a pathname unless DATE is valid YYYY-MM-DD."
+  (unless (valid-iso-date-p date)
+    (error "Invalid daily date (expected YYYY-MM-DD): ~s" date))
+  (merge-pathnames (format nil "~a.org" date) (roam-directory)))
+
+(defun open-daily-note (date)
+  (let ((path (daily-note-path date)))
+    (ensure-directories-exist path)
+    (let ((new (not (uiop:probe-file* path))))
+      (find-file path)
+      (when new
+        (insert-string (current-point) (format nil "#+title: ~a~%~%" date))))))
+
 (define-command lem-yath-dailies-today () ()
   "Open today's daily note (org-roam-dailies-goto-today)."
   (multiple-value-bind (iso) (decoded-date-strings)
-    (let ((path (merge-pathnames (format nil "daily/~a.org" iso) (roam-directory))))
-      (ensure-directories-exist path)
-      (let ((new (not (uiop:probe-file* path))))
-        (find-file path)
-        (when new
-          (insert-string (current-point) (format nil "#+title: ~a~%~%" iso)))))))
+    (open-daily-note iso)))
 
 (define-command lem-yath-dailies-date () ()
   "Open a daily note by date (org-roam-dailies-goto-date)."
   (let ((date (prompt-for-string "Date (YYYY-MM-DD): ")))
-    (when (plusp (length date))
-      (let ((path (merge-pathnames (format nil "daily/~a.org" date) (roam-directory))))
-        (ensure-directories-exist path)
-        (let ((new (not (uiop:probe-file* path))))
-          (find-file path)
-          (when new
-            (insert-string (current-point) (format nil "#+title: ~a~%~%" date))))))))
+    (cond
+      ((zerop (length date)))
+      ((valid-iso-date-p date) (open-daily-note date))
+      (t (message "Invalid date; use a real calendar date in YYYY-MM-DD form")))))
 
 (define-command lem-yath-journal-new-entry () ()
   "New org-journal entry in $WORKDIR/roam/journal/%Y%m%d.org."
@@ -176,34 +235,138 @@ Org-style link in .org buffers, markdown-style otherwise."
             (insert-string (buffer-point buffer)
                            (format nil "~%* ~2,'0d:~2,'0d~%" hour min))))))))
 
-;;; --- capture (org-capture templates i/t/r) ----------------------------------
+;;; --- capture (org-capture templates i/t/p/r) -------------------------------
 
 (defparameter *capture-templates*
-  '(("inbox" "inbox.org" nil)
-    ("todo" "todo.org" "TODO ")
-    ("reading" "readlist.org" "TODO "))
-  "Template name, target file under $WORKDIR, optional TODO prefix.")
+  '(("i" "Inbox" :work "inbox.org" nil :inbox)
+    ("t" "TODO" :work "todo.org" "TODO " :inbox)
+    ("p" "Public TODO" :public "inbox.org" "TODO " :file)
+    ("r" "Reading" :work "readlist.org" "TODO " :inbox))
+  "Key, label, root, target file, TODO prefix, and placement for each capture.")
+
+(defun capture-template-for-key (key)
+  (assoc key *capture-templates* :test #'string=))
+
+(defun capture-target-path (template)
+  (destructuring-bind (key label root file prefix placement) template
+    (declare (ignore key label prefix placement))
+    (merge-pathnames file
+                     (ecase root
+                       (:work (workdir))
+                       (:public (public-org-directory))))))
+
+(defun org-top-level-heading-p (line)
+  (and (> (length line) 1)
+       (char= (char line 0) #\*)
+       (member (char line 1) '(#\Space #\Tab))))
+
+(defun exact-inbox-heading-p (line)
+  (string= (string-right-trim '(#\Space #\Tab #\Return) line)
+           "* Inbox"))
+
+(defun inbox-subtree-insertion-position (contents)
+  "Return where a capture belongs and whether exact top-level `* Inbox' exists."
+  (let ((length (length contents))
+        (inside-inbox nil)
+        (start 0))
+    (loop
+      (let* ((newline (position #\Newline contents :start start))
+             (end (or newline length))
+             (line (subseq contents start end)))
+        (cond
+          ((and inside-inbox (org-top-level-heading-p line))
+           (return (values start t)))
+          ((exact-inbox-heading-p line)
+           (setf inside-inbox t)))
+        (unless newline
+          (return (values length inside-inbox)))
+        (setf start (1+ newline))))))
+
+(defun blank-line-separator (text)
+  "Return the newlines needed to put a blank line after non-empty TEXT."
+  (let ((length (length text)))
+    (cond
+      ((zerop length) "")
+      ((and (> length 1)
+            (char= (char text (1- length)) #\Newline)
+            (char= (char text (- length 2)) #\Newline))
+       "")
+      ((char= (char text (1- length)) #\Newline) (string #\Newline))
+      (t (format nil "~%~%")))))
+
+(defun append-org-fragment (contents fragment)
+  (concatenate 'string contents (blank-line-separator contents) fragment))
+
+(defun insert-in-inbox-subtree (contents entry)
+  "Insert ENTRY at the end of exact top-level `* Inbox' in CONTENTS.
+When the heading is absent, append it rather than using a similarly named or
+tagged heading.  The result is a pure string transformation."
+  (multiple-value-bind (position foundp)
+      (inbox-subtree-insertion-position contents)
+    (if foundp
+        (let ((before (subseq contents 0 position))
+              (after (subseq contents position)))
+          (concatenate 'string
+                       before
+                       (blank-line-separator before)
+                       entry
+                       (if (zerop (length after)) "" (string #\Newline))
+                       after))
+        (append-org-fragment
+         contents
+         (format nil "* Inbox~%~%~a" entry)))))
+
+(defun capture-entry-string (text prefix timestamp &key (level 2) id)
+  (with-output-to-string (stream)
+    (format stream "~a ~@[~a~]~a~%:PROPERTIES:~%"
+            (make-string level :initial-element #\*) prefix text)
+    (when id
+      (format stream ":ID: ~a~%" id))
+    (format stream ":CREATED: ~a~%:END:~%" timestamp)))
+
+(defun read-file-or-empty (path)
+  (if (uiop:probe-file* path)
+      (alexandria:read-file-into-string path)
+      ""))
+
+(defun write-capture (key text &key
+                                 (timestamp (inactive-org-timestamp))
+                                 id)
+  "Write TEXT using capture template KEY and return its target pathname.
+TIMESTAMP and ID are injectable so the filesystem behavior can be tested
+without depending on the clock or UUID generator."
+  (let ((template (capture-template-for-key key)))
+    (unless template
+      (error "Unknown capture template: ~s" key))
+    (destructuring-bind (template-key label root file prefix placement) template
+      (declare (ignore template-key label root file))
+      (let* ((path (capture-target-path template))
+             (publicp (eq placement :file))
+             (entry (capture-entry-string
+                     text prefix timestamp
+                     :level (if publicp 1 2)
+                     :id (and publicp (or id (uuid-v4)))))
+             (contents (read-file-or-empty path))
+             (updated (ecase placement
+                        (:inbox (insert-in-inbox-subtree contents entry))
+                        (:file (append-org-fragment contents entry)))))
+        (ensure-directories-exist path)
+        (alexandria:write-string-into-file updated path :if-exists :supersede)
+        path))))
 
 (define-command lem-yath-capture () ()
-  "Capture a line into inbox/todo/readlist under \"* Inbox\" (org-capture)."
-  (let* ((names (mapcar #'first *capture-templates*))
+  "Run the i/t/p/r capture workflow over work and public Org directories."
+  (let* ((labels (mapcar #'second *capture-templates*))
          (choice (prompt-for-string
                   "Capture to: "
-                  :completion-function (lambda (s) (orderless-filter s names))
-                  :test-function (lambda (s) (member s names :test #'string=))))
-         (template (assoc choice *capture-templates* :test #'string=)))
+                  :completion-function (lambda (s) (prescient-filter s labels))
+                  :test-function (lambda (s) (member s labels :test #'string=))))
+         (template (find choice *capture-templates* :key #'second :test #'string=)))
     (unless template
       (return-from lem-yath-capture))
-    (destructuring-bind (name file prefix) template
-      (declare (ignore name))
+    (destructuring-bind (key label root file prefix placement) template
+      (declare (ignore label root prefix placement))
       (let ((text (prompt-for-string "Entry: ")))
         (when (plusp (length text))
-          (multiple-value-bind (iso) (decoded-date-strings)
-            (let ((path (merge-pathnames file (workdir))))
-              (ensure-directories-exist path)
-              (unless (uiop:probe-file* path)
-                (alexandria:write-string-into-file (format nil "* Inbox~%") path))
-              (with-open-file (s path :direction :output :if-exists :append)
-                (format s "** ~@[~a~]~a~%:PROPERTIES:~%:CREATED: [~a]~%:END:~%"
-                        prefix text iso))
-              (message "Captured to ~a" file))))))))
+          (write-capture key text)
+          (message "Captured to ~a" file))))))

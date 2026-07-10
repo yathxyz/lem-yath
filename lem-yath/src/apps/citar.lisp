@@ -216,12 +216,12 @@ keys, matching citar's lookup order."
           (or (getf entry :title) "")))
 
 (defun citar-prompt-entry (prompt entries)
-  "Prompt for one of ENTRIES via orderless-filtered completion; return it or NIL."
+  "Prompt for one of ENTRIES via Prescient-filtered completion; return it or NIL."
   (let* ((labeled (mapcar (lambda (e) (cons (citar-candidate-label e) e)) entries))
          (labels (mapcar #'car labeled))
          (choice (prompt-for-string
                   prompt
-                  :completion-function (lambda (s) (orderless-filter s labels))
+                  :completion-function (lambda (s) (prescient-filter s labels))
                   :test-function (lambda (s) (plusp (length s)))
                   :history-symbol 'lem-yath-citar)))
     (cdr (assoc choice labeled :test #'string=))))

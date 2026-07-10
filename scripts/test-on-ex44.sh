@@ -28,8 +28,8 @@ case "$test_name" in
   boot)
     remote_command='nix run path:$PWD#boot-test'
     ;;
-  orderless)
-    remote_command='nix run path:$PWD#orderless-test'
+  completion)
+    remote_command='nix run path:$PWD#completion-test'
     ;;
   interactive)
     remote_command='nix run path:$PWD#interactive-test'
@@ -37,8 +37,11 @@ case "$test_name" in
   structural)
     remote_command='nix run path:$PWD#structural-test'
     ;;
+  notes)
+    remote_command='nix run path:$PWD#notes-test'
+    ;;
   *)
-    echo "Usage: $0 [all|check|compile|boot|orderless|interactive|structural]" >&2
+    echo "Usage: $0 [all|check|compile|boot|completion|interactive|structural|notes]" >&2
     exit 2
     ;;
 esac

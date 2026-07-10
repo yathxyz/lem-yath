@@ -39,20 +39,9 @@ Returns the containing directory pathname, or NIL."
                              (merge-pathnames name (uiop:ensure-directory-pathname dir))))))
                 (when path (return path)))))
 
-;;; --- fuzzy (orderless-style) matching -------------------------------------
-
-(defun orderless-filter (input candidates &key (key #'identity))
-  "Keep CANDIDATES whose KEY contains every space-separated token of INPUT,
-in any order, case-insensitively. Empty INPUT keeps everything."
-  (let ((tokens (remove-if (lambda (s) (zerop (length s)))
-                           (uiop:split-string (or input "") :separator " "))))
-    (if (null tokens)
-        candidates
-        (remove-if-not
-         (lambda (cand)
-           (let ((label (funcall key cand)))
-             (every (lambda (tok) (search tok label :test #'char-equal)) tokens)))
-         candidates))))
+;; Defined in completion.lisp, which follows this foundational module in the
+;; serial ASDF system.  Declaring it keeps compilation of prompt helpers clean.
+(declaim (ftype function prescient-filter))
 
 ;;; --- help ------------------------------------------------------------------
 
@@ -74,7 +63,7 @@ in any order, case-insensitively. Empty INPUT keeps everything."
          (choice (prompt-for-string
                   "Variable: "
                   :completion-function
-                  (lambda (input) (orderless-filter input candidates))
+                  (lambda (input) (prescient-filter input candidates))
                   :test-function
                   (lambda (input) (member input candidates :test #'string=))))
          (symbol (read-from-string choice)))

@@ -1,5 +1,9 @@
 # Port map: every declared Emacs package → its Lem disposition
 
+This is a package-level orientation only. The authoritative status and test
+evidence live in `docs/parity-ledger.tsv`; a package row here can summarize
+several independently exact, approximate, or missing behaviors.
+
 Status legend:
 - **lem-builtin** — feature ships in the Lem image; configured/enabled by the port
 - **ported** — reimplemented in Common Lisp in this repo (`lem-yath/src/...`)
@@ -16,19 +20,20 @@ Status legend:
 | evil-nerd-commenter | ported | `g c` operator (`src/vi.lisp`) |
 | evil-org | partial | no Org major mode; shared-file workflows and `SPC m I` heading IDs work in plain buffers |
 | general (SPC leader) | ported/partial | vi-mode leader = Space in normal+visual with exact boot-time verification; remaining capability gaps are listed in `docs/vi-parity.md` |
-| vertico | ported/lem-builtin | prompt completion list opens instantly (`src/completion.lisp`) |
-| orderless | ported | `orderless-filter` wired into command/buffer prompts; Space re-filters instead of closing the popup, so multi-token input works (`src/completion.lisp`) |
-| marginalia | lem-builtin | M-x candidates show keybindings (kept by the wrapper) |
+| vertico | ported/lem-builtin | prompt list opens immediately, shows up to 20 rows, and cycles; focused TUI coverage in `scripts/completion-test.sh` |
+| orderless | partial | the live Emacs config uses Orderless for Corfu/CAPF; Lem prompt filtering correctly follows Vertico-Prescient instead, while in-buffer Orderless remains open |
+| marginalia | partial | M-x keybindings, buffer paths, and provider-specific LSP/Lisp details exist; no general category annotation layer |
 | consult | ported/partial | project buffers `SPC SPC`, project-grep, isearch; no preview-on-move |
-| consult-eglot | partial | `SPC p s` → `lsp-document-symbol` (document-, not workspace-wide) |
-| corfu (+terminal) | lem-builtin | `lem/completion-mode` popup (LSP/async) |
-| cape | partial | dynamic abbrev `M-/`; no file/yasnippet sources |
-| prescient (+vertico-) | n/a | never enabled in the Emacs config either |
-| embark (+consult) | gap | no action-at-point framework in Lem |
+| consult-eglot | gap | `SPC p s` currently invokes document symbols, not the configured workspace-symbol search |
+| corfu (TTY via Emacs 31) | partial | Lem has an ncurses completion popup and LSP trigger-character completion, but not automatic identifier completion after a 3-character/0.2-second threshold |
+| cape | partial | dynamic abbrev `M-/` exists; no composed file + dabbrev fallback source chain |
+| yasnippet (+ snippets) | gap | no snippet parser, placeholder session, mirrored fields, or imported private/community snippets |
+| prescient (+vertico-) | ported/partial | prompt literal/regexp/initialism filtering and persistent recency/frequency ranking are implemented; interactive toggles and char folding remain gaps |
+| embark (+consult) | gap | Lem has context menus and LSP code-action menus, but no generic target classifier/action maps behind `SPC e a` |
 | wgrep | lem-builtin | grep results are editable & write back (better than default Emacs) |
 | eglot + eglot-booster | lem-builtin | `lem-lsp-mode`; booster n/a (native client) |
 | flycheck (+rust) | partial | LSP diagnostics overlays; no non-LSP linter framework |
-| apheleia | ported | `SPC b f` → LSP format (`src/ide.lisp`); no save-hook auto-format |
+| apheleia | partial | `SPC b f` → LSP format (`src/ide.lisp`); configured format-on-save behavior is absent |
 | dape (DAP debugging) | gap | Lem has no DAP client |
 | treesit-auto / tree-sitter-langs / tsc / grammars | partial | `lem-tree-sitter` + 10 grammars baked in; modes default to TextMate highlighting (manual opt-in API) |
 | nix-mode | lem-builtin+ported | `lem-nix-mode` + **nixd** spec incl. flake options/formatter (`src/ide.lisp`) |
@@ -53,29 +58,29 @@ Status legend:
 | majutsu (jj) | ported/partial | smart dispatch `SPC g g` + jj status/log view (`src/git.lisp`); no staging UI |
 | org (capture) | ported | `SPC o` → inbox/todo/readlist with CREATED property (`src/notes.lisp`) |
 | org-roam | ported/partial | find/insert/random over $WORKDIR/roam incl. .md (`src/notes.lisp`); no backlinks/db |
-| md-roam | ported | .md notes are first-class in the roam-lite layer |
+| md-roam | partial | .md notes are discoverable, but YAML IDs/titles/tags and graph semantics are not indexed |
 | org-roam-dailies | ported | `SPC n r d t` / `SPC n r d d` (`src/notes.lisp`) |
 | org-journal | ported | `SPC n j j`, same file layout + timestamp headings |
 | org-agenda / org-super-agenda | ported/partial | scanning agenda: overdue/today/upcoming/todos (`src/apps/agenda.lisp`) |
 | org-modern / org-download / org-ref / org-contrib / ob-async / ob-dsq / engrave-faces / cdlatex | gap | org ecosystem (visuals/babel/export) — no org-mode in Lem |
 | citar / ebib / reftex | ported (citar) | bib parse + open file/url/note, `SPC y o` (`src/apps/citar.lisp`); ebib/reftex gap |
-| gptel | ported | OpenRouter streaming client, `SPC g j/l/L` (`src/llm.lisp`) |
-| gptel-claude-code / gptel-codex / gptel-grok-build | ported | CLI backends + `SPC g b` switcher (`src/apps/llm-cli.lisp`) |
+| gptel | partial | OpenRouter streaming exists, but presets, model discovery, conversation/tool semantics, handoff, transforms, and tracing remain open |
+| gptel-claude-code / gptel-codex / gptel-grok-build | partial | CLI process backends exist without rich agent-event rendering and backend-specific semantics |
 | gptel-chatgpt-codex / gptel-grok-build-oauth | gap | OAuth/PKCE token flows out of scope |
-| gptel-tooling / gptel-stability | n/a | Emacs-internals hardening / tool plumbing |
+| gptel-tooling / gptel-stability | partial | some parts are Emacs hardening, but user-visible agent tools and project/MCP behavior are not yet ported |
 | claude-code.el | lem-builtin | `lem-claude-code` extension, `C-c c` |
 | monet | partial | Lem ships an MCP **server** + Claude Code integration natively |
 | mcp.el | partial | `lem-mcp-server` (Lem as server); no generic MCP client hub |
-| notmuch | ported | search/read/refresh via notmuch CLI (`src/apps/notmuch.lisp`) |
+| notmuch | partial | search/read/refresh daily path exists; composition, sending, attachments/PDF preview, and the Salta bridge do not |
 | elfeed + elfeed-protocol | ported | Miniflux Fever API reader (`src/apps/elfeed.lisp`) |
 | devdocs | ported | devdocs.io index lookup + text rendering, `SPC h d` (`src/apps/devdocs.lisp`) |
 | pdf-tools | gap | terminal frontend; PDFs open externally (xdg-open) |
 | nov (EPUB) | gap | no EPUB rendering |
 | vterm | lem-builtin | `lem-terminal` (libvterm), `M-x terminal` |
 | pgmacs / pg | ported | psql-backed query/table viewer (`src/apps/pg.lisp`) |
-| salta.el | ported | Supabase/PostgREST client, `C-c s` prefix (`src/apps/salta.lisp`) |
+| salta.el | partial | six primary Supabase/PostgREST workflows exist; the notmuch payment-email bridge and some UI semantics remain open |
 | helpful | lem-builtin | describe-key / describe-bindings / apropos-command (`SPC h *`) |
-| which-key | lem-builtin | prefix/transient keymap UI (`lem/transient`) |
+| which-key | gap | `lem/transient` exists, but the configured Space leader currently waits silently and has no which-key-style popup |
 | transient | lem-builtin | `lem/transient` |
 | multiple-cursors | lem-builtin | core multi-cursors (`M-C`, isearch add-cursor); Emacs config only used it internally |
 | expreg | ported/partial | repeated `SPC v` expands word → delimiters → line → paragraph; no parser-backed syntax expansion |

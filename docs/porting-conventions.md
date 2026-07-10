@@ -32,7 +32,7 @@ and loads into the nix-built `lem-ncurses` image.
 - `(workdir)` → `$WORKDIR` or `~/work` as a directory pathname.
 - `(find-up start name)` → walk up to the dir containing file/dir `name`.
 - `(executable-find name)` → full path or NIL.
-- `(orderless-filter input candidates :key fn)` → fuzzy candidate filter;
+- `(prescient-filter input candidates :key fn)` → prompt candidate filter;
   combine with `prompt-for-string :completion-function`.
 - `(stream-to-buffer command buffer-name :directory d :clear t :on-exit fn)`
   → run process async, stream output into a buffer; returns immediately.

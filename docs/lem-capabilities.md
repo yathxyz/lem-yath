@@ -1,9 +1,10 @@
 # Lem Editor — API / Capability Reference
 
-Source-verified survey of the Lem editor (Common Lisp, Emacs-like) for porting a
-heavy Emacs config. Every symbol and path below was read from the actual source at
-`vendor/lem` (commit per `docs/ARCHITECTURE.md`: `3256fcfe…`). Paths are relative to
-`vendor/lem/` unless absolute.
+Source-verified survey of **upstream Lem**, not a status report for lem-yath.
+Every symbol and path below was refreshed against the flake-pinned Lem revision
+`0ddb9ea78248db67abcd806377415e66bb326d45`; paths are relative to that source.
+Use `docs/parity-ledger.tsv` for the configured port's current disposition and
+verification state.
 
 **CRITICAL PRE-READ — what is baked into the nix `lem-ncurses` image.**
 The nix build (`flake.nix:348-351`) builds ASDF systems `"lem-ncurses" "tree-sitter-cl"
@@ -267,12 +268,12 @@ Shipped options: `autochdir`/`acd`, `number`/`nu`. (Small set — far fewer than
 (`src/ext/prompt-window.lisp`).
 
 ### Completion behavior — `src/completion.lisp`, `src/ext/completion-mode.lisp`
-`completion` (prefix), `completion-hyphen` (hyphen-aware, used for command names with
-`-`), `completion-strings`. `*automatic-tab-completion*` (`prompt.lisp:13`) controls
-whether the completion list opens instantly vs on TAB. **This is prefix/substring +
-hyphen-segment completion, not Emacs `orderless`/flx fuzzy** — there is no fuzzy/fzf
-scorer in core. LSP completion can be fuzzy server-side (e.g. gopls `"matcher":"fuzzy"`,
-`go-mode/lsp-config.lisp`).
+`completion` (substring), `completion-hyphen` (hyphen-aware),
+`completion-subsequence`, `fuzzy-completion` (subsequence plus length ranking), and
+`completion-strings`. `*automatic-tab-completion*` (`prompt.lisp:13`) controls
+whether the list opens instantly or on TAB. Core has fuzzy primitives, but no
+Orderless component dispatch or persistent Prescient ranking; lem-yath adds the
+prompt behavior described in `src/completion.lisp`.
 
 ### consult-like commands (verified)
 - `M-x`: `execute-command` (bound `M-x`); command completion via `completion-command`
@@ -642,7 +643,7 @@ default.
 
 ---
 
-## Summary (Lem vs a heavy evil + magit + lsp + org Emacs config)
+## Upstream summary (before lem-yath configuration)
 
 Lem covers the **evil/lsp/magit** trio surprisingly well and it is **all baked into the
 nix `lem-ncurses` image**: vi-mode gives modal editing with normal/insert/visual/operator
@@ -661,16 +662,16 @@ menus, multiple-cursors, isearch/query-replace, 185 base16 themes, line-numbers,
 show-paren, highlight-line, frame-multiplexer tabs, dired-like filer, markdown preview +
 literate eval.
 
-**The big gaps vs Emacs:** **no org-mode** (no agenda/babel/capture/export — markdown
+**The big upstream gaps vs Emacs:** **no org-mode** (no agenda/babel/capture/export — markdown
 eval-blocks are the closest), **no snippet system** (no yasnippet/tempel; only dynamic
-abbrev `M-/`), **no static abbrev tables**, **completion is prefix/hyphen, not
-orderless/flx fuzzy** in core, **tree-sitter is a manual API** (no auto-enabled
+abbrev `M-/`), **no static abbrev tables**, **completion has fuzzy primitives but
+no Orderless/Prescient framework**, **tree-sitter is a manual API** (no auto-enabled
 tree-sitter modes; you wire grammars+queries yourself, 10 grammars bundled), **vi-mode
 lacks surround/sneak/easymotion**, **legit lacks blame/bisect/cherry-pick/region-staging**,
 and the **nix image cannot freely `ql:quickload` new deps at runtime** (extension-manager
 is compiled out), so anything outside `lem/extensions` must be added at image/ASDF time.
 Config language is Common Lisp in package `:lem-user`, single `init.lisp` in
 `~/.config/lem/` (or `~/.lem/`), with `add-hook`/`*after-init-hook*` and the
-`~/.lem/inits/` site-init system for multi-file setups.
-
-**File written to `/home/yanni/proj/playground/emacs-lem-package-translation/docs/lem-capabilities.md`.**
+`~/.lem/inits/` site-init system for multi-file setups. Several of these upstream
+gaps now have partial or exact lem-yath implementations; consult the ledger rather
+than inferring current status from this capability survey.

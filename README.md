@@ -11,6 +11,7 @@ terminal (ncurses) frontend, multi-threaded SBCL image.
 |---|---|
 | `lem-yath/` | The port: ASDF system `lem-yath` (core modules in `src/`, app ports in `src/apps/`) |
 | `docs/emacs-inventory.md` | Extracted feature inventory of the Emacs config |
+| `docs/parity-ledger.tsv` | Behavior-level parity audit with explicit evidence, divergence, and blockers |
 | `docs/lem-capabilities.md` | Survey of Lem's real APIs (grounded in source) |
 | `docs/port-map.md` | Emacs package → Lem equivalent mapping + gap report |
 | `docs/vi-parity.md` | Vim/Evil behavior matrix, evidence, and remaining gaps |
@@ -48,28 +49,35 @@ of writing `.fasl` files into the source tree.
 - surround / snipe / comment operator (`gc`) plus Lispyville-compatible,
   delimiter-safe structural editing in Common Lisp, Clojure, Scheme/Racket,
   and Emacs Lisp buffers
-- orderless (space-separated substring) filtering in command and buffer
-  prompts, with multi-token input kept alive; file prompts retain Lem's stock
-  completion behavior
+- Prescient-style literal/regexp/initialism filtering and persistent learned
+  ranking in command, buffer, and custom prompts; file prompts retain Lem's
+  path-aware matching and gain the same ranking
 - LSP specs: rust-analyzer, pyright, harper-ls, and flake-aware nixd
 - legit (magit) + jj dispatch on `SPC g g`, git-gutter, git-timemachine
-- roam-lite notes, dailies, journal, capture over `$WORKDIR`
+- roam-lite notes, root-level roam dailies, journal, and i/t/r capture over
+  `$WORKDIR`, plus public TODO capture over `$PUBLIC_ORG_DIR`
 - streaming OpenRouter LLM client + claude/codex/grok CLI backends
 - app ports under `lem-yath/src/apps/`: agenda, citar, devdocs, elfeed
   (Miniflux fever), notmuch, pg, salta, timemachine, llm-cli
 
 See `docs/port-map.md` for the per-package disposition and known divergences.
+Use `docs/parity-ledger.tsv` for behavior-level planning: its dispositions are
+`exact`, `approximation`, `gap`, `n-a`, and `unassessed`. The validator accepts
+`exact` only with automated evidence or an explicitly approved manual record.
 
 ## Testing
 
-`nix flake check` runs the package, compile, and boot checks. The interactive
-TUI checks are also exposed as flake apps:
+`nix flake check` runs the package, compile, boot, completion, notes, and parity-ledger
+checks. The ledger can also be validated directly, and the interactive TUI
+checks are exposed as flake apps:
 
 ```sh
 nix flake check
+python3 scripts/check-parity-ledger.py
 nix run .#compile-check
 nix run .#boot-test
-nix run .#orderless-test
+nix run .#completion-test
+nix run .#notes-test
 nix run .#interactive-test
 nix run .#structural-test
 ```
@@ -84,6 +92,6 @@ worktree to the dedicated cache directory on `ex44` and run the full gate there:
 ./scripts/test-on-ex44.sh
 ```
 
-Pass `check`, `compile`, `boot`, `orderless`, `interactive`, or `structural` to run only that
-gate. `LEM_YATH_TEST_HOST` and `LEM_YATH_REMOTE_ROOT` override the SSH host and
-remote cache directory.
+Pass `check`, `compile`, `boot`, `completion`, `interactive`, `structural`, or
+`notes` to run only that gate. `LEM_YATH_TEST_HOST` and
+`LEM_YATH_REMOTE_ROOT` override the SSH host and remote cache directory.

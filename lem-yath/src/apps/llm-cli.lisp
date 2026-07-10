@@ -105,12 +105,12 @@ append-text; missing binary or launch failure degrades to a message."
 (define-command lem-yath-llm-set-backend () ()
   "Switch the active LLM backend (gptel preset/backend selection).
 Offers :openrouter plus whichever CLI-agent backends are installed, filtered
-orderless-style; sets *llm-backend* and confirms."
+Prescient-style; sets *llm-backend* and confirms."
   (let* ((backends (llm-available-backends))
          (names (mapcar (lambda (b) (string-downcase (symbol-name b))) backends))
          (choice (prompt-for-string
                   "LLM backend: "
-                  :completion-function (lambda (s) (orderless-filter s names))
+                  :completion-function (lambda (s) (prescient-filter s names))
                   :initial-value (string-downcase (symbol-name *llm-backend*))
                   :history-symbol 'lem-yath-llm-backend))
          (backend (find choice backends

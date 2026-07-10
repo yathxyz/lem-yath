@@ -167,19 +167,19 @@ Marshals the buffer update back onto the editor thread; degrades to a message."
 ;;; --- prompts ----------------------------------------------------------------
 
 (defun devdocs-prompt-docset ()
-  "Prompt for a docset slug among *devdocs-docsets* with orderless matching."
+  "Prompt for a docset slug using the configured Prescient matching."
   (prompt-for-string "DevDocs docset: "
                      :completion-function
-                     (lambda (s) (orderless-filter s *devdocs-docsets*))
+                     (lambda (s) (prescient-filter s *devdocs-docsets*))
                      :test-function (lambda (s) (plusp (length s)))
                      :history-symbol 'lem-yath-devdocs-docset))
 
 (defun devdocs-prompt-entry (entries)
-  "Prompt for an entry name among ENTRIES (list of (name . path)), orderless."
+  "Prompt for an entry name among ENTRIES using Prescient matching."
   (let ((names (mapcar #'car entries)))
     (prompt-for-string "DevDocs entry: "
                        :completion-function
-                       (lambda (s) (orderless-filter s names))
+                       (lambda (s) (prescient-filter s names))
                        :test-function (lambda (s) (member s names :test #'string=))
                        :history-symbol 'lem-yath-devdocs-entry)))
 
