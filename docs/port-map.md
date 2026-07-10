@@ -89,12 +89,13 @@ Status legend:
 | indent-bars | gap | no indent guides in ncurses frontend |
 | rainbow-delimiters | partial | paren coloring in lisp-mode; show-paren elsewhere |
 | dirvish | lem-builtin | `directory-mode` + filer |
+| find-name-dired (built-in) | ported/partial | `M-s f` asynchronously fills a persistent, read-only `*Find*` buffer with safely escaped rows backed by exact paths (`src/find-name.lisp`); Dired marking, long columns, file operations, and process cancellation remain gaps |
 | ws-butler | ported | track changed programming-buffer lines and trim only those lines on save (`src/editing.lisp`) |
-| ibuffer | lem-builtin | `list-buffers` (`C-x C-b`) |
+| ibuffer | lem-builtin/partial | `list-buffers` (`C-x C-b`) provides Buffer/File columns, fuzzy narrowing, and Return-to-open; the configured org/tramp/emacs/ediff/dired/terminal/help saved groups are absent |
 | bookmarks (built-in) | lem-builtin | `lem-bookmark`, `SPC b m` / `SPC RET` |
 | avy | partial | `SPC l` goto-line, `SPC a` snipe, `SPC s` isearch-symbol |
 | gcmh / no-littering / use-package / direnv / sops / editorconfig | n/a or gap | SBCL image needs no GC hacks; no-littering n/a; **direnv/sops/editorconfig: gap** |
-| savehist / save-place / recentf | partial | prompt histories persist per-session; Lem keeps its own history files |
+| auto-revert / savehist / save-place / recentf (built-ins) | partial | recentf is ported as a persistent, deduplicated 300-file MRU on `M-g r`; global auto-revert, save-place, and the expanded savehist variables remain gaps |
 | doom-themes | n/a | Emacs config loaded no theme; Lem default kept (185 base16 themes available) |
 | notmuch-outlook / business-visual profile / nodes-org-sync | gap | host-gated bespoke integrations, out of scope |
 
@@ -106,5 +107,12 @@ Status legend:
 - **org files** open as plain text; the workflows (capture/dailies/journal/agenda)
   operate on the same files but there is no org folding/links/tables UI.
 - **Completion previews**: no consult-style live preview while cycling candidates.
+- **Find-name results** persist after opening a match and are safe for spaces,
+  control characters, and shell-looking patterns, but they are a path list rather
+  than a full Dired buffer with marking and file operations.
+- **Buffer list groups**: `C-x C-b` has useful columns and fuzzy narrowing, but
+  not the configured Ibuffer saved filter groups.
+- **Rectangle duplication**: `M-j` matches line and contiguous-region behavior,
+  including Vi character/line selections, but V-BLOCK remains unsupported.
 - **In-buffer Orderless input**: automatic mode/Cape completion is active, but
   multi-component matching and Corfu's `M-Space` separator are not yet present.

@@ -126,7 +126,10 @@
 
 ;; globals from the `use-package emacs` block
 (define-key *global-keymap* "M-o" 'next-window)        ; other-window
-(define-key *global-keymap* "M-j" 'lem-yath-duplicate-line) ; duplicate-dwim
+(define-key *global-keymap* "M-j" 'lem-yath-duplicate-dwim) ; duplicate-dwim
+(define-key *global-keymap* "M-g r"
+  'lem-core/commands/file:find-recent-file)             ; recentf
+(define-key *global-keymap* "M-s f" 'lem-yath-find-name) ; find-name-dired
 (define-key *global-keymap* "M-s g" 'lem/grep:grep)    ; M-s g grep
 
 ;; keybindings.lisp is the system's last component; reaching here means the

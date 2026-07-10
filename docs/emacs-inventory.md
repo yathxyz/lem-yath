@@ -374,7 +374,7 @@ Core: **gptel** (deferred), heavily customized in `init-ai.el` (~1400 lines).
 - **Startup**: early-init disables tool/scroll/menu/blink-cursor bars, silences startup messages, sets `gc-cons-threshold` huge + `file-name-handler-alist nil` for fast init (restored on `emacs-startup-hook`). Native-comp warnings silenced. `inhibit-startup-message`, empty scratch message.
 - **Server/daemon**: `lem-yath/server-start-maybe` starts server on init; `recentf-auto-cleanup` differs under daemon; editor env vars point to `emacsclient`.
 - **xref/grep**: `xref-search-program 'ripgrep`; `grep-command "rg -nS --no-heading "`; extra ignored dirs (node_modules, build, dist, VCS).
-- **auto-revert**: `global-auto-revert-mode`, also non-file buffers. `repeat-mode`, `savehist-mode` (+ extra vars incl. kill-ring/registers/marks/search rings), `save-place-mode` (limit 600).
+- **auto-revert**: `global-auto-revert-mode`, also non-file buffers. `repeat-mode`, `savehist-mode` (+ kill ring and literal/regexp search rings), `save-place-mode` (limit 600).
 - **`custom.el`**: `custom-safe-themes` (9 doom hashes), `newsticker-url-list` (many news/blog RSS feeds), `ede-project-directories`, warning suppression, and `safe-local-variable-values` (per-project org-roam db relocation, a gptel-context helper, `consult-outline` on `C-c i`, `smie-indent-basic 2`).
 - **Native-compile**: all config files are AOT native-compiled by Nix.
 - **markdown-ts-mode** / **nushell-ts-mode** / **sqlite3** loaded on non-Windows; `guix-autoloads` loaded if present.

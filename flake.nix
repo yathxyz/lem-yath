@@ -35,6 +35,7 @@
               coreutils
               curl
               fd
+              findutils
               gitMinimal
               gnugrep
               gnused
@@ -60,7 +61,6 @@
             with pkgs;
             [
               bash
-              findutils
               tmux
             ]
             ++ coreRuntimeInputs;
@@ -136,16 +136,14 @@
             compile-check = mkTestApp "lem-yath-compile-check" "compile-check.sh";
             boot-test = mkTestApp "lem-yath-boot-test" "boot-test.sh";
             completion-test = mkTestApp "lem-yath-completion-test" "completion-test.sh";
-            completion-lifecycle-test =
-              mkTestApp "lem-yath-completion-lifecycle-test" "completion-lifecycle-test.sh";
-            auto-completion-test =
-              mkTestApp "lem-yath-auto-completion-test" "auto-completion-test.sh";
+            completion-lifecycle-test = mkTestApp "lem-yath-completion-lifecycle-test" "completion-lifecycle-test.sh";
+            auto-completion-test = mkTestApp "lem-yath-auto-completion-test" "auto-completion-test.sh";
             interactive-test = mkTestApp "lem-yath-interactive-test" "interactive-test.sh";
             structural-test = mkTestApp "lem-yath-structural-test" "structural-test.sh";
             notes-test = mkTestApp "lem-yath-notes-test" "notes-test.sh";
             editing-test = mkTestApp "lem-yath-editing-test" "editing-test.sh";
-            prompt-completion-test =
-              mkTestApp "lem-yath-prompt-completion-test" "prompt-completion-test.sh";
+            prompt-completion-test = mkTestApp "lem-yath-prompt-completion-test" "prompt-completion-test.sh";
+            daily-workflows-test = mkTestApp "lem-yath-daily-workflows-test" "daily-workflows-test.sh";
           };
 
           checks = {
@@ -153,17 +151,14 @@
             compile = mkCheck "compile" "compile-check.sh";
             boot = mkCheck "boot" "boot-test.sh";
             completion = mkCheck "completion" "completion-test.sh";
-            completion-lifecycle =
-              mkCheck "completion-lifecycle" "completion-lifecycle-test.sh";
-            auto-completion =
-              mkCheck "auto-completion" "auto-completion-test.sh";
+            completion-lifecycle = mkCheck "completion-lifecycle" "completion-lifecycle-test.sh";
+            auto-completion = mkCheck "auto-completion" "auto-completion-test.sh";
             notes = mkCheck "notes" "notes-test.sh";
             editing = mkCheck "editing" "editing-test.sh";
-            prompt-completion =
-              mkCheck "prompt-completion" "prompt-completion-test.sh";
+            prompt-completion = mkCheck "prompt-completion" "prompt-completion-test.sh";
+            daily-workflows = mkCheck "daily-workflows" "daily-workflows-test.sh";
             parity-ledger =
-              pkgs.runCommand "lem-yath-parity-ledger-check"
-                { nativeBuildInputs = [ pkgs.python3 ]; }
+              pkgs.runCommand "lem-yath-parity-ledger-check" { nativeBuildInputs = [ pkgs.python3 ]; }
                 ''
                   cd ${self}
                   python3 ./scripts/check-parity-ledger.py

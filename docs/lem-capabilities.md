@@ -320,7 +320,18 @@ Multi-component Orderless input and its `M-Space` separator remain a tracked gap
   (`prompt.lisp:151`).
 - Find file: `lem:find-file` (`C-x C-f`).
 - Buffer switch: `select-buffer` (`C-x b`), `list-buffers` (`C-x C-b`,
-  `src/ext/list-buffers.lisp`).
+  `src/ext/list-buffers.lisp`). The configured TUI verifies Buffer/File columns,
+  fuzzy narrowing, and Return-to-open; Emacs' saved Ibuffer groups remain absent.
+- Recent files: `M-g r` opens Lem's persistent MRU after lem-yath sets the loaded
+  history's 300-entry limit and normalizes oversized persisted histories to their
+  newest 300 entries. Fresh-process TUI tests verify trimming, capping,
+  deduplication, move-to-front, persistence, and opening.
+- Find by name: `M-s f` (`lem-yath/src/find-name.lisp`) prompts for a root and
+  wildcard, runs GNU find asynchronously with a NUL-delimited argv-safe protocol,
+  and fills a persistent read-only `*Find*` buffer. Exact path properties make
+  Vi Return safe for spaces, semicolons, literal `*`, `?`, and `[`, and displayed
+  control characters; q leaves the result buffer available. Dired marking, file
+  operations, long columns, and process cancellation remain absent.
 - Grep: `lem/grep:grep` and `lem/grep:project-grep` (`src/ext/grep.lisp`, bound
   `C-x p g`). Default command **`git grep -nHI`** (`grep.lisp:14-18`); change with
   `(setf lem/grep:*grep-command* "rg")` or `lem/grep:change-grep-command`. **Results are
@@ -340,6 +351,14 @@ walks up to the project root. Saved projects persisted to `(lem-home)/history/pr
 `*prompt-buffer-completion-function*`, `*prompt-file-completion-function*`,
 `*prompt-command-completion-function*` (`prompt.lisp:9-11`) can be overridden.
 In-buffer completion popup: `src/ext/completion-mode.lisp` (`lem/completion-mode`).
+
+### Daily editing workflows — `scripts/daily-workflows-test.sh` (verified)
+
+`M-j` now follows Emacs `duplicate-dwim` for current lines and contiguous active
+regions. The ncurses suite checks the otherwise easy-to-miss unterminated-EOF
+newline rule against Emacs, point retention at EOF, one-step undo, forward and
+reverse Vi character selections, V-LINE state, and Paredit's mode-local structural
+override. V-BLOCK/rectangle duplication remains an explicit gap.
 
 ---
 

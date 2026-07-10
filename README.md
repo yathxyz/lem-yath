@@ -54,6 +54,9 @@ of writing `.fasl` files into the source tree.
   path-aware matching and gain the same ranking
 - completion candidates keep display, filtering, and insertion text separate;
   acceptance callbacks are explicit and stale asynchronous results are rejected
+- Emacs-like daily navigation/editing: region-or-line `M-j`, a persistent
+  300-entry `M-g r` MRU, filterable `C-x C-b`, and asynchronous persistent
+  `M-s f` name search with property-backed Return and persistent q/revisit behavior
 - LSP specs: rust-analyzer, pyright, harper-ls, and flake-aware nixd
 - legit (magit) + jj dispatch on `SPC g g`, git-gutter, git-timemachine
 - roam-lite notes, root-level roam dailies, journal, and i/t/r capture over
@@ -70,9 +73,9 @@ Use `docs/parity-ledger.tsv` for behavior-level planning: its dispositions are
 ## Testing
 
 `nix flake check` runs the package, compile, boot, prompt and in-buffer
-completion, completion-lifecycle, automatic-completion, editing, notes, and
-parity-ledger checks. The ledger can also be validated directly, and the
-interactive TUI checks are exposed as flake apps:
+completion, completion-lifecycle, automatic-completion, editing,
+daily-workflows, notes, and parity-ledger checks. The ledger can also be
+validated directly, and the interactive TUI checks are exposed as flake apps:
 
 ```sh
 nix flake check
@@ -84,6 +87,7 @@ nix run .#prompt-completion-test
 nix run .#completion-lifecycle-test
 nix run .#auto-completion-test
 nix run .#editing-test
+nix run .#daily-workflows-test
 nix run .#notes-test
 nix run .#interactive-test
 nix run .#structural-test
@@ -100,6 +104,7 @@ worktree to the dedicated cache directory on `ex44` and run the full gate there:
 ```
 
 Pass `check`, `compile`, `boot`, `completion`, `prompt-completion`,
-`completion-lifecycle`, `auto-completion`, `editing`, `interactive`,
-`structural`, or `notes` to run only that gate. `LEM_YATH_TEST_HOST` and
-`LEM_YATH_REMOTE_ROOT` override the SSH host and remote cache directory.
+`completion-lifecycle`, `auto-completion`, `editing`, `daily-workflows`,
+`interactive`, `structural`, or `notes` to run only that gate.
+`LEM_YATH_TEST_HOST` and `LEM_YATH_REMOTE_ROOT` override the SSH host and remote
+cache directory.

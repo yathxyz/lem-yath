@@ -52,8 +52,11 @@ case "$test_name" in
   prompt-completion)
     remote_command='nix run path:$PWD#prompt-completion-test'
     ;;
+  daily-workflows)
+    remote_command='nix run path:$PWD#daily-workflows-test'
+    ;;
   *)
-    echo "Usage: $0 [all|check|compile|boot|completion|completion-lifecycle|auto-completion|prompt-completion|interactive|structural|notes|editing]" >&2
+    echo "Usage: $0 [all|check|compile|boot|completion|completion-lifecycle|auto-completion|prompt-completion|daily-workflows|interactive|structural|notes|editing]" >&2
     exit 2
     ;;
 esac

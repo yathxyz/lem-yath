@@ -20,6 +20,7 @@
                (:file "ide")
                (:file "git")
                (:file "notes")
+               (:file "find-name")
                (:file "tools")
                (:file "llm")
                (:file "ui")
