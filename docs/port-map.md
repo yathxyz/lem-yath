@@ -90,6 +90,7 @@ Status legend:
 | rainbow-delimiters | partial | paren coloring in lisp-mode; show-paren elsewhere |
 | dirvish | lem-builtin | `directory-mode` + filer |
 | find-name-dired (built-in) | ported/partial | `M-s f` asynchronously fills a persistent, read-only `*Find*` buffer with safely escaped rows backed by exact paths (`src/find-name.lisp`); Dired marking, long columns, file operations, and process cancellation remain gaps |
+| electric-pair-mode / delete-selection-mode (built-ins) | ported/partial | syntax-table delimiter/quote pairing, local balance reuse/skip, numeric prefixes, ordinary region replacement, and Emacs-style opener/quote region wrapping; an unmatched embedded quote is escaped to keep the Lisp string valid instead of reproducing Lispy's raw interior quote, while full forward balance scanning, global paired Backspace, and zero-result prompt recovery remain gaps (`src/electric-pair.lisp`, `scripts/electric-editing-test.sh`) |
 | ws-butler | ported | track changed programming-buffer lines and trim only those lines on save (`src/editing.lisp`) |
 | ibuffer | lem-builtin/partial | `list-buffers` (`C-x C-b`) provides Buffer/File columns, fuzzy narrowing, and Return-to-open; the configured org/tramp/emacs/ediff/dired/terminal/help saved groups are absent |
 | bookmarks (built-in) | lem-builtin | `lem-bookmark`, `SPC b m` / `SPC RET` |
@@ -114,5 +115,9 @@ Status legend:
   not the configured Ibuffer saved filter groups.
 - **Rectangle duplication**: `M-j` matches line and contiguous-region behavior,
   including Vi character/line selections, but V-BLOCK remains unsupported.
+- **Electric-pair scope**: syntax-table pairs, quotes, numeric prefixes,
+  escapes, and local syntax-safe closer reuse/skip are covered. Full forward
+  balance scanning across forms, global adjacent-pair Backspace, and recovery
+  after a zero-result prompt query remain open.
 - **In-buffer Orderless input**: automatic mode/Cape completion is active, but
   multi-component matching and Corfu's `M-Space` separator are not yet present.

@@ -45,7 +45,10 @@ lazy mode loading, file opening, and buffer switching.
 The Emacs `evil-snipe-override-mode` wins over Lispyville for normal-state
 `s/S`; Lem preserves the same precedence.  Paredit also retains its native
 smart delimiter/quote insertion, structural kill, wrap, splice-forward/back,
-and `C-Right`/`C-Left` commands.
+and `C-Right`/`C-Left` commands. Outside Vi visual state, the global
+electric-editing layer gives active Paredit delimiter regions configured
+Lispy's opener position and inactive mark; quote wrapping retains Lispy's outer
+selection and orientation. Ordinary Paredit insertion remains unchanged.
 
 ## Safety model
 

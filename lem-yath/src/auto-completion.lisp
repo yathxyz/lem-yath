@@ -170,8 +170,12 @@ directory already exists."
 
 (defun auto-completion-insert-state-p (buffer)
   (or (not (mode-active-p buffer 'lem-vi-mode:vi-mode))
-      (typep (lem-vi-mode/core:current-state)
-             'lem-vi-mode:insert)))
+      (let ((state (lem-vi-mode/core:current-state)))
+        (and (typep state 'lem-vi-mode:insert)
+             ;; REPLACE inherits INSERT's keymap, but completion's fallback
+             ;; command does not participate in Vi's overwrite pre-command
+             ;; path.  Keep the popup out of replacement sessions entirely.
+             (not (typep state 'lem-vi-mode/states:replace-state))))))
 
 (defun auto-completion-eligible-p ()
   (let ((buffer (current-buffer)))

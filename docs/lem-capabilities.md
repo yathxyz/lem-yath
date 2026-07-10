@@ -360,6 +360,36 @@ newline rule against Emacs, point retention at EOF, one-step undo, forward and
 reverse Vi character selections, V-LINE state, and Paredit's mode-local structural
 override. V-BLOCK/rectangle duplication remains an explicit gap.
 
+### Electric pairs and self-insert selection replacement — `lem-yath/src/electric-pair.lisp` (verified)
+
+Ordinary self insertion replaces a nonempty active Emacs-style region and
+cancels its mark. An opening delimiter or string quote instead wraps the
+region and consumes the mark; delimiters land after the opener, while quotes
+land on the originally typed side. A zero-width mark remains ordinary
+insertion. Vi visual state keeps its modal operators and Vi replace state keeps
+one-character overwrite. Paredit remains authoritative in Lisp-family buffers:
+configured Lispy-style delimiters land on the opener with an inactive mark,
+while quote wrapping retains the original outer selection orientation.
+Selected quotes and backslashes are escaped so the wrapped Lisp string retains
+the selected text's value.
+
+Pair discovery uses each buffer's syntax table. Openers insert their matching
+closer, escaped quotes remain literal, an immediate matching closer is reused,
+and typing that closer advances over it. Numeric prefixes, odd/even escapes,
+balanced adjacent pairs, syntax-safe whitespace/newline skipping, prompt
+queries, and Lisp completion/Paredit dispatch are covered as well. Special
+delimiter input closes an ordinary in-buffer completion popup without stale
+state, while prompt completion refreshes in place. The real ncurses suite also
+covers Fundamental, Python, Lisp/Paredit, read-only buffers, one-step undo, and
+both region orientations.
+
+This remains an approximation of the complete Emacs mode: preserve-balance does
+not yet scan across intervening non-whitespace forms, adjacent-pair Backspace is
+not global outside Paredit, and a zero-result prompt completion cannot yet be
+recovered without reopening it. For a selected Lisp form containing an unmatched
+embedded quote, Lem escapes the quote to keep the new string valid; configured Lispy
+leaves that interior quote raw, so this is an intentional semantic improvement.
+
 ---
 
 ## 5. LSP  (`extensions/lsp-mode/`, package `lem-lsp-mode`)

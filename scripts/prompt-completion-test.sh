@@ -74,6 +74,25 @@ else
   pass boot "configured Lem opened both file-backed fixture buffers"
 fi
 
+# Delimiter input belongs to the prompt query. It must refresh the candidate
+# list rather than invoking ordinary-buffer pairing and closing completion.
+if invoke_prompt_command lem-yath-test-buffer-prompt 'Fixture buffer:'; then
+  tmux_cmd send-keys -t "$session" -l '('
+  sleep 0.8
+  screen=$(lem_capture "$session")
+  if grep -q 'buffers/parens/()paired.txt' <<<"$screen" &&
+     grep -Fq 'Fixture buffer: ()' <<<"$screen"; then
+    pass delimiter-query "a paired delimiter refreshed the prompt without closing its candidates"
+  else
+    fail delimiter-query "delimiter input closed or bypassed prompt completion" "$session"
+  fi
+  lem_keys "$session" Escape
+  sleep 0.2
+  lem_keys "$session" Escape
+else
+  fail delimiter-query "configured buffer prompt did not open" "$session"
+fi
+
 # Buffer prompt: both buffers have the same basename, so Lem assigns unique
 # labels while retaining each backing path as the completion detail.
 if invoke_prompt_command lem-yath-test-buffer-prompt 'Fixture buffer:'; then

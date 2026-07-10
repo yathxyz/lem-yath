@@ -37,7 +37,11 @@
            (prompt-completion-fixture-write
             "buffers/two/shared.txt" (format nil "second shared buffer~%")))
          (first-buffer (find-file-buffer first-path))
-         (second-buffer (find-file-buffer second-path)))
+         (second-buffer (find-file-buffer second-path))
+         (paren-buffer
+           (find-file-buffer
+            (prompt-completion-fixture-write
+             "buffers/parens/()paired.txt" (format nil "paren buffer~%")))))
     (prompt-completion-fixture-write
      "files/nested/alpha-report.txt" (format nil "alpha~%"))
     (prompt-completion-fixture-write
@@ -50,7 +54,7 @@
     ;; common prefix before the TUI driver types its directory component.
     (ensure-directories-exist
      (prompt-completion-fixture-path "files/other/.keep"))
-    (dolist (buffer (list first-buffer second-buffer))
+    (dolist (buffer (list first-buffer second-buffer paren-buffer))
       (prompt-completion-fixture-log
        "BUFFER name=~a path=~a"
        (buffer-name buffer)

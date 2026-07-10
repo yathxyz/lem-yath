@@ -15,6 +15,7 @@
                (:file "editing")
                (:file "vi")
                (:file "structural")
+               (:file "electric-pair")
                (:file "completion")
                (:file "auto-completion")
                (:file "ide")

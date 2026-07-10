@@ -177,6 +177,26 @@ fi
 if run_mx lem-yath-test-auto-dabbrev-setup && enter_insert; then
   tmux_cmd send-keys -t "$session" -l alp
   if lem_wait_for "$session" 'alphaCandidate[0-9][0-9]' 10 >/dev/null; then
+    tmux_cmd send-keys -t "$session" -l '('
+    sleep 0.3
+    lem_keys "$session" F7
+    screen=$(lem_capture "$session")
+    if ! grep -q 'alphaCandidate' <<<"$screen" &&
+       wait_report '^STATE none buffer=alp\(\) timer=NIL$' 5; then
+      pass electric-pair-cancellation "an opener inserted its pair and closed the popup"
+    else
+      fail electric-pair-cancellation "electric insertion left a stale popup or wrong buffer"
+    fi
+  else
+    fail electric-pair-cancellation "could not open the electric-pair test popup"
+  fi
+else
+  fail electric-pair-setup "could not prepare the electric-pair scenario"
+fi
+
+if run_mx lem-yath-test-auto-dabbrev-setup && enter_insert; then
+  tmux_cmd send-keys -t "$session" -l alp
+  if lem_wait_for "$session" 'alphaCandidate[0-9][0-9]' 10 >/dev/null; then
     lem_keys "$session" F8
     sleep 0.3
     lem_keys "$session" F7

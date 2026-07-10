@@ -40,6 +40,7 @@
               gnugrep
               gnused
               ripgrep
+              which
             ]
             ++ lib.optionals pkgs.stdenv.isLinux [ xdg-utils ];
 
@@ -144,6 +145,7 @@
             editing-test = mkTestApp "lem-yath-editing-test" "editing-test.sh";
             prompt-completion-test = mkTestApp "lem-yath-prompt-completion-test" "prompt-completion-test.sh";
             daily-workflows-test = mkTestApp "lem-yath-daily-workflows-test" "daily-workflows-test.sh";
+            electric-editing-test = mkTestApp "lem-yath-electric-editing-test" "electric-editing-test.sh";
           };
 
           checks = {
@@ -157,6 +159,7 @@
             editing = mkCheck "editing" "editing-test.sh";
             prompt-completion = mkCheck "prompt-completion" "prompt-completion-test.sh";
             daily-workflows = mkCheck "daily-workflows" "daily-workflows-test.sh";
+            electric-editing = mkCheck "electric-editing" "electric-editing-test.sh";
             parity-ledger =
               pkgs.runCommand "lem-yath-parity-ledger-check" { nativeBuildInputs = [ pkgs.python3 ]; }
                 ''
