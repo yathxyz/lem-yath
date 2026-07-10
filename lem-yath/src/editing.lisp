@@ -5,29 +5,97 @@
 
 (setf (variable-value 'tab-width :global) 4)
 
-;;; ws-butler approximation: trim trailing whitespace across the buffer on
-;;; save (ws-butler restricted itself to touched lines; Lem has no
-;;; per-line change tracking to lean on, so we trim the whole buffer).
+;;; ws-butler parity: remember changed lines and trim only those lines when a
+;;; programming buffer is saved. Existing whitespace elsewhere is preserved.
 
 (defvar *trim-trailing-whitespace* t)
+(defvar *trimming-touched-lines* nil)
 (defparameter *fill-column* 80)
 
-(defun trim-trailing-whitespace (buffer)
-  (when (and *trim-trailing-whitespace*
-             (buffer-filename buffer))
-    (with-point ((p (buffer-start-point buffer) :left-inserting))
-      (loop
-        (line-end p)
-        (loop :while (member (character-at p -1) '(#\Space #\Tab))
-              :do (progn (character-offset p -1)
-                         (delete-character p 1)))
-        (unless (line-offset p 1)
-          (return))))))
+(defparameter *non-programming-language-mode-classes*
+  '(("LEM-MARKDOWN-MODE" . "MARKDOWN-MODE")
+    ("LEM-ASCIIDOC-MODE" . "ASCIIDOC-MODE")
+    ("LEM-XML-MODE" . "XML-MODE")
+    ("LEM-PATCH-MODE" . "PATCH-MODE")
+    ("LEM-REVIEW-MODE" . "REVIEW-MODE"))
+  "Lem language modes which correspond to Emacs text or special modes.")
+
+(defun mode-object-typep (mode-object class-name)
+  (destructuring-bind (package-name . symbol-name) class-name
+    (alexandria:when-let* ((package (find-package package-name))
+                           (symbol (find-symbol symbol-name package)))
+      (and (find-class symbol nil)
+           (typep mode-object symbol)))))
+
+(defun programming-buffer-p (buffer)
+  "Whether BUFFER is the Lem equivalent of an Emacs `prog-mode' buffer."
+  (let ((mode-object (ignore-errors
+                       (ensure-mode-object (buffer-major-mode buffer)))))
+    (and mode-object
+         (typep mode-object 'lem/language-mode:language-mode)
+         (notany (lambda (class-name)
+                   (mode-object-typep mode-object class-name))
+                 *non-programming-language-mode-classes*))))
+
+(defun touched-line-points (buffer)
+  (buffer-value buffer 'lem-yath-touched-line-points))
+
+(defun (setf touched-line-points) (points buffer)
+  (setf (buffer-value buffer 'lem-yath-touched-line-points) points))
+
+(defun clear-touched-line-points (buffer)
+  (let ((points (touched-line-points buffer)))
+    (setf (touched-line-points buffer) nil)
+    (dolist (point points)
+      (ignore-errors (delete-point point)))))
+
+(defun remember-touched-line (buffer point)
+  (with-point ((line point))
+    (line-start line)
+    (unless (find line (touched-line-points buffer) :test #'same-line-p)
+      (push (copy-point line :right-inserting)
+            (touched-line-points buffer)))))
+
+(defun track-touched-lines (start end old-length)
+  "Record every surviving line affected by one buffer change."
+  (declare (ignore old-length))
+  (let ((buffer (point-buffer start)))
+    (when (and *trim-trailing-whitespace*
+               (not *trimming-touched-lines*)
+               (programming-buffer-p buffer))
+      (with-point ((line start))
+        (line-start line)
+        (loop
+          (remember-touched-line buffer line)
+          (when (or (same-line-p line end)
+                    (not (line-offset line 1)))
+            (return)))))))
+
+(defun trim-line-trailing-whitespace (point)
+  (with-point ((cursor point))
+    (line-end cursor)
+    (loop :while (member (character-at cursor -1) '(#\Space #\Tab))
+          :do (progn
+                (character-offset cursor -1)
+                (delete-character cursor 1)))))
+
+(defun trim-touched-trailing-whitespace (buffer)
+  (unwind-protect
+       (when (and *trim-trailing-whitespace*
+                  (buffer-filename buffer)
+                  (programming-buffer-p buffer))
+         (let ((*trimming-touched-lines* t))
+           (dolist (point (touched-line-points buffer))
+             (trim-line-trailing-whitespace point))))
+    (clear-touched-line-points buffer)))
 
 (defun trim-trailing-whitespace-hook (&rest args)
   (let ((buffer (or (first args) (current-buffer))))
     (when (typep buffer 'lem:buffer)
-      (ignore-errors (trim-trailing-whitespace buffer)))))
+      (trim-touched-trailing-whitespace buffer))))
+
+(add-hook (variable-value 'after-change-functions :global t)
+          'track-touched-lines)
 
 (add-hook (variable-value 'before-save-hook :global t)
           'trim-trailing-whitespace-hook)

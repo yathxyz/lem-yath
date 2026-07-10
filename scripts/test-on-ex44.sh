@@ -46,8 +46,11 @@ case "$test_name" in
   notes)
     remote_command='nix run path:$PWD#notes-test'
     ;;
+  editing)
+    remote_command='nix run path:$PWD#editing-test'
+    ;;
   *)
-    echo "Usage: $0 [all|check|compile|boot|completion|completion-lifecycle|auto-completion|interactive|structural|notes]" >&2
+    echo "Usage: $0 [all|check|compile|boot|completion|completion-lifecycle|auto-completion|interactive|structural|notes|editing]" >&2
     exit 2
     ;;
 esac

@@ -89,7 +89,7 @@ Status legend:
 | indent-bars | gap | no indent guides in ncurses frontend |
 | rainbow-delimiters | partial | paren coloring in lisp-mode; show-paren elsewhere |
 | dirvish | lem-builtin | `directory-mode` + filer |
-| ws-butler | ported | trim trailing whitespace on save (`src/editing.lisp`, whole-buffer) |
+| ws-butler | ported | track changed programming-buffer lines and trim only those lines on save (`src/editing.lisp`) |
 | ibuffer | lem-builtin | `list-buffers` (`C-x C-b`) |
 | bookmarks (built-in) | lem-builtin | `lem-bookmark`, `SPC b m` / `SPC RET` |
 | avy | partial | `SPC l` goto-line, `SPC a` snipe, `SPC s` isearch-symbol |
@@ -102,7 +102,6 @@ Status legend:
 
 - **Surround grammar**: standard `ys`/`ds`/`cs` and visual `S` work, including
   common padded delimiters, but tag prompts and syntax-aware balancing do not.
-- **ws-butler** trims the whole buffer, not only touched lines.
 - **Format-on-save** is manual (`SPC b f`), not automatic.
 - **org files** open as plain text; the workflows (capture/dailies/journal/agenda)
   operate on the same files but there is no org folding/links/tables UI.

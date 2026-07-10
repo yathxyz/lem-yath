@@ -69,9 +69,10 @@ Use `docs/parity-ledger.tsv` for behavior-level planning: its dispositions are
 
 ## Testing
 
-`nix flake check` runs the package, compile, boot, completion, completion-lifecycle,
-notes, and parity-ledger checks. The ledger can also be validated directly, and
-the interactive TUI checks are exposed as flake apps:
+`nix flake check` runs the package, compile, boot, completion,
+completion-lifecycle, automatic-completion, editing, notes, and parity-ledger
+checks. The ledger can also be validated directly, and the interactive TUI
+checks are exposed as flake apps:
 
 ```sh
 nix flake check
@@ -80,6 +81,8 @@ nix run .#compile-check
 nix run .#boot-test
 nix run .#completion-test
 nix run .#completion-lifecycle-test
+nix run .#auto-completion-test
+nix run .#editing-test
 nix run .#notes-test
 nix run .#interactive-test
 nix run .#structural-test
@@ -96,5 +99,6 @@ worktree to the dedicated cache directory on `ex44` and run the full gate there:
 ```
 
 Pass `check`, `compile`, `boot`, `completion`, `completion-lifecycle`,
-`interactive`, `structural`, or `notes` to run only that gate. `LEM_YATH_TEST_HOST` and
-`LEM_YATH_REMOTE_ROOT` override the SSH host and remote cache directory.
+`auto-completion`, `editing`, `interactive`, `structural`, or `notes` to run
+only that gate. `LEM_YATH_TEST_HOST` and `LEM_YATH_REMOTE_ROOT` override the SSH
+host and remote cache directory.
