@@ -42,4 +42,5 @@
                              (:file "salta")
                              (:file "timemachine")
                              (:file "llm-cli")))
+               (:file "persistence")
                (:file "keybindings")))

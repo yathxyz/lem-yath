@@ -32,6 +32,8 @@
               ./patches/lem-completion-lifecycle.patch
               ./patches/lem-transient-delay-race.patch
               ./patches/lem-project-lsp-workspaces.patch
+              ./patches/lem-safe-revert.patch
+              ./patches/lem-prompt-history-limit.patch
             ];
           };
           lemNcurses = lem.packages.${system}.lem-ncurses.overrideLispAttrs (
@@ -156,6 +158,7 @@
                 text = ''
                   export TERM=''${TERM:-xterm-256color}
                   export LEM_BIN=${lemPackage}/bin/lem
+                  export LEM_YATH_LEM_SOURCE=${lemPatchedSrc}
                   export LEM_YATH_SOURCE=${self}/lem-yath
                   export LEM_YATH_SNIPPET_DIRS="${self}/lem-yath/snippets:${yasnippet-snippets}/snippets"
                   exec bash ${self}/scripts/${script} "$@"
@@ -178,6 +181,7 @@
                 export XDG_CACHE_HOME=$TMPDIR/cache
                 export LEM_BIN=${lemPackage}/bin/lem
                 export LEM_YATH_CHECK_ID=nix-${name}
+                export LEM_YATH_LEM_SOURCE=${lemPatchedSrc}
                 export LEM_YATH_SNIPPET_DIRS="$PWD/source/lem-yath/snippets:${yasnippet-snippets}/snippets"
 
                 mkdir -p "$HOME" "$XDG_CACHE_HOME"
@@ -218,6 +222,7 @@
             prompt-completion-test = mkTestApp "lem-yath-prompt-completion-test" "prompt-completion-test.sh";
             daily-workflows-test = mkTestApp "lem-yath-daily-workflows-test" "daily-workflows-test.sh";
             project-navigation-test = mkTestApp "lem-yath-project-navigation-test" "project-navigation-test.sh";
+            persistence-test = mkTestApp "lem-yath-persistence-test" "persistence-test.sh";
             electric-editing-test = mkTestApp "lem-yath-electric-editing-test" "electric-editing-test.sh";
             ui-parity-test = mkTestApp "lem-yath-ui-parity-test" "ui-parity-test.sh";
             actions-test = mkTestApp "lem-yath-actions-test" "actions-test.sh";
@@ -240,6 +245,7 @@
             prompt-completion = mkCheck "prompt-completion" "prompt-completion-test.sh";
             daily-workflows = mkCheck "daily-workflows" "daily-workflows-test.sh";
             project-navigation = mkCheck "project-navigation" "project-navigation-test.sh";
+            persistence = mkCheck "persistence" "persistence-test.sh";
             electric-editing = mkCheck "electric-editing" "electric-editing-test.sh";
             ui-parity = mkCheck "ui-parity" "ui-parity-test.sh";
             actions = mkCheck "actions" "actions-test.sh";

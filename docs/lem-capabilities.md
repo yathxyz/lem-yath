@@ -611,6 +611,57 @@ through the ncurses editor.
   history's 300-entry limit and normalizes oversized persisted histories to their
   newest 300 entries. Fresh-process TUI tests verify trimming, capping,
   deduplication, move-to-front, persistence, and opening.
+
+### Configured persistence and safe external changes (verified)
+
+`lem-yath/src/persistence.lisp` replaces pinned Lem's unsafe current-buffer
+pre-command reverter with a reload-idempotent global pre-command poll throttled
+to five seconds. Clean,
+readable file buffers reload transactionally after metadata changes; the current
+or explicitly selected buffer also uses a content digest up to 16 MiB, so a
+same-size rewrite with the same mtime is detected in that range. Dirty, deleted, unreadable, and
+failed-decode buffers retain their live text. Transactional reload snapshots are
+capped at 64 MiB so a huge or sparse file cannot force an editor-sized allocation;
+larger changed files are retained for deliberate external handling. A before-save guard asks before a
+dirty buffer overwrites a changed disk version. The accompanying pinned-source
+patch stages decoded replacement text before touching the live buffer, makes
+custom LSP-style manual reverts respect dirty-buffer confirmation, and asks
+before user-facing single/project buffer kills. Save As asks before replacing
+any existing target, including an unvisited file, and MCP deletion refuses a
+modified buffer instead of discarding it remotely.
+
+The same module writes `(lem-home)/state/persistence.sexp` through an
+exclusively created same-directory temporary file under an interprocess lock.
+The directory is mode `0700`; state, lock, and temporary files are `0600` from
+creation. Reads bind `*read-eval*` to false, accept exactly one aggregate
+byte-bounded, versioned form from one descriptor, reject dispatch/evaluation syntax
+before invoking the Common Lisp reader, and normalize bounded containers in linear
+time. Each flush merges state already written by another Lem process.
+It provides:
+
+- up to 600 canonical local-file positions, excluding point one and transient
+  VCS commit-message files;
+- a 120-entry live kill ring with the newest 40 entries persisted, retaining
+  `:vi-line` and `:vi-block` paste semantics and suppressing only consecutive
+  duplicates with identical semantics;
+- distinct 16-entry literal and regexp rings on `C-s`/`C-r` and
+  `C-M-s`/`C-M-r`, with `M-p`/`M-n` navigation inside isearch;
+- live prompt histories capped at 100 and a default-deny persistence allowlist
+  of reviewed navigation/query histories. The shared unnamed bucket, SQL,
+  connection strings, compile commands, and unknown future names remain
+  memory-only.
+
+`scripts/persistence-test.sh` drives real ncurses processes and external file
+writers. Its 45 checks cover clean and dirty reload behavior,
+deletion/recreation, stale-save refusal including a same-metadata 17 MiB file,
+first-save and late-target Save As races, modified quit refusal, fresh-process
+restoration and Vi paste behavior, prompt privacy/live caps, bounded malformed
+and dispatch/evaluation-free state reads, private file modes, failure-safe
+commands/exit, and stale concurrent writers. Filesystem
+notifications, directory-buffer save-place, and registered adapters for Lem's
+non-file list buffers remain gaps; the module exposes a buffer-local stale/revert
+adapter contract for later use.
+
 - Find by name: `M-s f` (`lem-yath/src/find-name.lisp`) prompts for a root and
   wildcard, runs GNU find asynchronously with a NUL-delimited argv-safe protocol,
   and fills a persistent read-only `*Find*` buffer. Exact path properties make

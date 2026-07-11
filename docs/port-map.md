@@ -94,11 +94,11 @@ Status legend:
 | electric-pair-mode / delete-selection-mode (built-ins) | ported/partial | syntax-table delimiter/quote pairing, local balance reuse/skip, numeric prefixes, ordinary region replacement, and Emacs-style opener/quote region wrapping; an unmatched embedded quote is escaped to keep the Lisp string valid instead of reproducing Lispy's raw interior quote, while full forward balance scanning, global paired Backspace, and zero-result prompt recovery remain gaps (`src/electric-pair.lisp`, `scripts/electric-editing-test.sh`) |
 | ws-butler | ported | track changed programming-buffer lines and trim only those lines on save (`src/editing.lisp`); EditorConfig `trim_trailing_whitespace=true` additionally normalizes the whole buffer, while false/absent retains touched-line cleanup |
 | ibuffer | lem-builtin/partial | `list-buffers` (`C-x C-b`) provides Buffer/File columns, fuzzy narrowing, and Return-to-open; the configured org/tramp/emacs/ediff/dired/terminal/help saved groups are absent |
-| bookmarks (built-in) | lem-builtin | `lem-bookmark`, `SPC b m` / `SPC RET` |
+| bookmarks (built-in) | lem-builtin/partial | `lem-bookmark`, `SPC b m` / `SPC RET`; unlike the configured Emacs, modified bookmarks are not automatically saved at exit |
 | avy | partial | `SPC l` goto-line, `SPC a` snipe, `SPC s` isearch-symbol |
 | gcmh / no-littering / use-package / direnv / sops | n/a or gap | SBCL image needs no GC hacks; no-littering/use-package n/a; **direnv/sops: gap** |
 | editorconfig | ported/partial | the official CLI resolves hierarchy/inheritance for every steady-state local file buffer; Lem maps indentation, line endings, write charset, fill column, trailing whitespace, and final-newline policy (`src/editorconfig.lisp`, `scripts/formatting-test.sh`). Charset is applied only to subsequent writes, not initial decoding |
-| auto-revert / savehist / save-place / recentf (built-ins) | partial | recentf is ported as a persistent, deduplicated 300-file MRU on `M-g r`; global auto-revert, save-place, and the expanded savehist variables remain gaps |
+| auto-revert / savehist / save-place / recentf (built-ins) | ported/partial | `src/persistence.lisp` safely polls every file buffer before commands, transactionally reloads only clean readable files up to a 64 MiB safety cap, protects stale saves, restores up to 600 local-file positions, and atomically persists allowlisted non-secret prompt histories, a 120-entry live/40-entry saved Vi-aware kill ring, and separate 16-entry literal/regexp search rings; recentf remains a 300-file MRU on `M-g r`. Idle-time/filesystem notifications, larger automatic reloads, directory-buffer positions, and broad non-file stale adapters remain gaps |
 | doom-themes | n/a | Emacs config loaded no theme; Lem default kept (185 base16 themes available) |
 | notmuch-outlook / business-visual profile / nodes-org-sync | gap | host-gated bespoke integrations, out of scope |
 
@@ -132,6 +132,15 @@ Status legend:
   than a full Dired buffer with marking and file operations.
 - **Buffer list groups**: `C-x C-b` has useful columns and fuzzy narrowing, but
   not the configured Ibuffer saved filter groups.
+- **Persistence scope**: clean local files are polled globally every five
+  seconds and whenever selected; no filesystem notification backend is present.
+  File positions exclude temporary VCS commit files, but directory-buffer
+  positions are not saved. Shared/unnamed, SQL/compile, credential-like, and
+  unknown prompt histories deliberately remain memory-only, and non-file auto-revert requires an
+  explicit buffer-local stale/revert adapter. Persistence is default-deny for
+  prompt names and applies per-entry and 32 MiB aggregate budgets; oversized
+  kills or query strings remain live but are not written. Concurrent merging
+  preserves additions, while a stale process can resurrect a history clear.
 - **Rectangle duplication**: `M-j` matches line and contiguous-region behavior,
   including Vi character/line selections, but V-BLOCK remains unsupported.
 - **Electric-pair scope**: syntax-table pairs, quotes, numeric prefixes,

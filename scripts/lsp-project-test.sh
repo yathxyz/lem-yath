@@ -172,6 +172,13 @@ invoke_mx() {
   fi
 }
 
+confirm_yes_prompt() {
+  local pattern=$1
+  lem_wait_for "$session" "$pattern" 10 >/dev/null || return 1
+  lem_keys "$session" y
+  sleep 0.3
+}
+
 record_workspace_state() {
   local before
   before=$(report_count '^STATE label=manual ')
@@ -485,6 +492,7 @@ b_init_before_save=$(event_count INITIALIZE \
   "root_path=${LEM_YATH_LSP_TEST_PROJECT_B%/}")
 save_report_before=$(report_count '^SAVE-AS ')
 if invoke_mx lem-yath-test-lsp-save-a-to-b &&
+   confirm_yes_prompt 'migrated\+raw\.fixture exists; overwrite it' &&
    wait_event_count DID_CLOSE "uri=$a_original_uri" \
      "$((a_save_close_before + 1))" &&
    wait_event_count DID_OPEN "uri=$b_migrated_uri" \

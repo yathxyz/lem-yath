@@ -66,6 +66,9 @@ case "$test_name" in
   project-navigation)
     remote_command='nix run path:$PWD#project-navigation-test'
     ;;
+  persistence)
+    remote_command='nix run path:$PWD#persistence-test'
+    ;;
   interactive)
     remote_command='nix run path:$PWD#interactive-test'
     ;;

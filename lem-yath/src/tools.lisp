@@ -37,7 +37,7 @@ Runs from the project root; the worker runs on a background thread."
                         :directory dir))))
 
 (define-command lem-yath-kill-current-buffer () ()
-  "Kill the current buffer without prompting (kill-current-buffer)."
+  "Kill the current buffer, confirming first when it has unsaved changes."
   (kill-buffer (current-buffer)))
 
 (defun duplicate-string (string count)

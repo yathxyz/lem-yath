@@ -296,7 +296,12 @@
                       (lem/language-mode:xref-location-content xref)))))))
 
 (defun lsp-snippet-test-read-lsp-source-forms ()
-  (let ((path (asdf:system-relative-pathname :lem-lsp-mode "lsp-mode.lisp"))
+  (let ((path
+          (alexandria:if-let (source (uiop:getenv "LEM_YATH_LEM_SOURCE"))
+            (merge-pathnames
+             "extensions/lsp-mode/lsp-mode.lisp"
+             (uiop:ensure-directory-pathname source))
+            (asdf:system-relative-pathname :lem-lsp-mode "lsp-mode.lisp")))
         (eof (gensym "EOF")))
     (with-open-file (stream path :direction :input)
       ;; The file uses local package nicknames such as CLIENT.  READ does not
