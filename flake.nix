@@ -30,9 +30,27 @@
             src = lem.outPath;
             patches = [ ./patches/lem-completion-lifecycle.patch ];
           };
-          lemNcurses = lem.packages.${system}.lem-ncurses.overrideLispAttrs (_: {
-            src = lemPatchedSrc;
-          });
+          lemNcurses = lem.packages.${system}.lem-ncurses.overrideLispAttrs (
+            old:
+            let
+              jsonrpc = lib.findFirst (
+                dependency: (dependency.pname or null) == "jsonrpc"
+              ) (throw "Lem no longer exposes its JSON-RPC dependency") old.lispLibs;
+              patchedJsonrpc = jsonrpc.overrideLispAttrs (_: {
+                src = pkgs.applyPatches {
+                  name = "lem-yath-jsonrpc-source";
+                  src = jsonrpc.src;
+                  patches = [ ./patches/jsonrpc-timeout-cleanup.patch ];
+                };
+              });
+            in
+            {
+              src = lemPatchedSrc;
+              lispLibs = map (
+                dependency: if (dependency.pname or null) == "jsonrpc" then patchedJsonrpc else dependency
+              ) old.lispLibs;
+            }
+          );
 
           coreRuntimeInputs =
             with pkgs;

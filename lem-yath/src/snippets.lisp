@@ -1123,10 +1123,14 @@
                    :test #'string=)
              (first supported)))))))
 
-(defun snippet-expand-template (template trigger-start trigger-end)
+(defun snippet-install-rendering (template rendering trigger-start trigger-end)
+  "Install a precomputed RENDERING over TRIGGER-START..TRIGGER-END.
+
+Return true only when the replacement and field session are installed
+successfully.  On an editor failure after replacement begins, restore the
+original text and return NIL."
   (handler-case
-      (let* ((rendering (snippet-render-template template))
-             (buffer (point-buffer trigger-start))
+      (let* ((buffer (point-buffer trigger-start))
              (original-column (point-charpos trigger-start))
              (original-text (points-to-string trigger-start trigger-end)))
         (snippet-end-session buffer)
@@ -1205,18 +1209,37 @@
                               (ignore-errors (delete-point point)))))
                         (if fields
                             (snippet-activate-index session 0)
-                            (snippet-finish-at-exit session)))))))
+                            (snippet-finish-at-exit session))
+                        t)))))
             (error (condition)
               ;; Preserve the user's trigger if a runtime/editor primitive
-              ;; fails after mutation has begun.  Consume this Tab rather
-              ;; than also invoking the underlying indentation command.
+              ;; fails after mutation has begun.
               (snippet-end-session buffer)
               (let ((*snippet-editing* t))
                 (delete-between-points start end)
                 (move-point (buffer-point buffer) start)
                 (insert-string (buffer-point buffer) original-text))
               (message "Cannot expand snippet ~a: ~a"
-                       (snippet-template-name template) condition))))
+                       (snippet-template-name template) condition)
+              nil))))
+    (error (condition)
+      (message "Cannot expand snippet ~a: ~a"
+               (snippet-template-name template) condition)
+      nil)))
+
+(defun snippet-expand-template (template trigger-start trigger-end)
+  "Render and expand TEMPLATE while consuming its matched trigger.
+
+Once a trigger has selected TEMPLATE, return true even when rendering or
+installation fails.  This retains the ordinary snippet command's contract:
+Tab reports the failure without also invoking its fallback indentation."
+  (handler-case
+      (progn
+        (snippet-install-rendering
+         template
+         (snippet-render-template template)
+         trigger-start
+         trigger-end)
         t)
     (error (condition)
       (message "Cannot expand snippet ~a: ~a"

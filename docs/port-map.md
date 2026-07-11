@@ -31,7 +31,7 @@ Status legend:
 | prescient (+vertico-) | ported/partial | prompt literal/regexp/initialism filtering and persistent recency/frequency ranking are implemented; interactive toggles and char folding remain gaps |
 | embark (+consult) | gap | Lem has context menus and LSP code-action menus, but no generic target classifier/action maps behind `SPC e a` |
 | wgrep | lem-builtin | grep results are editable & write back (better than default Emacs) |
-| eglot + eglot-booster | lem-builtin+ported | `lem-lsp-mode`; booster n/a (native client); `insertTextFormat=Snippet` uses the data-only field engine with dynamic capability advertising, while resolve/additional edits remain gaps |
+| eglot + eglot-booster | lem-builtin+ported | `lem-lsp-mode`; booster n/a (native client); `insertTextFormat=Snippet` uses the data-only field engine with dynamic capability advertising, and accepted items support bounded lazy resolve plus direct/resolved `additionalTextEdits`; resolved documentation/detail and completion commands remain gaps |
 | flycheck (+rust) | partial | LSP diagnostics overlays; no non-LSP linter framework |
 | apheleia | partial | `SPC b f` → LSP format (`src/ide.lisp`); configured format-on-save behavior is absent |
 | dape (DAP debugging) | gap | Lem has no DAP client |
@@ -129,9 +129,17 @@ Status legend:
   mappings expose the pinned community data without executing Emacs Lisp. LSP
   format-2 candidates use the same safe session after tracked final acceptance;
   plain format stays literal, malformed payloads preserve the prefix, and
-  backquoted server text is inert.
+  backquoted server text is inert. Acceptance-time completion resolve supports
+  lazy `additionalTextEdits`; direct and resolved edits remain plain, are
+  validated against the primary range and each other, and share one undo step
+  with the primary insertion. Resolve failure or a bad additional batch falls
+  back to the original primary completion.
   Stacked active sessions, direct snippet bindings, redo-time session revival,
-  strict TextMate variables/choices/transforms, completion resolve, and
-  additional completion edits remain gaps. BibTeX expansion deterministically
-  omits automatic indentation; this approximates the intended steady-state text
-  rather than reproducing Emacs' transient indentation calls.
+  strict TextMate variables/choices/transforms, resolved documentation/detail,
+  CompletionList item defaults, completion commands, and native transactional
+  rollback after arbitrary mutation-hook errors remain gaps. LSP document
+  positions consistently use the originating workspace's advertised UTF-16
+  encoding, including edits, diagnostics, navigation, symbols, and completion.
+  BibTeX expansion deterministically omits automatic indentation; this
+  approximates the intended steady-state text rather than reproducing Emacs'
+  transient indentation calls.

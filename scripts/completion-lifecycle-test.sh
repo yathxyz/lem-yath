@@ -76,11 +76,29 @@ scratch1="$root/metadata.txt"
 : >"$scratch1"
 s1="lem-yath-lifecycle-a-$id"
 if start_fixture "$s1" "$scratch1"; then
-  if run_mx "$s1" lem-yath-test-completion-static-checks &&
-     wait_report '^SUMMARY STATIC PASS failures=0$' 15; then
-    pass static-contracts "metadata, singleton, LSP precedence, and generation checks passed"
+  if run_mx "$s1" lem-yath-test-completion-static-checks; then
+    if wait_report '^PASS STATIC buffer-switch-cancels-acceptance-without-mutation$' 15; then
+      pass switched-acceptance "accepting after a buffer switch closed without mutating either buffer"
+    else
+      fail switched-acceptance "buffer-switch acceptance guard failed" "$s1"
+    fi
+
+    if wait_report '^PASS STATIC malformed-typed-lsp-response-closes-pending-context$' 15 &&
+       wait_report '^PASS STATIC async-lsp-conversion-error-closes-pending-context$' 15 &&
+       wait_report '^PASS STATIC response-coercion-error-invokes-error-callback-once$' 15 &&
+       wait_report '^PASS STATIC success-callback-error-does-not-invoke-error-callback$' 15; then
+      pass malformed-lsp "response failures close exactly once without conflating callback errors"
+    else
+      fail malformed-lsp "an LSP conversion failure left completion pending or escaped" "$s1"
+    fi
+
+    if wait_report '^SUMMARY STATIC PASS failures=0$' 15; then
+      pass static-contracts "metadata, singleton, LSP precedence, and generation checks passed"
+    else
+      fail static-contracts "static lifecycle checks failed" "$s1"
+    fi
   else
-    fail static-contracts "static lifecycle checks failed" "$s1"
+    fail static-contracts "static lifecycle command failed" "$s1"
   fi
 
   if run_mx "$s1" lem-yath-test-completion-metadata &&

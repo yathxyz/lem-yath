@@ -122,7 +122,8 @@ fi
 
 if run_mx lem-yath-test-lsp-snippet-static-checks &&
    wait_report '^SUMMARY STATIC PASS failures=0$' 15; then
-  pass static-contracts "capability, format, range, and exact-once checks passed"
+  pass static-contracts \
+    "capability, encoding, range validation, fallback, and lifecycle checks passed"
 else
   fail static-contracts "one or more static contracts failed"
 fi
@@ -183,6 +184,220 @@ else
   fail insert-replace-range "InsertReplaceEdit snippet popup did not open"
 fi
 
+if run_mx lem-yath-test-lsp-snippet-additional-setup &&
+   lem_wait_for "$session" 'ADDITIONAL-SNIPPET' 10 >/dev/null; then
+  lem_keys "$session" Enter
+  sleep 0.4
+  if record_state additional; then
+    assert_state additional-edits additional 'PRE$1-call(x, x)-POST' \
+      'active=yes' 'field=1' 'completion=no'
+  fi
+  lem_keys "$session" u
+  sleep 0.4
+  if record_state additional; then
+    assert_state additional-one-undo additional 'AAfoTAILZZ' \
+      'active=no' 'field=none' 'completion=no'
+  fi
+else
+  fail additional-edits "completion with before/after additional edits did not open"
+fi
+
+if run_mx lem-yath-test-lsp-snippet-utf16-setup &&
+   lem_wait_for "$session" 'UTF16-SNIPPET' 10 >/dev/null; then
+  lem_keys "$session" Enter
+  sleep 0.4
+  if record_state utf16; then
+    assert_state utf16-composite-ranges utf16 'PRE-utf(x)-POST' \
+      'active=yes' 'field=1' 'completion=no'
+  fi
+else
+  fail utf16-composite-ranges \
+    "UTF-16 completion around astral characters did not open"
+fi
+
+if run_mx lem-yath-test-lsp-snippet-frozen-setup &&
+   lem_wait_for "$session" 'FROZEN-SNIPPET' 10 >/dev/null &&
+   wait_report '^FROZEN local=yes$' 10; then
+  tmux_cmd send-keys -t "$session" -l x
+  sleep 0.4
+  if record_state frozen; then
+    assert_state frozen-local-filter-input frozen 'AAfoxTAILZZ' \
+      'active=no' 'completion=yes' 'local=yes' 'focus=FROZEN-SNIPPET'
+  fi
+  if (( $(report_count '^FROZEN provider-count=') == 1 )) &&
+     wait_report '^FROZEN provider-count=1$' 1; then
+    pass frozen-provider-reuse \
+      "typing locally reused the original converted completion batch"
+  else
+    fail frozen-provider-reuse \
+      "typing requested or presented a second provider batch"
+  fi
+  lem_keys "$session" Enter
+  sleep 0.4
+  if record_state frozen; then
+    assert_state frozen-snapshot-ranges frozen 'AAfrozen(value)-POST' \
+      'active=yes' 'field=1' 'completion=no' 'local=no'
+  fi
+else
+  fail frozen-snapshot-ranges \
+    "completion batch could not be frozen for local filtering"
+fi
+
+if run_mx lem-yath-test-lsp-snippet-out-of-range-additional-setup &&
+   lem_wait_for "$session" 'OUT-OF-RANGE-ADDITIONAL-SNIPPET' 10 >/dev/null; then
+  lem_keys "$session" Enter
+  sleep 0.4
+  if record_state out-of-range-additional; then
+    assert_state additional-out-of-range-skipped \
+      out-of-range-additional 'AAsafe(x)ZZ' \
+      'active=yes' 'field=1' 'completion=no'
+  fi
+else
+  fail additional-out-of-range-skipped \
+    "completion with an out-of-range additional edit did not open"
+fi
+
+if run_mx lem-yath-test-lsp-snippet-overlap-main-setup &&
+   lem_wait_for "$session" 'OVERLAP-MAIN-SNIPPET' 10 >/dev/null; then
+  lem_keys "$session" Enter
+  sleep 0.4
+  if record_state overlap-main; then
+    assert_state additional-main-overlap-skipped overlap-main 'AAmain(x)ZZ' \
+      'active=yes' 'field=1' 'completion=no'
+  fi
+else
+  fail additional-main-overlap-skipped \
+    "completion with a primary-overlapping additional edit did not open"
+fi
+
+if run_mx lem-yath-test-lsp-snippet-overlap-pair-setup &&
+   lem_wait_for "$session" 'OVERLAP-PAIR-SNIPPET' 10 >/dev/null; then
+  lem_keys "$session" Enter
+  sleep 0.4
+  if record_state overlap-pair; then
+    assert_state additional-pair-overlap-skipped overlap-pair 'AApair(x)ZZ' \
+      'active=yes' 'field=1' 'completion=no'
+  fi
+else
+  fail additional-pair-overlap-skipped \
+    "completion with mutually overlapping additional edits did not open"
+fi
+
+if run_mx lem-yath-test-lsp-snippet-adjacent-insertion-setup &&
+   lem_wait_for "$session" 'ADJACENT-INSERTION-SNIPPET' 10 >/dev/null; then
+  lem_keys "$session" Enter
+  sleep 0.4
+  if record_state adjacent-insertion; then
+    assert_state additional-primary-end-survives adjacent-insertion \
+      'AAboundary(x)-EDGEZZ' \
+      'active=yes' 'field=1' 'completion=no'
+  fi
+else
+  fail additional-primary-end-survives \
+    "completion with an adjacent zero-length insertion did not open"
+fi
+
+if run_mx lem-yath-test-lsp-snippet-read-only-preflight-setup &&
+   lem_wait_for "$session" 'READ-ONLY-PREFLIGHT-SNIPPET' 10 >/dev/null; then
+  lem_keys "$session" Enter
+  sleep 0.4
+  if record_state read-only-preflight; then
+    assert_state read-only-preflight-atomic read-only-preflight 'AAfoTAILZZ' \
+      'active=no' 'field=none' 'completion=no'
+  fi
+else
+  fail read-only-preflight-atomic \
+    "mixed writable/read-only completion did not open"
+fi
+
+if run_mx lem-yath-test-lsp-snippet-resolve-setup &&
+   lem_wait_for "$session" 'RESOLVE-SNIPPET' 10 >/dev/null; then
+  if (( $(report_count '^RESOLVE ') != 0 )); then
+    fail resolve-deferred "completion resolved before it was accepted"
+  else
+    pass resolve-deferred "candidate remained unresolved while merely focused"
+  fi
+  lem_keys "$session" Enter
+  sleep 0.4
+  if wait_report '^RESOLVE count=1 label=RESOLVE-SNIPPET token=acceptance$' 10 &&
+     record_state resolve; then
+    assert_state resolve-on-accept resolve 'RES-resolved(name)-OK' \
+      'active=yes' 'field=1' 'completion=no'
+    sleep 0.4
+    if (( $(report_count '^RESOLVE ') == 1 )); then
+      pass resolve-exactly-once "acceptance issued one completionItem/resolve request"
+    else
+      fail resolve-exactly-once \
+        "expected one resolve request, found $(report_count '^RESOLVE ')"
+    fi
+  else
+    fail resolve-on-accept "acceptance did not issue the expected resolve request"
+  fi
+else
+  fail resolve-on-accept "resolvable completion did not open"
+fi
+
+if run_mx lem-yath-test-lsp-snippet-resolve-error-setup &&
+   lem_wait_for "$session" 'RESOLVE-ERROR-SNIPPET' 10 >/dev/null; then
+  if (( $(report_count 'label=RESOLVE-ERROR-SNIPPET ') != 0 )); then
+    fail resolve-error-deferred "failing candidate resolved before acceptance"
+  else
+    pass resolve-error-deferred "failing candidate remained unresolved while focused"
+  fi
+  lem_keys "$session" Enter
+  sleep 0.4
+  if wait_report \
+       '^RESOLVE count=1 label=RESOLVE-ERROR-SNIPPET token=error$' 10 &&
+     record_state resolve-error; then
+    assert_state resolve-error-fallback resolve-error 'ORIG-once(value)ZZ' \
+      'active=yes' 'field=1' 'completion=no'
+    if (( $(report_count 'label=RESOLVE-ERROR-SNIPPET ') == 1 )); then
+      pass resolve-error-exactly-once \
+        "one failed resolve fell back to the original composite insertion"
+    else
+      fail resolve-error-exactly-once \
+        "expected one failed resolve request, found $(report_count 'label=RESOLVE-ERROR-SNIPPET ')"
+    fi
+  else
+    fail resolve-error-fallback \
+      "failed resolve did not fall back to the original completion"
+  fi
+else
+  fail resolve-error-fallback "resolve-error completion did not open"
+fi
+
+if run_mx lem-yath-test-lsp-snippet-resolve-conflict-setup &&
+   lem_wait_for "$session" 'RESOLVE-CONFLICT-SNIPPET' 10 >/dev/null; then
+  if (( $(report_count 'label=RESOLVE-CONFLICT-SNIPPET ') != 0 )); then
+    fail resolve-conflict-deferred \
+      "conflicting resolved item was requested before acceptance"
+  else
+    pass resolve-conflict-deferred \
+      "conflicting candidate remained unresolved while focused"
+  fi
+  lem_keys "$session" Enter
+  sleep 0.4
+  if wait_report \
+       '^RESOLVE count=1 label=RESOLVE-CONFLICT-SNIPPET token=conflict$' 10 &&
+     record_state resolve-conflict; then
+    assert_state resolve-conflict-stable-primary resolve-conflict \
+      'NEW-stable(name, name)-EXTRA' \
+      'active=yes' 'field=1' 'completion=no'
+    if (( $(report_count 'label=RESOLVE-CONFLICT-SNIPPET ') == 1 )); then
+      pass resolve-conflict-exactly-once \
+        "resolved extras were imported by one acceptance request"
+    else
+      fail resolve-conflict-exactly-once \
+        "expected one conflicting resolve request, found $(report_count 'label=RESOLVE-CONFLICT-SNIPPET ')"
+    fi
+  else
+    fail resolve-conflict-stable-primary \
+      "conflicting partial resolve did not preserve the original primary edit"
+  fi
+else
+  fail resolve-conflict-stable-primary "resolve-conflict completion did not open"
+fi
+
 if run_mx lem-yath-test-lsp-snippet-plain-setup &&
    lem_wait_for "$session" 'PLAIN-ITEM' 10 >/dev/null; then
   lem_keys "$session" Enter
@@ -193,6 +408,19 @@ if run_mx lem-yath-test-lsp-snippet-plain-setup &&
   fi
 else
   fail plain-format "plain-format completion did not open"
+fi
+
+if run_mx lem-yath-test-lsp-snippet-empty-fallback-setup &&
+   lem_wait_for "$session" 'labelFallback' 10 >/dev/null; then
+  lem_keys "$session" Enter
+  sleep 0.4
+  if record_state empty-fallback; then
+    assert_state empty-completion-string-fallback empty-fallback \
+      'labelFallback' 'active=no' 'completion=no'
+  fi
+else
+  fail empty-completion-string-fallback \
+    "empty filterText did not fall back to the completion label"
 fi
 
 if run_mx lem-yath-test-lsp-snippet-multiple-setup &&
@@ -240,7 +468,7 @@ else
 fi
 
 echo
-sed -n '1,260p' "$LEM_YATH_LSP_SNIPPET_TEST_REPORT" 2>/dev/null || true
+sed -n '1,480p' "$LEM_YATH_LSP_SNIPPET_TEST_REPORT" 2>/dev/null || true
 
 if [ "$failed" = 0 ]; then
   echo "LSP SNIPPET TEST PASSED"

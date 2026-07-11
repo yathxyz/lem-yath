@@ -62,8 +62,10 @@ of writing `.fasl` files into the source tree.
   `M-x` insertion prompt are supported for 2,243 definitions; the 144 executable
   or conditional definitions remain unavailable, and embedded Elisp is never evaluated
 - LSP `insertTextFormat=Snippet` candidates enter the same field-session UI
-  after `insertText`, `TextEdit`, or `InsertReplaceEdit` acceptance; malformed
-  payloads fail closed and server-supplied backquoted Lisp remains inert
+  after `insertText`, `TextEdit`, or `InsertReplaceEdit` acceptance; direct and
+  lazily resolved `additionalTextEdits` share the acceptance undo step,
+  UTF-16 ranges are decoded consistently, malformed payloads fail closed, and
+  server-supplied backquoted Lisp remains inert
 - Emacs-like daily navigation/editing: region-or-line `M-j`, a persistent
   300-entry `M-g r` MRU, filterable `C-x C-b`, and asynchronous persistent
   `M-s f` name search with property-backed Return and persistent q/revisit behavior
@@ -123,7 +125,7 @@ worktree to the dedicated cache directory on `ex44` and run the full gate there:
 
 Pass `check`, `compile`, `boot`, `completion`, `prompt-completion`,
 `completion-lifecycle`, `auto-completion`, `editing`, `daily-workflows`,
-`orderless-completion`, `snippets`, `electric-editing`, `interactive`,
+`orderless-completion`, `snippets`, `lsp-snippets`, `electric-editing`, `interactive`,
 `structural`, or `notes` to run only that gate.
 `LEM_YATH_TEST_HOST` and `LEM_YATH_REMOTE_ROOT` override the SSH host and remote
 cache directory.

@@ -18,6 +18,165 @@
   (delete-between-points (buffer-start-point (current-buffer))
                          (buffer-end-point (current-buffer))))
 
+(defun completion-lifecycle-with-function-overrides (bindings function)
+  (let ((saved
+          (mapcar (lambda (binding)
+                    (let ((name (first binding)))
+                      (list name
+                            (fboundp name)
+                            (when (fboundp name)
+                              (fdefinition name)))))
+                  bindings)))
+    (unwind-protect
+         (progn
+           (dolist (binding bindings)
+             (setf (fdefinition (first binding)) (second binding)))
+           (funcall function))
+      (dolist (entry saved)
+        (destructuring-bind (name was-bound definition) entry
+          (if was-bound
+              (setf (fdefinition name) definition)
+              (fmakunbound name)))))))
+
+(defun completion-lifecycle-malformed-lsp-result
+    (response &key simulate-conversion-error)
+  (let ((success-callback nil)
+        (provider-results '())
+        (context nil)
+        (pending-before nil)
+        (callback-safe nil)
+        (callback-error nil)
+        (closed-after nil))
+    (completion-lifecycle-with-function-overrides
+     (append
+      (list
+       (list 'lem-lsp-mode::buffer-workspace
+             (lambda (buffer &optional errorp)
+               (declare (ignore buffer errorp))
+               :completion-lifecycle-workspace))
+       (list 'lem-lsp-mode::provide-completion-p
+             (lambda (workspace)
+               (declare (ignore workspace))
+               t))
+       (list 'lem-lsp-mode::workspace-client
+             (lambda (workspace)
+               (declare (ignore workspace))
+               :completion-lifecycle-client))
+       (list 'lem-lsp-mode::make-text-document-position-arguments
+             (lambda (point &optional workspace)
+               (declare (ignore point workspace))
+               (list
+                :text-document
+                (make-instance 'lsp:text-document-identifier
+                               :uri "file:///completion-lifecycle")
+                :position
+                (make-instance 'lsp:position :line 0 :character 0))))
+       (list 'lem-lsp-mode::async-request
+             (lambda (client request params &key then error)
+               (declare (ignore client request params error))
+               (setf success-callback then))))
+      (when simulate-conversion-error
+        (list
+         (list 'lem-lsp-mode::convert-completion-response
+               (lambda (&rest arguments)
+                 (declare (ignore arguments))
+                 (error "simulated asynchronous completion conversion failure"))))))
+     (lambda ()
+       (unwind-protect
+            (progn
+              (completion-lifecycle-clear-buffer)
+              (setf context
+                    (lem/completion-mode:run-completion
+                     (lem/completion-mode:make-completion-spec
+                      (lambda (point then)
+                        (lem-lsp-mode::text-document/completion
+                         point
+                         (lambda (items)
+                           (push items provider-results)
+                           (funcall then items))))
+                      :async t)))
+              (setf pending-before
+                    (and success-callback
+                         (eq context
+                             lem/completion-mode::*completion-context*)
+                         (lem/completion-mode::context-request-pending-p
+                          context)))
+              (handler-case
+                  (progn
+                    (funcall success-callback response)
+                    (setf callback-safe t))
+                (error (condition)
+                  (setf callback-error condition)))
+              (setf closed-after
+                    (and
+                     (null lem/completion-mode::*completion-context*)
+                     (null
+                      (lem/completion-mode::context-spinner context))
+                     (not
+                      (lem/completion-mode::context-request-pending-p
+                       context)))))
+         (ignore-errors (lem/completion-mode:completion-end)))))
+    (list :pending-before pending-before
+          :callback-safe callback-safe
+          :callback-error callback-error
+          :provider-results (reverse provider-results)
+          :closed-after closed-after)))
+
+(defun completion-lifecycle-request-callback-result
+    (&key coerce-error success-error)
+  "Exercise the language-client response boundary without a live transport."
+  (let ((transport-callback nil)
+        (success-count 0)
+        (success-value nil)
+        (error-count 0)
+        (error-message nil)
+        (error-code :unset)
+        (escaped-error nil))
+    (cl-package-locks:without-package-locks
+      (completion-lifecycle-with-function-overrides
+       (list
+        (list 'lem-language-client/client:client-connection
+              (lambda (client)
+                (declare (ignore client))
+                :completion-lifecycle-connection))
+        (list 'lem-language-client/request::jsonrpc-call-async
+              (lambda (connection method params callback
+                       &optional transport-error-callback)
+                (declare
+                 (ignore connection method params transport-error-callback))
+                (setf transport-callback callback)
+                :completion-lifecycle-request))
+        (list 'lem-language-client/request::coerce-response
+              (lambda (request response)
+                (declare (ignore request response))
+                (if coerce-error
+                    (error "simulated response coercion failure")
+                    :decoded-response))))
+       (lambda ()
+         (lem-language-client/request:request-async
+          :completion-lifecycle-client
+          (make-instance 'lsp:completion-item/resolve)
+          nil
+          (lambda (value)
+            (incf success-count)
+            (setf success-value value)
+            (when success-error
+              (error "simulated success callback failure")))
+          (lambda (message code)
+            (incf error-count)
+            (setf error-message message
+                  error-code code)))
+         (handler-case
+             (funcall transport-callback :wire-response)
+           (error (condition)
+             (setf escaped-error condition))))))
+    (list :success-count success-count
+          :success-value success-value
+          :error-count error-count
+          :error-message error-message
+          :error-code error-code
+          :escaped-error escaped-error)))
+
 (defun completion-lifecycle-item (name label insert-text &optional filter-text)
   (lem/completion-mode:make-completion-item
    :label label
@@ -263,6 +422,74 @@
               (switch-to-buffer origin)
               (delete-buffer other))
 
+            (let* ((origin (current-buffer))
+                   (other
+                     (make-buffer
+                      "*completion-lifecycle-accept-other*"))
+                   (accept-count 0)
+                   (item
+                     (lem/completion-mode:make-completion-item
+                      :label "WRONG-BUFFER-ACCEPT"
+                      :filter-text "origin"
+                      :insert-text "must-not-insert"
+                      :accept-action (lambda () (incf accept-count))))
+                   (context nil)
+                   (selection-callback nil)
+                   (safe nil)
+                   (accept-error nil)
+                   (origin-preserved nil)
+                   (other-preserved nil)
+                   (closed nil))
+              (unwind-protect
+                   (progn
+                     (completion-lifecycle-clear-buffer)
+                     (insert-string (current-point) "origin")
+                     (setf context
+                           (lem/completion-mode:run-completion
+                            (lambda (point)
+                              (declare (ignore point))
+                              (list item))
+                            :automatic t))
+                     (alexandria:when-let
+                         ((popup
+                            (lem/completion-mode::context-popup-menu
+                             context)))
+                       (setf selection-callback
+                             (lem/popup-menu::popup-menu-action-callback
+                              popup)))
+                     (switch-to-buffer other)
+                     (completion-lifecycle-clear-buffer)
+                     (insert-string (current-point) "other")
+                     (setf safe
+                           (handler-case
+                               (progn
+                                 (when selection-callback
+                                   (funcall selection-callback item))
+                                 t)
+                             (error (condition)
+                               (setf accept-error condition)
+                               nil))
+                           other-preserved (buffer-is "other")
+                           closed
+                           (null lem/completion-mode::*completion-context*))
+                     (with-current-buffer origin
+                       (setf origin-preserved (buffer-is "origin"))))
+                (ignore-errors (lem/completion-mode:completion-end))
+                (ignore-errors (switch-to-buffer origin))
+                (ignore-errors (completion-lifecycle-clear-buffer))
+                (ignore-errors (delete-buffer other)))
+              (completion-lifecycle-report
+               "SWITCHED-ACCEPT callback=~s safe=~s closed=~s origin=~s other=~s count=~d error=~a"
+               (not (null selection-callback)) safe closed origin-preserved
+               other-preserved accept-count accept-error)
+              (check (and selection-callback
+                          safe
+                          closed
+                          origin-preserved
+                          other-preserved
+                          (zerop accept-count))
+                     "buffer-switch-cancels-acceptance-without-mutation"))
+
             (let* ((callbacks '())
                    (spec (lem/completion-mode:make-completion-spec
                           (lambda (point then)
@@ -350,7 +577,62 @@
                               "filter-needle"
                               (list label-only insert-item text-edit-item)
                               :key #'lem/completion-mode:completion-item-filter-text))
-                     "lsp-filtering-uses-filter-text")))
+                     "lsp-filtering-uses-filter-text"))
+
+            (let ((malformed
+                    (make-instance 'lsp:completion-list
+                                   :is-incomplete nil
+                                   :items #())))
+              (slot-makunbound malformed 'lsp::items)
+              (let ((result
+                      (completion-lifecycle-malformed-lsp-result
+                       malformed)))
+                (check
+                 (and (getf result :pending-before)
+                      (getf result :callback-safe)
+                      (null (getf result :callback-error))
+                      (equal '(nil) (getf result :provider-results))
+                      (getf result :closed-after))
+                 "malformed-typed-lsp-response-closes-pending-context")))
+
+            (let ((result
+                    (completion-lifecycle-malformed-lsp-result
+                     (make-instance 'lsp:completion-list
+                                    :is-incomplete nil
+                                    :items #())
+                     :simulate-conversion-error t)))
+              (check
+               (and (getf result :pending-before)
+                    (getf result :callback-safe)
+                    (null (getf result :callback-error))
+                    (equal '(nil) (getf result :provider-results))
+                    (getf result :closed-after))
+               "async-lsp-conversion-error-closes-pending-context"))
+
+            (let ((result
+                    (completion-lifecycle-request-callback-result
+                     :coerce-error t)))
+              (check
+               (and (zerop (getf result :success-count))
+                    (= 1 (getf result :error-count))
+                    (null (getf result :error-code))
+                    (search "simulated response coercion failure"
+                            (getf result :error-message))
+                    (null (getf result :escaped-error)))
+               "response-coercion-error-invokes-error-callback-once"))
+
+            (let ((result
+                    (completion-lifecycle-request-callback-result
+                     :success-error t)))
+              (check
+               (and (= 1 (getf result :success-count))
+                    (eq :decoded-response (getf result :success-value))
+                    (zerop (getf result :error-count))
+                    (typep (getf result :escaped-error) 'error)
+                    (search "simulated success callback failure"
+                            (princ-to-string
+                             (getf result :escaped-error))))
+               "success-callback-error-does-not-invoke-error-callback")))
         (error (condition)
           (completion-lifecycle-report "FAIL STATIC unhandled-error=~a" condition)
           (incf failures)))

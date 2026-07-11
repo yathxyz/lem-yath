@@ -296,9 +296,30 @@ The LSP adapter consequently honors plain `filterText`, `insertText`,
 replacement ranges are retained with tracked start/end points and per-item
 offsets while the user continues editing. When lem-yath's data-only handler is
 installed, the client advertises snippet support and routes
-`insertTextFormat=Snippet` through that final-insertion seam. Completion resolve,
-additional edits, CompletionList item defaults, `insertTextMode`, and completion
-commands remain separate gaps.
+`insertTextFormat=Snippet` through that final-insertion seam. It also advertises
+`InsertReplaceEdit` support and the one lazy property it implements,
+`additionalTextEdits`. Acceptance resolves that property synchronously with a
+two-second bound, retains every original insertion field, and falls back to the
+original item if resolve fails or returns a partial item. Direct and resolved
+additional edits are precomputed against one buffer snapshot, kept plain even
+when they contain snippet markers, checked for invalid or overlapping ranges,
+and applied with the primary insertion in one command-level undo unit. A bad
+additional-edit batch is skipped while the primary completion still succeeds.
+All affected ranges are checked for read-only protection before the first
+mutation. Timed-out resolve requests remove their callback, notify the server,
+and rely on the pinned JSON-RPC patch to discard any late response rather than
+retaining it indefinitely.
+
+The same patch now uses the originating workspace's position encoding at every
+Lem LSP document boundary: incremental changes, requests, workspace and
+formatting edits, diagnostics, definitions/references, highlights, document
+symbols, and completion. The client advertises UTF-16, rejects offsets that
+split a surrogate pair, and retains tested UTF-8/UTF-32 conversion helpers.
+Generic edit batches are validated before mutation and applied in descending
+order, so adjacent simultaneous edits cannot consume one another.
+Resolved documentation/detail, CompletionList item defaults, `insertTextMode`,
+completion commands, and rollback after an arbitrary throwing buffer hook remain
+separate gaps; Lem has no native change-group primitive for that last case.
 
 ### Automatic in-buffer completion — `lem-yath/src/auto-completion.lisp` (verified)
 
@@ -407,14 +428,30 @@ TextMate variables or choices. The intentional security difference is that
 paired backquotes from a language server are inserted literally; they are never
 evaluated as Emacs Lisp.
 
+Snippet rendering finishes before any primary or additional buffer mutation.
+Acceptance-time resolve imports only `additionalTextEdits`, because LSP forbids
+changing the original sorting, filtering, and insertion properties during
+resolve. Additional edit text is always literal, ranges before and after a
+length-changing primary edit remain stable, and invalid or overlapping batches
+are ignored as a unit. Resolve failure likewise leaves the original primary
+completion usable.
+
 This is not full LSP TextMate grammar support. Standard variables, choices,
-variable transforms, strict LSP escaping, `insertTextMode`, resolved completion
-items, additional edits, and trusted completion commands remain explicit gaps.
-Malformed payloads are parsed before mutation and leave the completion prefix
-unchanged. `nix run .#lsp-snippet-test` verifies `insertText`, `TextEdit`, and
-the `InsertReplaceEdit.replace` path, literal plain-format markers, mirrors and
-field exit, Tab/Return acceptance, multiple-candidate non-insertion, malformed
-recovery, dynamic capability advertising, exact-once callbacks, and inert
+variable transforms, strict LSP escaping, `insertTextMode`, resolved
+documentation/detail, CompletionList item defaults, trusted completion commands,
+and rollback after an arbitrary mutation-hook failure remain explicit gaps.
+Malformed payloads are parsed before mutation; an invalid item does not discard
+valid siblings, and a rejected accepted item leaves the completion prefix
+unchanged.
+`nix run .#lsp-snippet-test` verifies `insertText`, `TextEdit`, the
+`InsertReplaceEdit.replace` path, direct and resolved additional edits on both
+sides of the primary range, literal `$1` additional text, one-step undo,
+invalid/overlap rejection, deferred exact-once resolve, original-primary
+preservation, UTF-8/16/32 conversion and split-unit rejection, originating
+workspace use, adjacent generic edits, diagnostic/navigation ranges, literal
+plain-format markers, mirrors and field exit, Tab/Return acceptance,
+multiple-candidate non-insertion, malformed recovery, bounded capability
+advertising, exact-once callbacks, JSON-RPC timeout cleanup, and inert
 server-supplied backquotes through the real ncurses editor.
 
 Roots retain private-before-community precedence. Tables combine natural
