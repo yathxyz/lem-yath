@@ -66,6 +66,9 @@ case "$test_name" in
   lsp-project)
     remote_command='nix run path:$PWD#lsp-project-test'
     ;;
+  real-lsp)
+    remote_command='nix run path:$PWD#real-lsp-test'
+    ;;
   project-navigation)
     remote_command='nix run path:$PWD#project-navigation-test'
     ;;
@@ -103,7 +106,7 @@ case "$test_name" in
     remote_command='nix run path:$PWD#snipe-test'
     ;;
   *)
-    echo "Usage: $0 [all|check|compile|boot|completion|completion-lifecycle|auto-completion|actions|llm-keybinding|orderless-completion|snippets|lsp-snippets|lsp-project|project-navigation|prompt-completion|daily-workflows|electric-editing|ui-parity|cursor-state|snipe|interactive|structural|notes|editing]" >&2
+    echo "Usage: $0 [all|check|compile|boot|completion|completion-lifecycle|auto-completion|actions|llm-keybinding|orderless-completion|snippets|lsp-snippets|lsp-project|real-lsp|project-navigation|prompt-completion|daily-workflows|electric-editing|ui-parity|cursor-state|snipe|interactive|structural|notes|editing]" >&2
     exit 2
     ;;
 esac

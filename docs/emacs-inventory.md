@@ -237,10 +237,10 @@ Diagnostics policy (`yath/eglot-managed-diagnostics`): when an Eglot-managed buf
 
 | Language | Major mode | LSP server (binary) | Formatter (apheleia) | Linter | Debug | Notes |
 |---|---|---|---|---|---|---|
-| **Nix** | `nix-mode` (`.nix`) | **`nixd`** (custom workspace config: nixpkgs expr from flake, flake option sources for `~/proj/nix/computer` -> `nixosConfigurations.nova.options` + `homeConfigurations.yanni.options`, formatter = nixfmt-rfc-style/nixfmt/alejandra) | nixd `formatting.command` | — | — | extensive custom `yath/nixd-*` setup |
+| **Nix** | `nix-mode` (`.nix`) | **`nixd`** (custom workspace config: nixpkgs expr from flake, flake option sources for `~/proj/nix/computer` -> `nixosConfigurations.nova.options` + `homeConfigurations.yanni.options`; formatter setting is conditional on nixfmt-rfc-style/nixfmt/alejandra being externally available) | conditional nixd `formatting.command` | — | — | extensive custom `yath/nixd-*` setup; the declared Emacs daemon PATH contains no Nix formatter candidate |
 | **Rust** | `rust-ts-mode` (`.rs`), also `rust-mode` hooked | **`rust-analyzer`** | `rustfmt` | `flycheck-rust` (`flycheck-rust-setup`) | `lldb-dap` | `cargo`, `rustc`, `clippy`/`cargo-clippy` on PATH |
 | **Go** | `go-mode` / `go-ts-mode` (eglot via hook) | **`gopls`** | `gofmt`/`goimports` (apheleia; `goimports` on PATH) | Flymake (eglot) | `dlv`/`dlv-dap` (delve) | `go-mode` declared, no explicit use-package |
-| **Python** | python-ts/python-mode | **`pyright`** (`pyright-langserver`) | `ruff`/`black` (apheleia) | `ruff`, `mypy` | `debugpy` | `emacsDevPython` bundles debugpy+pytest |
+| **Python** | python-ts/python-mode | **`pyright`** (`pyright-langserver`) when Eglot is started manually; no Python Eglot hook is configured | `ruff`/`black` (apheleia) | `ruff`, `mypy` | `debugpy` | `emacsDevPython` bundles debugpy+pytest |
 | **Markdown** | `markdown-ts-mode` (`.md`), also `markdown-mode` | **`harper-ls --stdio`** (grammar/prose) | — | harper | — | `yath/eglot-ensure` on `markdown-mode` |
 | **Java** | `java-mode`/`java-ts-mode` | **Eclipse JDT** via `eglot-java` (cache `~/.cache/eglot-java-eclipse-jdt-cache`) | Google Java style XML (remote URL) | Flymake | — | `eglot-java-mode` |
 | **C# / .NET** | `csharp-mode`/`csharp-ts-mode` | eglot-ensure (server not pinned in elisp; relies on eglot default e.g. omnisharp/csharp-ls if present) | — | Flymake | — | hooked only |
@@ -253,7 +253,7 @@ Diagnostics policy (`yath/eglot-managed-diagnostics`): when an Eglot-managed buf
 | **Typst** | `typst-ts-mode` | declared in nix, **no explicit config** | — | — | — | gap to confirm |
 | **YAML / Meson / nginx / Just** | `yaml-mode`, `meson-mode`, `nginx-mode`, `just-mode` | declared in nix, **no explicit config (defaults)** | — | — | — | |
 
-**LSP server binaries required on PATH** (from `emacsRuntimeRequiredExecutables` + `emacsSharedDevTools`): `nixd`, `harper-ls` (pkg `harper`), `gopls`, `rust-analyzer`, `pyright-langserver` (pkg `pyright`), plus `emacs-lsp-booster`. Tooling binaries: `go`, `goimports` (gotools), `dlv`/`dlv-dap` (delve), `cargo`, `rustc`, `rustfmt`, `cargo-clippy` (clippy), `lldb-dap` (lldb), `python`, `debugpy`, `debugpy-adapter`, `pytest`, `ruff`, `black`, `mypy`, `clang-tools`, `gcc`, `gdb`, `gnumake`, `pkg-config`.
+**LSP server binaries required on PATH** (from `emacsRuntimeRequiredExecutables` + `emacsSharedDevTools`): `nixd`, `harper-ls` (pkg `harper`), `gopls`, `terraform-ls`, `rust-analyzer`, `pyright-langserver` (pkg `pyright`), plus `emacs-lsp-booster`. Tooling binaries: `go`, `goimports` (gotools), `dlv`/`dlv-dap` (delve), `cargo`, `rustc`, `rustfmt`, `cargo-clippy` (clippy), `lldb-dap` (lldb), `python`, `debugpy`, `debugpy-adapter`, `pytest`, `ruff`, `black`, `mypy`, `clang-tools`, `gcc`, `gdb`, `gnumake`, `pkg-config`. The declared daemon PATH does not include nixfmt-rfc-style, nixfmt, or alejandra, so the configured nixd formatter field is normally omitted.
 
 Helpers: `lem-yath/nixpkgs-build-outpath` (build a nixpkgs attr, return store path); `eglot-java` Google-style formatting init opts.
 
@@ -427,7 +427,7 @@ Core: **gptel** (deferred), heavily customized in `init-ai.el` (~1400 lines).
 - **Fonts/UI basics**: JetBrainsMono, relative line numbers, rainbow-delimiters, which-key-equivalent.
 
 ### Tier 2 — important IDE features
-- **LSP via Eglot** per language (nixd, rust-analyzer, gopls, pyright, harper-ls, eclipse-jdt) — Lem has `lem-lsp-mode`; replicate server list and the nixd custom workspace config + Go/Rust/Python/Nix coverage.
+- **LSP via Eglot** per language (nixd, rust-analyzer, gopls, terraform-ls, manually selected pyright, harper-ls, eclipse-jdt) — Lem has `lem-lsp-mode`; replicate server list and the nixd custom workspace config + Go/Rust/Python/Nix coverage.
 - **apheleia format-on-save** (`SPC b f`) and **flycheck/flymake** diagnostics policy.
 - **tree-sitter** highlighting (`treesit-auto`) — Lem has its own highlighting; map grammar coverage.
 - **Git**: magit (`SPC g g/G`) + git-gutter + git-timemachine; smart jj/git dispatch; majutsu (jj) if a Lem jj porcelain exists (likely a gap).

@@ -33,6 +33,7 @@
               ./patches/lem-transient-delay-race.patch
               ./patches/lem-transient-bottom-restore.patch
               ./patches/lem-project-lsp-workspaces.patch
+              ./patches/lem-lsp-pipe-stdio.patch
               ./patches/lem-safe-revert.patch
               ./patches/lem-prompt-history-limit.patch
               ./patches/lem-undo-tree.patch
@@ -89,6 +90,7 @@
           coreRuntimeInputs =
             with pkgs;
             [
+              bash
               black
               clang-tools
               coreutils
@@ -108,18 +110,31 @@
             ]
             ++ lib.optionals pkgs.stdenv.isLinux [ xdg-utils ];
 
+          lspRuntimeInputs = with pkgs; [
+            gopls
+            harper
+            nixd
+            pyright
+            rust-analyzer
+            terraform-ls
+          ];
+
+          rustRuntimeInputs = with pkgs; [
+            cargo
+            clippy
+            rustc
+          ];
+
+          defaultRuntimeInputs = coreRuntimeInputs ++ lspRuntimeInputs ++ rustRuntimeInputs;
+
           extendedRuntimeInputs =
             with pkgs;
-            coreRuntimeInputs
+            defaultRuntimeInputs
             ++ [
-              harper
               isync
               jujutsu
-              nixd
               notmuch
               postgresql
-              pyright
-              rust-analyzer
             ];
 
           testInputs =
@@ -139,7 +154,7 @@
 
           lemYath = pkgs.writeShellApplication {
             name = "lem";
-            runtimeInputs = coreRuntimeInputs;
+            runtimeInputs = defaultRuntimeInputs;
             text = ''
               cache_home="''${XDG_CACHE_HOME:-''${HOME:-/tmp}/.cache}"
               source_key="$(printf '%s' '${self}/lem-yath' | sha256sum | cut -c1-16)"
@@ -148,9 +163,46 @@
 
               export ASDF_OUTPUT_TRANSLATIONS="${self}/lem-yath:$asdf_cache:/nix/store:/nix/store''${ASDF_OUTPUT_TRANSLATIONS:+:$ASDF_OUTPUT_TRANSLATIONS}"
               export LEM_YATH_SNIPPET_DIRS="${self}/lem-yath/snippets:${yasnippet-snippets}/snippets"
-              exec ${lemNcurses}/bin/lem -q --eval '(load #P"${self}/lem-yath/init.lisp")' "$@"
+
+              # Lem stores only the final --eval argument.  Fold caller forms
+              # into our startup form so an extra --eval cannot skip the
+              # configured editor, and preserve their command-line order.
+              startup_form='(load #P"${self}/lem-yath/init.lisp")'
+              lem_args=()
+              while (( "$#" )); do
+                case "$1" in
+                  -e|--eval)
+                    if (( "$#" < 2 )); then
+                      echo "lem: $1 requires a Common Lisp form" >&2
+                      exit 2
+                    fi
+                    startup_form="(progn $startup_form $2)"
+                    shift 2
+                    ;;
+                  *)
+                    lem_args+=("$1")
+                    shift
+                    ;;
+                esac
+              done
+
+              exec ${lemNcurses}/bin/lem -q --eval "$startup_form" "''${lem_args[@]}"
             '';
           };
+
+          realLspEnvironment = ''
+            export LEM_YATH_REAL_LSP_RUST_ANALYZER=${lib.getExe pkgs.rust-analyzer}
+            export LEM_YATH_REAL_LSP_PYRIGHT=${lib.getExe' pkgs.pyright "pyright-langserver"}
+            export LEM_YATH_REAL_LSP_HARPER=${lib.getExe pkgs.harper}
+            export LEM_YATH_REAL_LSP_NIXD=${lib.getExe pkgs.nixd}
+            export LEM_YATH_REAL_LSP_NIXPKGS_SOURCE=${nixpkgs}
+            export LEM_YATH_REAL_LSP_GOPLS=${lib.getExe pkgs.gopls}
+            export LEM_YATH_REAL_LSP_TERRAFORM_LS=${lib.getExe pkgs.terraform-ls}
+            export LEM_YATH_REAL_LSP_CARGO=${lib.getExe pkgs.cargo}
+            export LEM_YATH_REAL_LSP_RUSTC=${lib.getExe' pkgs.rustc "rustc"}
+            export LEM_YATH_REAL_LSP_CARGO_CLIPPY=${lib.getExe' pkgs.clippy "cargo-clippy"}
+            export NIX_PATH=nixpkgs=${nixpkgs}
+          '';
 
           mkTestAppWithLem =
             lemPackage: name: script:
@@ -171,6 +223,25 @@
             mkApp "${runner}/bin/${name}" "Run ${script} with flake-pinned Lem";
 
           mkTestApp = mkTestAppWithLem lemNcurses;
+
+          mkRealLspTestApp =
+            name: script:
+            let
+              runner = pkgs.writeShellApplication {
+                inherit name;
+                runtimeInputs = [ lemYath ] ++ testInputs;
+                text = ''
+                  export TERM=''${TERM:-xterm-256color}
+                  export LEM_BIN=${lemYath}/bin/lem
+                  export LEM_YATH_LEM_SOURCE=${lemPatchedSrc}
+                  export LEM_YATH_SOURCE=${self}/lem-yath
+                  export LEM_YATH_SNIPPET_DIRS="${self}/lem-yath/snippets:${yasnippet-snippets}/snippets"
+                  ${realLspEnvironment}
+                  exec bash ${self}/scripts/${script} "$@"
+                '';
+              };
+            in
+            mkApp "${runner}/bin/${name}" "Run ${script} against the installed Lem package";
 
           mkCheckWithLem =
             lemPackage: name: script:
@@ -197,6 +268,32 @@
               '';
 
           mkCheck = mkCheckWithLem lemNcurses;
+
+          mkRealLspCheck =
+            name: script:
+            pkgs.runCommand "lem-yath-${name}-check"
+              {
+                nativeBuildInputs = [ lemYath ] ++ testInputs;
+              }
+              ''
+                export TERM=xterm-256color
+                export HOME=$TMPDIR/home
+                export XDG_CACHE_HOME=$TMPDIR/cache
+                export LEM_BIN=${lemYath}/bin/lem
+                export LEM_YATH_CHECK_ID=nix-${name}
+                export LEM_YATH_LEM_SOURCE=${lemPatchedSrc}
+                export LEM_YATH_SOURCE=${self}/lem-yath
+                export LEM_YATH_SNIPPET_DIRS="$PWD/source/lem-yath/snippets:${yasnippet-snippets}/snippets"
+                ${realLspEnvironment}
+
+                mkdir -p "$HOME" "$XDG_CACHE_HOME"
+                cp -R ${self} source
+                chmod -R u+w source
+                cd source
+
+                bash ./scripts/${script}
+                touch "$out"
+              '';
         in
         rec {
           packages = {
@@ -234,6 +331,7 @@
             cursor-state-test = mkTestApp "lem-yath-cursor-state-test" "cursor-state-test.sh";
             snipe-test = mkTestApp "lem-yath-snipe-test" "snipe-test.sh";
             lsp-project-test = mkTestAppWithLem lemLspTest "lem-yath-lsp-project-test" "lsp-project-test.sh";
+            real-lsp-test = mkRealLspTestApp "lem-yath-real-lsp-test" "real-lsp-test.sh";
           };
 
           checks = {
@@ -261,6 +359,7 @@
             cursor-state = mkCheck "cursor-state" "cursor-state-test.sh";
             snipe = mkCheck "snipe" "snipe-test.sh";
             lsp-project = mkCheckWithLem lemLspTest "lsp-project" "lsp-project-test.sh";
+            real-lsp = mkRealLspCheck "real-lsp" "real-lsp-test.sh";
             parity-ledger =
               pkgs.runCommand "lem-yath-parity-ledger-check" { nativeBuildInputs = [ pkgs.python3 ]; }
                 ''

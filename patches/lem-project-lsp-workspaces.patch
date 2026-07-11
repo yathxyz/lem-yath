@@ -112,6 +112,15 @@
 +  (async-process:process-alive-p (stdio-client-process client)))
 --- a/extensions/lsp-mode/lsp-mode.lisp
 +++ b/extensions/lsp-mode/lsp-mode.lisp
+@@ -37,7 +37,7 @@
+ (defmacro without-lsp-mode (() &body body)
+   "This macro prevents enabling lsp-mode within the body.
+ Use this when lsp-mode has side effects that you want to avoid."
+-  `(let ((*disable* T))
++  `(let ((*disable* (current-buffer)))
+      ,@body))
+
+ ;;;
 @@ -73 +73 @@
 -(defmethod run-server-using-mode ((mode (eql :tcp)) spec)
 +(defmethod run-server-using-mode ((mode (eql :tcp)) spec &key directory)
@@ -1062,9 +1071,10 @@
 +      (buffers
 +       (with-current-buffer (first buffers)
 +         (lsp-mode t))))))
-@@ -2444 +3023,2 @@
+@@ -2444 +3023,3 @@
 -  (unless *disable*
-+  (unless (or *disable*
++  (unless (or (eq *disable* t)
++              (eq *disable* (current-buffer))
 +              (not (lsp-buffer-eligible-p (current-buffer))))
 --- a/extensions/lisp-mode/lisp-mode.lisp
 +++ b/extensions/lisp-mode/lisp-mode.lisp

@@ -110,7 +110,9 @@ of writing `.fasl` files into the source tree.
   and `SPC p s` workspace-symbol
   search with annotated narrowing; optional Lisp-v2 connections remain globally
   selected when loaded
-- LSP specs: rust-analyzer, pyright, harper-ls, and flake-aware nixd
+- installed LSP stack for Rust, Python, Markdown, Nix, Go, and Terraform:
+  rust-analyzer, pyright, harper-ls, flake-aware nixd, gopls, and terraform-ls,
+  plus the Rust toolchain required by rust-analyzer
 - legit (magit) + jj dispatch on `SPC g g`, git-gutter, git-timemachine
 - roam-lite notes, root-level roam dailies, journal, and i/t/r capture over
   `$WORKDIR`, plus public TODO capture over `$PUBLIC_ORG_DIR`
@@ -127,7 +129,8 @@ Use `docs/parity-ledger.tsv` for behavior-level planning: its dispositions are
 
 `nix flake check` runs the package, compile, boot, prompt and in-buffer
 completion, completion-lifecycle, automatic-completion, Embark-style actions,
-editing, formatting, Orderless completion, snippets, LSP snippets, daily-workflows,
+editing, formatting, Orderless completion, snippets, LSP snippets, real installed
+language-server handshakes, daily-workflows,
 electric-editing, UI parity, project navigation, persistence, retained undo/Vundo,
 project-scoped LSP lifecycle, LLM key dispatch, cursor/state parity, evil-snipe parity, notes, and parity-ledger checks. The ledger can
 also be validated directly, and the
@@ -150,6 +153,7 @@ nix run .#orderless-completion-test
 nix run .#snippet-test
 nix run .#lsp-snippet-test
 nix run .#lsp-project-test
+nix run .#real-lsp-test
 nix run .#project-navigation-test
 nix run .#persistence-test
 nix run .#vundo-test
@@ -176,7 +180,7 @@ worktree to the dedicated cache directory on `ex44` and run the full gate there:
 Pass `check`, `compile`, `boot`, `completion`, `prompt-completion`,
 `completion-lifecycle`, `auto-completion`, `actions`, `editing`,
 `daily-workflows`, `llm-keybinding`, `orderless-completion`, `snippets`, `lsp-snippets`,
-`lsp-project`, `project-navigation`, `persistence`, `vundo`, `electric-editing`, `ui-parity`, `cursor-state`, `snipe`, `interactive`, `structural`, or
+`lsp-project`, `real-lsp`, `project-navigation`, `persistence`, `vundo`, `electric-editing`, `ui-parity`, `cursor-state`, `snipe`, `interactive`, `structural`, or
 `notes` to run only that gate.
 `LEM_YATH_TEST_HOST` and `LEM_YATH_REMOTE_ROOT` override the SSH host and remote
 cache directory.
