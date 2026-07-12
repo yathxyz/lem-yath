@@ -20,6 +20,7 @@ configuration does not override it.
 | Insert controls | `C-u` deletes back to indentation, `M-Backspace` deletes a word, `C-n/C-p` retain ordinary line movement, `C-c i` sends text through point to the LLM; the same chord sends a Vi selection from VISUAL | interactive checks 16 and 20 plus `llm-keybinding-test.sh` |
 | Cursor and Emacs state | `NORMAL` is a red box, `INSERT` a green bar, visual a default-color box, and replace a default-color underline; `C-z` enters a cyan, buffer-local `EMACS` state with ordinary Emacs movement and mark/copy semantics, then returns to the prior state | `cursor-state-test.sh` |
 | Editing leader commands | Org ID creation, auto fill, visual-line wrapping, paragraph filling, variable help | interactive checks 17–19 plus exact leader-map check |
+| Org / Evil-Org subset | `.org` selects a native prose mode with local/global folding, hidden-row-aware `j/k`, `gh/gl/gk/gj/gH` heading motion, Org-aware `o/O`, `M-h/l/k/j` subtree transforms, TODO/checklist/link/table chords, and exact `" [...]"` ellipses. Normal `t/T`, `Return`, and `M-o` retain Evil-Snipe/Evil/window ownership. | `org-test.sh` |
 | Region expansion | Repeated `SPC v` expands through word, nearest delimiter, line, and paragraph | interactive check 21 |
 | Lispy/Lispyville structural editing | Paredit smart insertion plus safe Vim operators, `W/E/B` atom motions, `>/<` slurp/barf, all configured additional and additional-insert transforms, comments/strings, and Lisp-family delimiters | `structural-test.sh` |
 | Retained undo / Vundo | Ordinary `u`/`C-r` retain abandoned branches; normal and visual `SPC u` open a Unicode three-row tree with live preview, arrows and `f/b/n/p`, `a/w/e`, cross-branch `l/r`, `m/u/d`, `C-x C-s`, rollback, and accept | `vundo-test.sh` |
@@ -49,7 +50,7 @@ These bindings are intentionally not mapped to unrelated commands:
 | Full expreg syntax awareness | Incremental expansion is present, but it uses delimiters and text boundaries rather than a parser-backed syntax tree. |
 | Full evil-surround grammar | Common delimiters and padding are present; tag prompts and syntax-aware balanced matching are not. |
 | Workwin cursor geometry | The active terminal profile colors match, but ncurses cannot reproduce the optional graphical profile's two-pixel bar width or hollow visual cursor. |
-| evil-org / all evil-collection integrations | Lem has no Org major mode and does not contain integrations for every Emacs mode. Org file workflows and heading IDs still operate on the shared files. |
+| Remaining Evil-Org / evil-collection integrations | The native Org subset does not yet provide Evil-Org heading/element text objects, Org-aware `0/$`, `I/A`, or structural `d/x/X`, the full list/table meta theme, source editing, timestamp/schedule/deadline workflows, or integrations for every other Emacs mode. |
 
 These are implementation gaps, not untested claims. Closing one requires adding
 the missing editor capability or a faithful equivalent, followed by a focused

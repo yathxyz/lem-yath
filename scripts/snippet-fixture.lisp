@@ -153,8 +153,8 @@
    label 'lem/buffer/fundamental-mode:fundamental-mode text))
 
 (define-command lem-yath-test-snippet-private-setup () ()
-  ;; The buffer keeps its real .org pathname.  Lem has no Org major mode, so
-  ;; the implementation's extension alias must select the org-mode snippets.
+  ;; Deliberately force Fundamental mode while retaining the real .org path so
+  ;; this case continues to verify the filename fallback to org-mode snippets.
   (unless *snippet-test-org-buffer*
     (setf *snippet-test-org-buffer* (current-buffer)))
   (switch-to-buffer *snippet-test-org-buffer*)

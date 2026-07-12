@@ -28,6 +28,12 @@
                (:file "formatting")
                (:file "git")
                (:file "project")
+               (:module "org"
+                :serial t
+                :components ((:file "parser")
+                             (:file "folding")
+                             (:file "mode")
+                             (:file "commands")))
                (:file "notes")
                (:file "find-name")
                (:file "tools")

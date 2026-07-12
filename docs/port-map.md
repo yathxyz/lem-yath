@@ -18,7 +18,7 @@ Status legend:
 | evil-surround | ported/partial | standard `ys`/`ds`/`cs`, visual `S`, common delimiter padding; tag prompts and syntax-aware balancing remain gaps (`src/vi.lisp`) |
 | evil-snipe | ported | configured 2.1.3 behavior: visible `s/S/f/F/t/T`, whole-visible `;`/`,` and transient pair repeats, exact inclusive/exclusive operators, counts/dot/jumplist behavior, leading-whitespace skipping, and incremental/final faces (`src/vi.lisp`, `scripts/snipe-test.sh`) |
 | evil-nerd-commenter | ported | `g c` operator (`src/vi.lisp`) |
-| evil-org | partial | no Org major mode; shared-file workflows and `SPC m I` heading IDs work in plain buffers |
+| evil-org | ported/partial | native `.org` buffers provide mode-local `Tab`/`Shift-Tab` visibility cycling, visible-line `j/k`, `gh/gl/gk/gj/gH` heading navigation, Org-aware `o/O`, subtree `M-h/l/k/j`, TODO/checklist/link/table commands, and the configured exact TODO sequence. Normal `t/T`, `Return`, and `M-o` deliberately retain the active Evil-Snipe/Evil/window bindings. Evil-Org text objects and the broader operator/endpoint/list/table theme semantics remain gaps (`src/org/`, `scripts/org-test.sh`). |
 | general (SPC leader) | ported/partial | normal and visual states share one described Space-leader keymap with exact binding verification and delayed continuation help; remaining capability gaps are listed in `docs/vi-parity.md` |
 | vertico | ported/lem-builtin | prompt list opens immediately, shows up to 20 rows, and cycles; focused TUI coverage in `scripts/completion-test.sh` |
 | orderless | ported/partial | ordinary-buffer completion has escaped-space components, whole-query smart case, any-order literal/regexp filtering, and `~ = ^ ! ,` affix dispatch through `M-Space`; CL-PPCRE differs from Emacs regexp syntax, and `%` char-fold plus `&` annotation dispatch remain gaps (`src/orderless.lisp`) |
@@ -62,7 +62,7 @@ Status legend:
 | org-roam-dailies | ported | `SPC n r d t` / `SPC n r d d` (`src/notes.lisp`) |
 | org-journal | ported | `SPC n j j`, same file layout + timestamp headings |
 | org-agenda / org-super-agenda | ported/partial | scanning agenda: overdue/today/upcoming/todos (`src/apps/agenda.lisp`) |
-| org-modern / org-download / org-ref / org-contrib / ob-async / ob-dsq / engrave-faces / cdlatex | gap | org ecosystem (visuals/babel/export) — no org-mode in Lem |
+| org-modern / org-download / org-ref / org-contrib / ob-async / ob-dsq / engrave-faces / cdlatex | gap | the native Org subset applies terminal semantic faces, but has no org-modern glyph composition, image/download workflow, bibliography integration, Babel/source execution, LaTeX preview, or publishing/export engine |
 | citar / ebib / reftex | ported (citar) | bib parse + open file/url/note, `SPC y o` (`src/apps/citar.lisp`); ebib/reftex gap |
 | gptel | partial | OpenRouter streaming exists, but presets, model discovery, conversation/tool semantics, handoff, transforms, and tracing remain open |
 | gptel-claude-code / gptel-codex / gptel-grok-build | partial | CLI process backends exist without rich agent-event rendering and backend-specific semantics |
@@ -134,8 +134,16 @@ Status legend:
   already opened file and affects later writes only; UTF-16BE/LE writes do not
   add a BOM. `trim_trailing_whitespace=false` does not disable ws-butler's
   touched-line policy. Direnv remains a separate, unimplemented integration.
-- **org files** open as plain text; the workflows (capture/dailies/journal/agenda)
-  operate on the same files but there is no org folding/links/tables UI.
+- **Org editing scope**: `.org` files use the native lem-yath Org mode. Its
+  TUI-tested boundary covers semantic faces, non-destructive local/global
+  folding, atomic hidden-line motion and reveal, safe heading insertion, the
+  complete configured TODO cycle with immediate saving, reload/multi-buffer
+  cleanup, checklist continuation/toggling, relative file links, table
+  row/cell targeting and alignment, and complete-subtree transforms. It is not
+  GNU Org: Evil-Org text objects and the wider operator/endpoint themes,
+  timestamps/scheduling/deadlines, source editing/execution, richer list/table
+  transforms, org-modern glyphs, and an initial Org scratch buffer remain
+  absent.
 - **Completion previews**: no consult-style live preview while cycling candidates.
 - **Undo accounting**: the configured 2,080,000 / 3,120,000 / 48,000,000
   Vundo budgets are applied to copied UTF-8 edit payload, not Emacs heap usage.

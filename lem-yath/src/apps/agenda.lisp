@@ -2,9 +2,9 @@
 ;;;; org-super-agenda over org-agenda-files = $WORKDIR.
 ;;;;
 ;;;; Emacs uses org-agenda to collect TODO/SCHEDULED/DEADLINE items from every
-;;;; *.org file under $WORKDIR and org-super-agenda to group them. We have no
-;;;; org-mode, so we scan the same files with a tolerant cl-ppcre parser and
-;;;; render a read-only grouped buffer: Overdue / Today / Upcoming / TODOs.
+;;;; *.org file under $WORKDIR and org-super-agenda to group them. The native
+;;;; Org editing mode owns the shared TODO vocabulary; this view scans the same
+;;;; files and renders Overdue / Today / Upcoming / TODOs.
 ;;;; Scanning runs on a background thread so large note trees don't block the
 ;;;; editor; the render is marshalled back via send-event.
 
@@ -16,13 +16,13 @@
 (defparameter *agenda-upcoming-days* 7
   "How many days ahead the \"Upcoming\" section reaches.")
 
-(defparameter *agenda-todo-keywords* '("TODO" "NEXT" "WAIT" "HOLD" "DONE" "CANCELLED")
+(defparameter *agenda-todo-keywords* *org-todo-keywords*
   "Heading keywords recognised by the parser, mirroring the Emacs config.")
 
-(defparameter *agenda-open-keywords* '("TODO" "NEXT" "WAIT")
+(defparameter *agenda-open-keywords* *org-open-todo-keywords*
   "Keywords for the unscheduled \"TODOs\" section.")
 
-(defparameter *agenda-done-keywords* '("DONE" "CANCELLED")
+(defparameter *agenda-done-keywords* *org-done-todo-keywords*
   "Keywords excluded from the dated sections.")
 
 ;;; --- parsing -------------------------------------------------------------
@@ -31,9 +31,10 @@
   "One parsed heading: its TODO keyword, text, source file/line and date."
   keyword text file line date kind)
 
-(defvar *heading-scanner*
+(defparameter *heading-scanner*
   (ppcre:create-scanner
-   "^\\*+\\s+(?:(TODO|NEXT|WAIT|HOLD|DONE|CANCELLED)\\s+)?(.*)$")
+   (format nil "^\\*+\\s+(?:(~{~a~^|~})\\s+)?(.*)$"
+           *org-todo-keywords*))
   "Matches an org heading, optionally capturing a leading TODO keyword.")
 
 (defvar *planning-scanner*

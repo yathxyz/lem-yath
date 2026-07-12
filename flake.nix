@@ -39,6 +39,7 @@
               ./patches/lem-undo-tree.patch
               ./patches/lem-vi-screen-line.patch
               ./patches/lem-git-worktree.patch
+              ./patches/lem-hidden-lines.patch
             ];
           };
           lemNcurses = lem.packages.${system}.lem-ncurses.overrideLispAttrs (
@@ -365,6 +366,7 @@
             structural-test = mkTestAppWithLem lemYath "lem-yath-structural-test" "structural-test.sh";
             screen-line-test = mkTestAppWithLem lemYath "lem-yath-screen-line-test" "screen-line-test.sh";
             notes-test = mkTestApp "lem-yath-notes-test" "notes-test.sh";
+            org-test = mkTestAppWithLem lemYath "lem-yath-org-test" "org-test.sh";
             editing-test = mkTestApp "lem-yath-editing-test" "editing-test.sh";
             formatting-test = mkTestApp "lem-yath-formatting-test" "formatting-test.sh";
             prompt-completion-test = mkTestApp "lem-yath-prompt-completion-test" "prompt-completion-test.sh";
@@ -396,6 +398,7 @@
             structural = mkCheckWithLem lemYath "structural" "structural-test.sh";
             screen-line = mkCheckWithLem lemYath "screen-line" "screen-line-test.sh";
             notes = mkCheck "notes" "notes-test.sh";
+            org = mkCheckWithLem lemYath "org" "org-test.sh";
             editing = mkCheck "editing" "editing-test.sh";
             formatting = mkCheck "formatting" "formatting-test.sh";
             prompt-completion = mkCheck "prompt-completion" "prompt-completion-test.sh";

@@ -486,8 +486,9 @@ conditional behavior as explicitly unavailable, and no embedded Emacs Lisp is
 ever evaluated. The
 configured private corpus contains one snippet, `org-mode/srcblock.snpt`; its
 `jjs` trigger, `language` field, and final blank-line `$0` position are
-reproduced exactly. The `.org` filename mapping makes it available even though
-Lem currently opens Org files in Fundamental mode.
+reproduced exactly. Native `.org` buffers now select the same `org-mode` snippet
+table directly; the filename mapping remains a deterministic fallback for table
+selection.
 
 The portable grammar covers simple and braced numbered fields (`$1`, `${1}`),
 numbered defaults, anonymous `${default}` fields, nested fields and defaults,
@@ -1032,11 +1033,12 @@ undo, cleanup, and reload safety.
 
 ---
 
-## 8. Language modes (every directory in `extensions/`)
+## 8. Language modes
 
-All of these are built into the nix `lem-ncurses` image (via `lem/extensions`, unless
-noted `#+sbcl` which is fine since the image is SBCL). Package is `lem-<name>` and the
-major mode `lem-<name>:<name>` unless noted.
+The upstream modes below are built into the nix `lem-ncurses` image (via
+`lem/extensions`, unless noted `#+sbcl`, which is fine since the image is SBCL).
+The native Org mode is instead supplied by lem-yath's own ASDF system. Package
+is `lem-<name>` and the major mode `lem-<name>:<name>` unless noted.
 
 **Programming:** `c-mode`, `go-mode`(+LSP, call-graph), `rust-mode` (NO LSP, see §5),
 `python-mode`(+LSP, run-python REPL, call-graph), `js-mode`(+LSP),
@@ -1048,9 +1050,10 @@ major mode `lem-<name>:<name>` unless noted.
 `asm-mode`, `wat-mode`, `posix-shell-mode`, `sql-mode`, `terraform-mode`(+LSP),
 `nix-mode` (LSP disabled, §5).
 
-**Markup / data / config:** `markdown-mode`, `asciidoc-mode`, `html-mode`, `css-mode`,
-`xml-mode`, `json-mode`, `yaml-mode`, `toml-mode`, `dot-mode` (Graphviz), `makefile-mode`,
-`patch-mode`, `review-mode`, `documentation-mode`.
+**Markup / data / config:** lem-yath's native `org-mode`, `markdown-mode`,
+`asciidoc-mode`, `html-mode`, `css-mode`, `xml-mode`, `json-mode`, `yaml-mode`,
+`toml-mode`, `dot-mode` (Graphviz), `makefile-mode`, `patch-mode`, `review-mode`,
+`documentation-mode`.
 
 **Editing aids that are "modes":** `paredit-mode`, `shell-mode`, `skk-mode` (Japanese
 input), `color-preview`.
@@ -1075,6 +1078,48 @@ Real structural editing: `paredit-slurp`, `paredit-barf`, `paredit-splice`(+fwd/
 ### markdown-mode — `extensions/markdown-mode/` includes literate **eval-block** support
 (`markdown-eval-block`, `interactive.lisp:105`) and a `preview`/`preview-default` generic
 (`internal.lisp:6,29`) for rendering. (Aligns with Lem's "living canvas" vision.)
+
+### Native Org mode — `lem-yath/src/org/` (verified approximation)
+
+Lem-yath adds a prose-class `.org` major mode; this is a local implementation,
+not GNU Org or an upstream Lem extension. A custom parser applies semantic faces
+to headings, exact configured TODO keywords, tags, priorities, timestamps,
+drawers, lists/checklists, tables, bracket links, and source blocks. The
+hidden-line patch adds the renderer and vertical-movement primitive needed for
+non-destructive folding. Local `Tab` cycles folded/direct-children/full-subtree
+visibility with the configured exact `" [...]"` ellipsis, while `Shift-Tab`
+cycles the first global overview/contents/all implementation. Changes clear
+folds, arbitrary movement into hidden text reveals it, and hidden rows are not
+written to disk.
+
+The bounded editing layer supplies visible-row `j/k`,
+`gh/gl/gk/gj/gH` heading navigation, Org-aware `o/O`, heading insertion,
+complete-subtree promotion/demotion/reordering, the exact
+`TODO → NEXT → WAITING → HOLD → SOMEDAY | DONE → CANCELLED`
+sequence with immediate saving, checklist continuation/toggling, bracket-link
+insertion plus file/URL/mailto/ID opening, and basic table alignment, cell
+navigation, and row insertion. Normal-state `t/T`, `Return`, and `M-o` are
+intentionally not rebound, preserving the configured Evil-Snipe, Evil Return,
+and next-window behavior.
+
+`scripts/org-test.sh` drives the real ncurses editor and verifies mode selection
+and faces, negative key ownership, local and global visibility cycles, atomic
+hidden-row movement, folded-tail and generic-reveal behavior without file
+mutation, safe heading insertion before a sibling and at an unterminated EOF,
+the complete configured TODO cycle with immediate persistence, reload and
+multi-buffer kill cleanup, checklist `O`/`o` targeting and toggling, table row
+and cell targeting plus indented and hline-only alignment, relative file-link
+opening, and complete-subtree demotion/restoration/reordering. Mouse hit-testing,
+overlapping nested folds, non-file link variants, and several broader commands
+above remain outside this focused gate.
+
+This is intentionally narrower than GNU Org and Evil-Org. Heading/element text
+objects; Org-aware endpoints, insert/append commands, and structural operators;
+the full list/table meta-command set; timestamp, scheduling, and deadline
+workflows; source-block editing or execution; Babel, LaTeX preview, export and
+publishing; org-modern glyph composition in the terminal; and an initial Org
+scratch buffer remain explicit gaps. Agenda scanning and capture/roam workflows
+are separate bounded implementations rather than services of this major mode.
 
 ---
 
@@ -1312,8 +1357,9 @@ menus, multiple-cursors, isearch/query-replace, 185 base16 themes, line-numbers,
 show-paren, highlight-line, frame-multiplexer tabs, dired-like filer, markdown preview +
 literate eval.
 
-**The big upstream gaps vs Emacs:** **no org-mode** (no agenda/babel/capture/export — markdown
-eval-blocks are the closest), **no upstream snippet system** (no yasnippet/tempel;
+**The big upstream gaps vs Emacs:** **no upstream org-mode** (lem-yath adds the
+bounded native editing subset in §8, but not GNU Org's Babel/export ecosystem),
+**no upstream snippet system** (no yasnippet/tempel;
 only dynamic abbrev `M-/`; lem-yath adds the bounded data-only subset in §4),
 **no static abbrev tables**, **completion has fuzzy primitives but
 no Orderless/Prescient framework**, **tree-sitter is a manual API** (no auto-enabled
