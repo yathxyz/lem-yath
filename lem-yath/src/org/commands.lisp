@@ -145,10 +145,12 @@ In a table, align it and advance to the next cell."
 
 (defun org-list-prefix (point)
   "Return the reusable list prefix on POINT's line, or NIL."
+  (when (org-inside-block-p point)
+    (return-from org-list-prefix nil))
   (let ((line (line-string point)))
     (multiple-value-bind (start end register-starts register-ends)
         (cl-ppcre:scan
-         "^(\\s*)((?:[-+] |[0-9]+[.)] ))(?:((?:\\[[ Xx-]\\]))\\s*)?"
+         "^(\\s*)((?:[-+]\\s+|[0-9]+[.)]\\s+|\\*\\s+))(?:((?:\\[[ Xx-]\\]))\\s*)?"
          line)
       (declare (ignore start))
       (when end
@@ -158,8 +160,10 @@ In a table, align it and advance to the next cell."
                                (aref register-ends 1)))
                (checkbox-start (and (>= (length register-starts) 3)
                                     (aref register-starts 2))))
-          (concatenate 'string indent bullet
-                       (if checkbox-start "[ ] " "")))))))
+          (unless (and (zerop (length indent))
+                       (eql (char bullet 0) #\*))
+            (concatenate 'string indent bullet
+                         (if checkbox-start "[ ] " ""))))))))
 
 (defun org-enter-insert-state ()
   (setf (lem-vi-mode/core:buffer-state)
@@ -186,8 +190,8 @@ In a table, align it and advance to the next cell."
        (org-enter-insert-state)
        t)
       ((org-table-line-p (current-point))
-       (org-table-insert-row above-p)
-       (org-enter-insert-state)
+       (when (org-table-insert-row above-p)
+         (org-enter-insert-state))
        t)
       (t nil))))
 
@@ -252,15 +256,257 @@ In a table, align it and advance to the next cell."
 (defun org-list-item-line-p (point)
   (not (null (org-list-prefix point))))
 
-(defun org-adjust-list-indent (delta)
-  (line-start (current-point))
-  (cond
-    ((plusp delta)
-     (insert-string (current-point) "  "))
-    ((and (minusp delta)
-          (eql (character-at (current-point)) #\Space)
-          (eql (character-at (current-point) 1) #\Space))
-     (delete-character (current-point) 2))))
+(defun org-list-item-columns (&optional (point (current-point)))
+  "Return indentation, list-content, and text columns for POINT's item."
+  (when (org-inside-block-p point)
+    (return-from org-list-item-columns nil))
+  (multiple-value-bind (start end register-starts register-ends)
+      (cl-ppcre:scan
+       "^(\\s*)([-+*]|[0-9]+[.)])(\\s+)(?:\\[[ Xx-]\\]\\s+)?"
+       (line-string point))
+    (declare (ignore start register-starts))
+    (when (and end
+               (not (and (zerop (aref register-ends 0))
+                         (eql (char (line-string point)
+                                    (aref register-ends 0))
+                              #\*))))
+      (values (aref register-ends 0) (aref register-ends 2) end))))
+
+(defun org-line-indentation (&optional (point (current-point)))
+  (or (nth-value 1 (cl-ppcre:scan "^\\s*" (line-string point))) 0))
+
+(defun org-list-item-tree-end (item)
+  "Return the exclusive end of the list-item tree starting at ITEM."
+  (multiple-value-bind (indent content-column) (org-list-item-columns item)
+    (declare (ignore content-column))
+    (unless indent
+      (return-from org-list-item-tree-end nil))
+    (with-point ((point item))
+      (line-start point)
+      (let ((pending-blank nil))
+        (loop :while (line-offset point 1)
+              :for line := (line-string point)
+              :do (cond
+                    ((zerop (length line))
+                     (unless pending-blank
+                       (setf pending-blank (copy-point point :temporary))))
+                    ((or (org-heading-line-p point)
+                         (and (org-list-item-line-p point)
+                              (<= (nth-value 0 (org-list-item-columns point))
+                                  indent))
+                         (and (not (org-list-item-line-p point))
+                              (<= (org-line-indentation point) indent)))
+                     (return (or pending-blank
+                                 (copy-point point :temporary))))
+                    (t (setf pending-blank nil)))
+              :finally
+                 (return
+                   (or pending-blank
+                       (copy-point (buffer-end-point (point-buffer point))
+                                   :temporary))))))))
+
+(defun org-list-previous-item (item predicate)
+  "Return the nearest earlier list item satisfying PREDICATE."
+  (let ((base-indent (nth-value 0 (org-list-item-columns item))))
+    (with-point ((point item))
+      (line-start point)
+      (loop :while (line-offset point -1)
+            :for line := (line-string point)
+            :when (or (org-heading-line-p point)
+                      (zerop (length line)))
+              :do (return nil)
+            :when (org-list-item-line-p point)
+              :do (multiple-value-bind (indent content-column)
+                      (org-list-item-columns point)
+                    (when (funcall predicate indent content-column point)
+                      (return (copy-point point :temporary))))
+            :when (and (not (org-list-item-line-p point))
+                       (plusp (length line))
+                       (<= (org-line-indentation point) base-indent))
+              :do (return nil)))))
+
+(defun org-list-ordered-item-p (&optional (point (current-point)))
+  (and (org-list-item-line-p point)
+       (not (null (cl-ppcre:scan "^\\s*[0-9]+[.)]\\s+"
+                                  (line-string point))))))
+
+(defun org-list-star-item-p (&optional (point (current-point)))
+  (multiple-value-bind (indent content-column) (org-list-item-columns point)
+    (declare (ignore content-column))
+    (and indent (eql (char (line-string point) indent) #\*))))
+
+(defun org-list-line-structural-tab-p (point)
+  (let ((structural-end
+          (if (org-list-item-line-p point)
+              (nth-value 2 (org-list-item-columns point))
+              (org-line-indentation point))))
+    (and structural-end
+         (position #\Tab (line-string point) :end structural-end))))
+
+(defun org-list-context-tab-p (item)
+  "Whether ITEM's contiguous list context uses tabs in structural columns."
+  (or (org-list-line-structural-tab-p item)
+      (with-point ((point item))
+        (loop :while (line-offset point -1)
+              :for line := (line-string point)
+              :until (or (zerop (length line)) (org-heading-line-p point))
+              :when (org-list-line-structural-tab-p point)
+                :return t))
+      (with-point ((point item))
+        (loop :while (line-offset point 1)
+              :for line := (line-string point)
+              :until (or (zerop (length line)) (org-heading-line-p point))
+              :when (org-list-line-structural-tab-p point)
+                :return t))))
+
+(defun org-list-item-has-child-p (item)
+  (let ((indent (nth-value 0 (org-list-item-columns item)))
+        (end (org-list-item-tree-end item)))
+    (with-point ((point item))
+      (loop :while (and (line-offset point 1) (point< point end))
+            :when (and (org-list-item-line-p point)
+                       (> (nth-value 0 (org-list-item-columns point)) indent))
+              :return t))))
+
+(defun org-list-item-has-direct-body-p (item)
+  "Whether ITEM has non-list continuation content requiring Org reflow."
+  (let ((end (org-list-item-tree-end item)))
+    (with-point ((point item))
+      (loop :while (and (line-offset point 1) (point< point end))
+            :for line := (line-string point)
+            :when (and (plusp (length line))
+                       (not (org-list-item-line-p point)))
+              :return t))))
+
+(defun org-list-next-sibling (item)
+  (multiple-value-bind (indent content-column) (org-list-item-columns item)
+    (declare (ignore content-column))
+    (alexandria:when-let ((end (org-list-item-tree-end item)))
+      (unless (end-buffer-p end)
+        (multiple-value-bind (candidate-indent candidate-content)
+            (org-list-item-columns end)
+          (declare (ignore candidate-content))
+          (and (eql candidate-indent indent)
+               (copy-point end :temporary)))))))
+
+(defun org-list-previous-sibling (item)
+  (multiple-value-bind (indent content-column) (org-list-item-columns item)
+    (declare (ignore content-column))
+    (org-list-previous-item
+     item
+     (lambda (candidate-indent candidate-content candidate)
+       (declare (ignore candidate-content candidate))
+       (cond ((< candidate-indent indent) (return-from org-list-previous-sibling nil))
+             ((= candidate-indent indent) t))))))
+
+(defun org-shift-line-indentation (point delta)
+  (with-point ((line point))
+    (line-start line)
+    (cond
+      ((plusp delta)
+       (insert-string line (make-string delta :initial-element #\Space)))
+      ((minusp delta)
+       (let ((available (org-line-indentation line)))
+         (delete-character line (min available (- delta))))))))
+
+(defun org-shift-region-indentation (start end delta)
+  (with-point ((point start))
+    (line-start point)
+    (loop :while (point< point end)
+          :unless (zerop (length (line-string point)))
+            :do (org-shift-line-indentation point delta)
+          :unless (line-offset point 1)
+            :do (return))))
+
+(defun org-list-indent-target (item direction)
+  (multiple-value-bind (indent content-column) (org-list-item-columns item)
+    (declare (ignore content-column))
+    (ecase direction
+      (1
+       (alexandria:when-let
+           ((previous
+              (org-list-previous-item
+               item
+               (lambda (candidate-indent candidate-content candidate)
+                 (declare (ignore candidate-content candidate))
+                 (cond ((< candidate-indent indent) nil)
+                       ((= candidate-indent indent) t))))))
+         (nth-value 1 (org-list-item-columns previous))))
+      (-1
+       (if (zerop indent)
+           nil
+           (or (alexandria:when-let
+                   ((parent
+                      (org-list-previous-item
+                       item
+                       (lambda (candidate-indent candidate-content candidate)
+                         (declare (ignore candidate-content candidate))
+                         (< candidate-indent indent)))))
+                 (nth-value 0 (org-list-item-columns parent)))
+               0))))))
+
+(defun org-adjust-list-indent (direction &key tree)
+  "Indent or outdent the current list item, optionally including its tree."
+  (with-point ((item (current-point)))
+    (line-start item)
+    (multiple-value-bind (indent content-column) (org-list-item-columns item)
+      (declare (ignore content-column))
+      (unless indent
+        (message "Point is not on an Org list item")
+        (return-from org-adjust-list-indent nil))
+      (when (org-list-ordered-item-p item)
+        (message "Ordered-list structural edits need counter repair")
+        (return-from org-adjust-list-indent nil))
+      (when (org-list-context-tab-p item)
+        (message "Tab-indented list structure is unchanged until column repair is available")
+        (return-from org-adjust-list-indent nil))
+      (when (and (not tree) (org-list-item-has-direct-body-p item))
+        (message "Cannot safely indent a list item with continuation text")
+        (return-from org-adjust-list-indent nil))
+      (when (and (minusp direction) (not tree)
+                 (org-list-item-has-child-p item))
+        (message "Cannot outdent a list item without its children")
+        (return-from org-adjust-list-indent nil))
+      (alexandria:if-let ((target (org-list-indent-target item direction)))
+        (let ((column (point-column (current-point)))
+              (convert-star-p (and (zerop target)
+                                   (org-list-star-item-p item)))
+              (end (if tree
+                       (org-list-item-tree-end item)
+                       (with-point ((end item))
+                         (if (line-offset end 1)
+                             (copy-point end :temporary)
+                             (copy-point (buffer-end-point (point-buffer end))
+                                         :temporary)))))
+              (delta (- target indent)))
+          (org-clear-folds (current-buffer))
+          (org-shift-region-indentation item end delta)
+          (when convert-star-p
+            (with-point ((bullet item))
+              (line-start bullet)
+              (delete-character bullet 1)
+              (insert-character bullet #\-)))
+          (move-to-column (current-point) (max 0 (+ column delta)))
+          t)
+        (message "Cannot ~:[outdent~;indent~] this list item"
+                 (plusp direction))))))
+
+(defun org-adjust-heading-level (delta)
+  "Adjust only the heading on the current line by DELTA."
+  (let ((level (org-heading-level-at (current-point))))
+    (cond
+      ((null level) nil)
+      ((and (minusp delta) (= level 1))
+       (message "A level-1 heading cannot be promoted")
+       nil)
+      (t
+       (org-clear-folds (current-buffer))
+       (with-point ((point (current-point)))
+         (line-start point)
+         (if (plusp delta)
+             (insert-character point #\*)
+             (delete-character point 1)))
+       t))))
 
 (defun org-adjust-subtree-level (delta)
   (alexandria:if-let ((heading (org-current-heading-point)))
@@ -282,15 +528,39 @@ In a table, align it and advance to the next cell."
       t)
     (message "No Org heading at point")))
 
+(defun org-word-motion (direction)
+  (call-command (if (minusp direction)
+                    'lem-core/commands/word:previous-word
+                    'lem-core/commands/word:forward-word)
+                1))
+
 (define-command lem-yath-org-metaleft () ()
-  (if (org-list-item-line-p (current-point))
-      (org-adjust-list-indent -1)
-      (org-adjust-subtree-level -1)))
+  "Move a table column left, or promote the current heading/list item."
+  (cond
+    ((org-table-line-p (current-point)) (org-table-move-column -1))
+    ((org-heading-line-p (current-point)) (org-adjust-heading-level -1))
+    ((org-list-item-line-p (current-point)) (org-adjust-list-indent -1))
+    (t (org-word-motion -1))))
 
 (define-command lem-yath-org-metaright () ()
-  (if (org-list-item-line-p (current-point))
-      (org-adjust-list-indent 1)
-      (org-adjust-subtree-level 1)))
+  "Move a table column right, or demote the current heading/list item."
+  (cond
+    ((org-table-line-p (current-point)) (org-table-move-column 1))
+    ((org-heading-line-p (current-point)) (org-adjust-heading-level 1))
+    ((org-list-item-line-p (current-point)) (org-adjust-list-indent 1))
+    (t (org-word-motion 1))))
+
+(defun org-swap-adjacent-linewise-text (first second)
+  "Return SECOND followed by FIRST without joining an unterminated EOF line.
+The second value is the length of SECOND in its new leading position."
+  (if (and (plusp (length first))
+           (eql (char first (1- (length first))) #\Newline)
+           (or (zerop (length second))
+               (not (eql (char second (1- (length second))) #\Newline))))
+      (values (concatenate 'string second (string #\Newline)
+                           (subseq first 0 (1- (length first))))
+              (1+ (length second)))
+      (values (concatenate 'string second first) (length second))))
 
 (defun org-swap-subtree (direction)
   (alexandria:if-let ((heading (org-current-heading-point)))
@@ -307,24 +577,164 @@ In a table, align it and advance to the next cell."
                    (first (points-to-string heading heading-end))
                    (second (points-to-string sibling sibling-end)))
               (delete-between-points heading sibling-end)
-              (insert-string heading (concatenate 'string second first))
-              (move-point (current-point) heading)
-              (character-offset (current-point) (+ (length second) offset)))
+              (multiple-value-bind (replacement second-length)
+                  (org-swap-adjacent-linewise-text first second)
+                (insert-string heading replacement)
+                (move-point (current-point) heading)
+                (character-offset (current-point) (+ second-length offset))))
             (let* ((sibling-end (org-subtree-end-point sibling))
                    (first (points-to-string sibling sibling-end))
                    (second (points-to-string heading (org-subtree-end-point heading))))
               (delete-between-points sibling (org-subtree-end-point heading))
-              (insert-string sibling (concatenate 'string second first))
-              (move-point (current-point) sibling)
-              (character-offset (current-point) offset))))
+              (multiple-value-bind (replacement second-length)
+                  (org-swap-adjacent-linewise-text first second)
+                (declare (ignore second-length))
+                (insert-string sibling replacement)
+                (move-point (current-point) sibling)
+                (character-offset (current-point) offset)))))
       t)
     (message "No Org heading at point")))
 
+(defun org-swap-list-item (direction)
+  "Swap the current list-item tree with a same-level sibling."
+  (with-point ((item (current-point)))
+    (line-start item)
+    (unless (org-list-item-line-p item)
+      (message "Point is not on an Org list item")
+      (return-from org-swap-list-item nil))
+    (let ((sibling (if (minusp direction)
+                       (org-list-previous-sibling item)
+                       (org-list-next-sibling item))))
+      (unless sibling
+        (message "No same-level list item in that direction")
+        (return-from org-swap-list-item nil))
+      (when (or (org-list-ordered-item-p item)
+                (org-list-ordered-item-p sibling))
+        (message "Ordered-list movement needs counter repair")
+        (return-from org-swap-list-item nil))
+      (when (or (org-list-context-tab-p item)
+                (org-list-context-tab-p sibling))
+        (message "Tab-indented list movement is unchanged until column repair is available")
+        (return-from org-swap-list-item nil))
+      (org-clear-folds (current-buffer))
+      (let ((offset (point-column (current-point))))
+        (if (plusp direction)
+            (let* ((item-end (org-list-item-tree-end item))
+                   (sibling-end (org-list-item-tree-end sibling))
+                   (first (points-to-string item item-end))
+                   (second (points-to-string sibling sibling-end)))
+              (delete-between-points item sibling-end)
+              (multiple-value-bind (replacement second-length)
+                  (org-swap-adjacent-linewise-text first second)
+                (insert-string item replacement)
+                (move-point (current-point) item)
+                (character-offset (current-point) second-length)))
+            (let* ((sibling-end (org-list-item-tree-end sibling))
+                   (item-end (org-list-item-tree-end item))
+                   (first (points-to-string sibling sibling-end))
+                   (second (points-to-string item item-end)))
+              (delete-between-points sibling item-end)
+              (multiple-value-bind (replacement second-length)
+                  (org-swap-adjacent-linewise-text first second)
+                (declare (ignore second-length))
+                (insert-string sibling replacement)
+                (move-point (current-point) sibling))))
+        (move-to-column (current-point) offset))
+      t)))
+
+(defun org-current-line-segment (point)
+  (with-point ((start point)
+               (end point))
+    (line-start start)
+    (line-start end)
+    (if (line-offset end 1)
+        (values (copy-point start :temporary)
+                (copy-point end :temporary))
+        (values (copy-point start :temporary)
+                (copy-point (buffer-end-point (point-buffer end)) :temporary)))))
+
+(defun org-drag-current-line (direction)
+  "Swap the current literal line with its neighbor in DIRECTION."
+  (let ((column (point-column (current-point))))
+    (with-point ((neighbor (current-point)))
+      (line-start neighbor)
+      (unless (line-offset neighbor direction)
+        (message "Cannot move line further")
+        (return-from org-drag-current-line nil))
+      (multiple-value-bind (current-start current-end)
+          (org-current-line-segment (current-point))
+        (multiple-value-bind (neighbor-start neighbor-end)
+            (org-current-line-segment neighbor)
+          (let* ((start (point-min current-start neighbor-start))
+                 (end (point-max current-end neighbor-end))
+                 (current-text (line-string current-start))
+                 (neighbor-text (line-string neighbor-start))
+                 (trailing-newline-p
+                   (and (plusp (position-at-point end))
+                        (eql (character-at end -1) #\Newline)))
+                 (replacement
+                   (format nil "~a~%~a~:[~;~%~]"
+                           (if (minusp direction) current-text neighbor-text)
+                           (if (minusp direction) neighbor-text current-text)
+                           trailing-newline-p)))
+            (org-clear-folds (current-buffer))
+            (delete-between-points start end)
+            (insert-string start replacement)
+            (move-point (current-point) start)
+            (when (plusp direction)
+              (line-offset (current-point) 1))
+            (move-to-column (current-point) column)
+            t))))))
+
 (define-command lem-yath-org-metaup () ()
-  (org-swap-subtree -1))
+  "Move the current table row, heading subtree, or list-item tree up."
+  (cond
+    ((org-table-line-p (current-point)) (org-table-move-row -1))
+    ((org-heading-line-p (current-point)) (org-swap-subtree -1))
+    ((org-list-item-line-p (current-point)) (org-swap-list-item -1))
+    (t (message "No supported movable Org element at point"))))
 
 (define-command lem-yath-org-metadown () ()
-  (org-swap-subtree 1))
+  "Move the current table row, heading subtree, or list-item tree down."
+  (cond
+    ((org-table-line-p (current-point)) (org-table-move-row 1))
+    ((org-heading-line-p (current-point)) (org-swap-subtree 1))
+    ((org-list-item-line-p (current-point)) (org-swap-list-item 1))
+    (t (message "No supported movable Org element at point"))))
+
+(define-command lem-yath-org-shiftmetaleft () ()
+  "Delete a table column, promote a subtree, or outdent a list tree."
+  (cond
+    ((org-table-line-p (current-point)) (org-table-delete-column))
+    ((org-heading-line-p (current-point)) (org-adjust-subtree-level -1))
+    ((org-list-item-line-p (current-point))
+     (org-adjust-list-indent -1 :tree t))
+    (t (message "This command requires a table, heading, or list item"))))
+
+(define-command lem-yath-org-shiftmetaright () ()
+  "Insert a table column, demote a subtree, or indent a list tree."
+  (cond
+    ((org-table-line-p (current-point)) (org-table-insert-column))
+    ((org-heading-line-p (current-point)) (org-adjust-subtree-level 1))
+    ((org-list-item-line-p (current-point))
+     (org-adjust-list-indent 1 :tree t))
+    (t (message "This command requires a table, heading, or list item"))))
+
+(define-command lem-yath-org-shiftmetaup () ()
+  "Delete the current table row, or drag the literal line upward."
+  (cond
+    ((org-table-line-p (current-point)) (org-table-delete-row))
+    ((cl-ppcre:scan "(?i)^\\s*CLOCK:" (line-string (current-point)))
+     (message "CLOCK timestamp adjustment is not implemented; line unchanged"))
+    (t (org-drag-current-line -1))))
+
+(define-command lem-yath-org-shiftmetadown () ()
+  "Insert a table row above point, or drag the literal line downward."
+  (cond
+    ((org-table-line-p (current-point)) (org-table-insert-row t))
+    ((cl-ppcre:scan "(?i)^\\s*CLOCK:" (line-string (current-point)))
+     (message "CLOCK timestamp adjustment is not implemented; line unchanged"))
+    (t (org-drag-current-line 1))))
 
 ;;; --- links ---------------------------------------------------------------
 
@@ -434,10 +844,13 @@ In a table, align it and advance to the next cell."
 ;;; --- tables ---------------------------------------------------------------
 
 (defun org-table-line-p (&optional (point (current-point)))
-  (not (null (cl-ppcre:scan "^\\s*\\|" (line-string point)))))
+  (and (not (org-inside-block-p point))
+       (not (null (cl-ppcre:scan "^\\s*\\|" (line-string point))))))
 
 (defun org-table-separator-line-p (line)
-  (not (null (cl-ppcre:scan "^\\s*\\|[-+:|\\s]+\\|\\s*$" line))))
+  ;; Org recognizes a horizontal rule only when the opening pipe is followed
+  ;; immediately by a dash.  Rows such as `| - |` and `|   |` contain data.
+  (not (null (cl-ppcre:scan "^[ \\t]*\\|-" line))))
 
 (defun org-table-cells (line)
   (let ((cells (cl-ppcre:split "\\|" (string-trim '(#\Space #\Tab) line))))
@@ -475,6 +888,28 @@ In a table, align it and advance to the next cell."
         (unless (line-offset point 1)
           (return))))
     (nreverse lines)))
+
+(defun org-table-formula-after-p (&optional (origin (current-point)))
+  "Whether the table at ORIGIN is followed by an associated #+TBLFM."
+  (multiple-value-bind (start end) (org-table-bounds origin)
+    (declare (ignore start))
+    (and end
+         (with-point ((point end))
+           (loop :while (line-offset point 1)
+                 :for line := (line-string point)
+                 :unless (cl-ppcre:scan "^\\s*$" line)
+                   :do (return
+                         (not (null
+                               (cl-ppcre:scan "(?i)^\\s*#\\+TBLFM:"
+                                              line))))
+                 :finally (return nil))))))
+
+(defun org-table-structural-editable-p ()
+  (if (org-table-formula-after-p)
+      (progn
+        (message "Table structure is unchanged because #+TBLFM repair is unavailable")
+        nil)
+      t))
 
 (defun org-table-column-widths (lines)
   (let ((widths '()))
@@ -532,15 +967,22 @@ In a table, align it and advance to the next cell."
                    :do (format out " ~vA |" width cell))))))))
 
 (defun org-table-cell-index (&optional (point (current-point)))
-  (count #\| (line-string point) :end (min (point-charpos point)
-                                            (length (line-string point)))))
+  (let* ((line (line-string point))
+         (end (min (point-charpos point) (length line))))
+    (if (org-table-separator-line-p line)
+        (count-if (lambda (character)
+                    (member character '(#\| #\+)))
+                  line :end end)
+        (count #\| line :end end))))
 
 (defun org-table-move-to-cell (point index)
   (line-start point)
   (let ((line (line-string point))
         (seen 0))
     (loop :for column :from 0 :below (length line)
-          :when (eql (char line column) #\|)
+          :when (if (org-table-separator-line-p line)
+                    (member (char line column) '(#\| #\+))
+                    (eql (char line column) #\|))
             :do (incf seen)
                 (when (= seen index)
                   (move-to-column point (min (length line) (+ column 2)))
@@ -589,8 +1031,10 @@ In a table, align it and advance to the next cell."
 
 (defun org-table-previous-cell ()
   (org-table-align)
-  (let ((index (max 1 (org-table-cell-index))))
-    (if (> index 1)
+  (let ((index (max 1 (org-table-cell-index)))
+        (separator-p (org-table-separator-line-p
+                      (line-string (current-point)))))
+    (if (and (not separator-p) (> index 1))
         (org-table-move-to-cell (current-point) (1- index))
         (with-point ((previous (current-point)))
           (loop :while (line-offset previous -1)
@@ -604,18 +1048,208 @@ In a table, align it and advance to the next cell."
                       (return))))))
 
 (defun org-table-insert-row (above-p)
-  (let* ((columns (max 1 (length (org-table-cells (line-string (current-point))))))
-         (row (format nil "|~{ ~a |~}" (make-list columns :initial-element ""))))
-    (if above-p
-        (progn
-          (line-start (current-point))
-          (insert-string (current-point)
-                         (concatenate 'string row (string #\Newline)))
-          (line-offset (current-point) -1))
-        (progn
-          (line-end (current-point))
-          (insert-string (current-point) (concatenate 'string (string #\Newline) row))))
-    (org-table-move-to-cell (current-point) 1)))
+  (unless (org-table-structural-editable-p)
+    (return-from org-table-insert-row nil))
+  (multiple-value-bind (start end) (org-table-bounds)
+    (let* ((lines (org-table-row-lines start end))
+           (columns (max 1 (or (org-table-data-column-count lines)
+                               (length (org-table-column-widths lines)))))
+           (indentation (org-table-line-indentation
+                         (line-string (current-point))))
+           (row (org-table-raw-data-line
+                 indentation (make-list columns :initial-element ""))))
+      (if above-p
+          (progn
+            (line-start (current-point))
+            (insert-string (current-point)
+                           (concatenate 'string row (string #\Newline)))
+            (line-offset (current-point) -1))
+          (progn
+            (line-end (current-point))
+            (insert-string
+             (current-point) (concatenate 'string (string #\Newline) row))))
+      (org-table-move-to-cell (current-point) 1)
+      t)))
+
+(defun org-table-row-indentation (line)
+  (subseq line 0 (or (position #\| line) 0)))
+
+(defun org-table-data-column-count (lines)
+  (loop :for line :in lines
+        :unless (org-table-separator-line-p line)
+          :return (length (org-table-cells line))))
+
+(defun org-table-raw-data-line (indentation cells)
+  (format nil "~a| ~{~a~^ | ~} |" indentation cells))
+
+(defun org-table-raw-separator-line (indentation columns)
+  (format nil "~a|~{~a~^+~}|"
+          indentation (make-list columns :initial-element "---")))
+
+(defun org-table-rewrite-lines (lines row cell)
+  "Replace the table at point with LINES, then restore ROW and CELL."
+  (multiple-value-bind (start end) (org-table-bounds)
+    (unless start
+      (return-from org-table-rewrite-lines nil))
+    (delete-between-points start end)
+    (insert-string start (format nil "~{~a~^~%~}" lines))
+    (move-point (current-point) start)
+    (line-offset (current-point) row)
+    (org-table-move-to-cell (current-point) cell)
+    (org-table-align)
+    t))
+
+(defun org-table-transform-columns (transform target-cell)
+  (unless (org-table-structural-editable-p)
+    (return-from org-table-transform-columns nil))
+  (multiple-value-bind (raw-start raw-end) (org-table-bounds)
+    (unless (org-table-data-column-count
+             (org-table-row-lines raw-start raw-end))
+      (message "A table column operation needs at least one data row")
+      (return-from org-table-transform-columns nil)))
+  (org-table-align)
+  (multiple-value-bind (start end) (org-table-bounds)
+    (let* ((row (- (line-number-at-point (current-point))
+                   (line-number-at-point start)))
+           (lines (org-table-row-lines start end))
+           (columns (org-table-data-column-count lines))
+           (cell (min (or columns 1) (max 1 (org-table-cell-index)))))
+      (unless (plusp (or columns 0))
+        (message "A table column operation needs at least one data row")
+        (return-from org-table-transform-columns nil))
+      (let* ((new-columns (length (funcall transform
+                                           (make-list columns
+                                                      :initial-element ""))))
+             (rewritten
+               (mapcar
+                (lambda (line)
+                  (let ((indentation (org-table-row-indentation line)))
+                    (if (org-table-separator-line-p line)
+                        (org-table-raw-separator-line indentation new-columns)
+                        (org-table-raw-data-line
+                         indentation (funcall transform (org-table-cells line))))))
+                lines)))
+        (org-table-rewrite-lines rewritten row
+                                 (funcall target-cell cell columns))))))
+
+(defun org-swap-list-elements (list left right)
+  (let ((copy (copy-list list)))
+    (rotatef (nth left copy) (nth right copy))
+    copy))
+
+(defun org-table-move-column (direction)
+  "Move the current table column one place in DIRECTION."
+  (unless (org-table-structural-editable-p)
+    (return-from org-table-move-column nil))
+  (multiple-value-bind (raw-start raw-end) (org-table-bounds)
+    (unless (org-table-data-column-count
+             (org-table-row-lines raw-start raw-end))
+      (message "A table column operation needs at least one data row")
+      (return-from org-table-move-column nil)))
+  (org-table-align)
+  (multiple-value-bind (start end) (org-table-bounds)
+    (let* ((lines (org-table-row-lines start end))
+           (columns (org-table-data-column-count lines))
+           (cell (min (or columns 1) (max 1 (org-table-cell-index))))
+           (target (+ cell direction)))
+      (cond
+        ((or (null columns) (< target 1) (> target columns))
+         (message "Cannot move table column further")
+         nil)
+        (t
+         (org-table-transform-columns
+          (lambda (cells)
+            (org-swap-list-elements cells (1- cell) (1- target)))
+          (lambda (old-cell old-columns)
+            (declare (ignore old-cell old-columns))
+            target)))))))
+
+(defun org-table-insert-column ()
+  "Insert an empty table column immediately before the current column."
+  (unless (org-table-structural-editable-p)
+    (return-from org-table-insert-column nil))
+  (multiple-value-bind (raw-start raw-end) (org-table-bounds)
+    (unless (org-table-data-column-count
+             (org-table-row-lines raw-start raw-end))
+      (message "A table column operation needs at least one data row")
+      (return-from org-table-insert-column nil)))
+  (org-table-align)
+  (multiple-value-bind (start end) (org-table-bounds)
+    (let* ((columns (org-table-data-column-count
+                     (org-table-row-lines start end)))
+           (cell (min (or columns 1) (max 1 (org-table-cell-index))))
+           (index (1- cell)))
+      (org-table-transform-columns
+       (lambda (cells)
+         (append (subseq cells 0 index) (list "") (subseq cells index)))
+       (lambda (old-cell old-columns)
+         (declare (ignore old-cell old-columns))
+         cell)))))
+
+(defun org-table-delete-column ()
+  "Delete the current table column without touching its enclosing subtree."
+  (unless (org-table-structural-editable-p)
+    (return-from org-table-delete-column nil))
+  (multiple-value-bind (raw-start raw-end) (org-table-bounds)
+    (let ((columns (org-table-data-column-count
+                    (org-table-row-lines raw-start raw-end))))
+      (cond
+        ((null columns)
+         (message "A table column operation needs at least one data row")
+         (return-from org-table-delete-column nil))
+        ((= columns 1)
+         (message "Cannot delete the only table column safely")
+         (return-from org-table-delete-column nil)))))
+  (org-table-align)
+  (multiple-value-bind (start end) (org-table-bounds)
+    (let* ((columns (org-table-data-column-count
+                     (org-table-row-lines start end)))
+           (cell (min (or columns 1) (max 1 (org-table-cell-index))))
+           (index (1- cell)))
+      (org-table-transform-columns
+       (lambda (cells)
+         (append (subseq cells 0 index) (subseq cells (1+ index))))
+       (lambda (old-cell old-columns)
+         (declare (ignore old-cell))
+         (max 1 (min cell (max 1 (1- old-columns)))))))))
+
+(defun org-table-move-row (direction)
+  "Move the current literal table row one line in DIRECTION."
+  (unless (org-table-structural-editable-p)
+    (return-from org-table-move-row nil))
+  (org-table-align)
+  (multiple-value-bind (start end) (org-table-bounds)
+    (let* ((row (- (line-number-at-point (current-point))
+                   (line-number-at-point start)))
+           (cell (max 1 (org-table-cell-index)))
+           (lines (org-table-row-lines start end))
+           (target (+ row direction)))
+      (if (or (< target 0) (>= target (length lines)))
+          (progn (message "Cannot move table row further") nil)
+          (org-table-rewrite-lines
+           (org-swap-list-elements lines row target) target cell)))))
+
+(defun org-table-delete-row ()
+  "Delete the current table row or horizontal separator."
+  (unless (org-table-structural-editable-p)
+    (return-from org-table-delete-row nil))
+  (org-table-align)
+  (multiple-value-bind (start end) (org-table-bounds)
+    (let* ((row (- (line-number-at-point (current-point))
+                   (line-number-at-point start)))
+           (cell (max 1 (org-table-cell-index)))
+           (lines (org-table-row-lines start end))
+           (remaining (append (subseq lines 0 row)
+                              (subseq lines (1+ row)))))
+      (if remaining
+          (org-table-rewrite-lines remaining
+                                   (min row (1- (length remaining))) cell)
+          (progn
+            (when (eql (character-at end) #\Newline)
+              (character-offset end 1))
+            (delete-between-points start end)
+            (move-point (current-point) start)
+            t)))))
 
 (define-command lem-yath-org-context-action () ()
   "Align a table; execution of source blocks remains a later safe tranche."
@@ -644,11 +1278,28 @@ In a table, align it and advance to the next cell."
   (define-key keymap "M-l" 'lem-yath-org-metaright)
   (define-key keymap "M-k" 'lem-yath-org-metaup)
   (define-key keymap "M-j" 'lem-yath-org-metadown)
-  (define-key keymap "<" 'lem-yath-org-metaleft)
-  (define-key keymap ">" 'lem-yath-org-metaright))
+  (define-key keymap "M-H" 'lem-yath-org-shiftmetaleft)
+  (define-key keymap "M-L" 'lem-yath-org-shiftmetaright)
+  (define-key keymap "M-K" 'lem-yath-org-shiftmetaup)
+  (define-key keymap "M-J" 'lem-yath-org-shiftmetadown)
+  ;; Evil-Org's < and > are range operators, not aliases for org-metaleft
+  ;; and org-metaright.  Fail closed until the native range operators below
+  ;; are available instead of silently changing an enclosing subtree.
+  (undefine-key keymap "<")
+  (undefine-key keymap ">"))
 
 (configure-org-vi-common-map *org-vi-normal-keymap*)
 (configure-org-vi-common-map *org-vi-visual-keymap*)
+
+(define-command lem-yath-org-visual-structural-unsupported () ()
+  (message "Region-aware Evil-Org Meta editing is not implemented; selection unchanged"))
+
+;; Point-only structural commands would silently ignore most of a Vi
+;; selection.  Keep the selection byte-identical until the region semantics
+;; can be implemented as true operators.
+(dolist (key '("M-h" "M-l" "M-k" "M-j" "M-H" "M-L" "M-K" "M-J"))
+  (define-key *org-vi-visual-keymap* key
+    'lem-yath-org-visual-structural-unsupported))
 
 (define-key *org-vi-normal-keymap* "o" 'lem-yath-org-open-below)
 (define-key *org-vi-normal-keymap* "O" 'lem-yath-org-open-above)

@@ -83,6 +83,81 @@
                 (if (buffer-modified-p (current-buffer)) "yes" "no")
                 (length (org-buffer-folds (current-buffer)))))
 
+(defun org-test-location-copy (text)
+  (with-point ((point (buffer-start-point (current-buffer))))
+    (when (search-forward-regexp point (cl-ppcre:quote-meta-chars text))
+      (line-start point)
+      (copy-point point :temporary))))
+
+(defun org-test-location-line (point)
+  (if point (line-number-at-point point) 0))
+
+(defun org-test-location-indent (point)
+  (if point (org-line-indentation point) -1))
+
+(defun org-test-location-heading-level (point)
+  (if point (or (org-heading-level-at point) 0) 0))
+
+(defun org-test-location-text (point)
+  (if point (line-string point) "MISSING"))
+
+(define-command lem-yath-test-org-context-report () ()
+  "Report exact structural state without moving the real point."
+  (let* ((text (points-to-string (buffer-start-point (current-buffer))
+                                 (buffer-end-point (current-buffer))))
+         (point-text (line-string (current-point)))
+         (point-column (point-charpos (current-point)))
+         (parent (org-test-location-copy "TODO Parent"))
+         (child (org-test-location-copy "NEXT Child"))
+         (grand (org-test-location-copy "Grandchild"))
+         (sibling (org-test-location-copy "* Sibling"))
+         (prose-one (org-test-location-copy "Parent body sentinel"))
+         (prose-two (org-test-location-copy "Parent second prose line"))
+         (first (org-test-location-copy "- [ ] first"))
+         (first-child (org-test-location-copy "nested child sentinel"))
+         (second (org-test-location-copy "- [X] second"))
+         (second-child (org-test-location-copy "second nested sentinel"))
+         (header (org-test-location-copy "| name"))
+         (alpha (org-test-location-copy "alpha"))
+         (omega (org-test-location-copy "omega"))
+         (table-rows
+           (if header
+               (multiple-value-bind (start end) (org-table-bounds header)
+                 (length (org-table-row-lines start end)))
+               0))
+         (table-columns
+           (if header (length (org-table-cells (line-string header))) 0)))
+    (org-test-log
+     (concatenate
+      'string
+      "CONTEXT hash=~x levels=~d,~d,~d headings=~d,~d,~d,~d prose=~d,~d "
+      "lists=~d/~d,~d/~d,~d/~d,~d/~d table=~d/~d "
+      "header=~s alpha=~s/~d omega=~s/~d point=~s/~d modified=~a")
+     (sxhash text)
+     (org-test-location-heading-level parent)
+     (org-test-location-heading-level child)
+     (org-test-location-heading-level grand)
+     (org-test-location-line parent)
+     (org-test-location-line child)
+     (org-test-location-line grand)
+     (org-test-location-line sibling)
+     (org-test-location-line prose-one)
+     (org-test-location-line prose-two)
+     (org-test-location-line first)
+     (org-test-location-indent first)
+     (org-test-location-line first-child)
+     (org-test-location-indent first-child)
+     (org-test-location-line second)
+     (org-test-location-indent second)
+     (org-test-location-line second-child)
+     (org-test-location-indent second-child)
+     table-rows table-columns
+     (org-test-location-text header)
+     (org-test-location-text alpha) (org-test-location-line alpha)
+     (org-test-location-text omega) (org-test-location-line omega)
+     point-text point-column
+     (if (buffer-modified-p (current-buffer)) "yes" "no"))))
+
 (defmacro define-org-test-goto-command (name text &optional line-start-p)
   `(define-command ,name () ()
      (move-point (current-point)
@@ -94,13 +169,62 @@
 (define-org-test-goto-command lem-yath-test-org-goto-grand-body
   "Grand body sentinel" t)
 (define-org-test-goto-command lem-yath-test-org-goto-list "- [ ] first" t)
-(define-org-test-goto-command lem-yath-test-org-goto-table "alpha" nil)
+(define-org-test-goto-command lem-yath-test-org-goto-second-list "- [X] second" t)
+(define-org-test-goto-command lem-yath-test-org-goto-table "alpha" t)
+(define-org-test-goto-command lem-yath-test-org-goto-table-hline-second
+  "+-------" nil)
 (define-org-test-goto-command lem-yath-test-org-goto-indented-table
-  "nested" nil)
+  "| nested" nil)
 (define-org-test-goto-command lem-yath-test-org-goto-hline-only
   "|---+-----|" t)
 (define-org-test-goto-command lem-yath-test-org-goto-link "target.org" nil)
 (define-org-test-goto-command lem-yath-test-org-goto-sibling "* Sibling" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-child-b
+  "- child-b" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-star-child
+  "* star child" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-tab-child
+  "- tab child" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-wide-child
+  "- wide child" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-body-item
+  "- body item" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-ordered
+  "1. ordered one" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-separate
+  "- separate a" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-source-list
+  "- source list lookalike" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-source-table
+  "| source | table |" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-mismatched-list
+  "- mismatched source list" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-mismatched-table
+  "| mismatched | source |" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-source-owner
+  "Source owner" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-source-fake-heading
+  "* source fake heading" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-source-real-child
+  "Source real child" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-source-fake-after-begin
+  "* source fake after unmatched begin" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-real-after-literal-begin
+  "Real after literal begin" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-formula
+  "| formula | result |" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-spaced-formula
+  "| spaced formula | result |" nil)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-sparse-data
+  "| -     |" nil)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-clock "CLOCK:" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-one-column
+  "| only |" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-one-row
+  "| disposable |" t)
+
+(define-command lem-yath-test-org-open-edge () ()
+  (find-file (merge-pathnames "edge.org" (workdir))))
 
 (defun org-test-hook-count (function hooks)
   (count function hooks :key #'car :test #'eq))

@@ -16,6 +16,7 @@ fixture="$root/work/fixture.org"
 target="$root/work/target.org"
 other="$root/work/other.org"
 eof_fixture="$root/work/eof.org"
+edge_fixture="$root/work/edge.org"
 fixture_lisp="$(lem-yath_lisp_string "$here/scripts/org-fixture.lisp")"
 
 write_fixture() {
@@ -28,6 +29,7 @@ write_fixture() {
     ':END:' \
     'SCHEDULED: <2026-07-12 Sun>' \
     'Parent body sentinel with *bold* and /italic/.' \
+    'Parent second prose line.' \
     '** NEXT Child' \
     'Child body sentinel.' \
     '*** Grandchild' \
@@ -36,11 +38,14 @@ write_fixture() {
     'Sibling body sentinel and [[file:target.org][target]].' \
     '' \
     '- [ ] first' \
+    '  - nested child sentinel' \
     '- [X] second' \
+    '  - second nested sentinel' \
     '' \
-    '| name | value |' \
-    '|------+-------|' \
-    '| alpha| beta  |' \
+    '| name  | value |' \
+    '|-------+-------|' \
+    '| alpha | beta  |' \
+    '| omega | theta |' \
     '' \
     '#+begin_src python' \
     "print('hello')" \
@@ -54,6 +59,77 @@ write_fixture() {
   printf '%s\n' 'TARGET FILE SENTINEL' >"$target"
   printf '%s\n' '* Other' 'Other body sentinel.' >"$other"
   printf '%s' '* Tail' >"$eof_fixture"
+  printf '%s\n' \
+    '* Edge cases' \
+    '  - parent' \
+    '    - child-a' \
+    '    - child-b' \
+    '' \
+    '- star parent' \
+    '  * star child' \
+    '' \
+    '- tab parent' \
+    $'\t- tab child' \
+    '' \
+    $'-\twide parent' \
+    '- wide child' \
+    '' \
+    '- body item' \
+    '  continuation sentinel' \
+    '- body next' \
+    '' \
+    '1. ordered one' \
+    '2. ordered two' \
+    '' \
+    '- separate a' \
+    '' \
+    '' \
+    '- separate b' \
+    '' \
+    '#+begin_src text' \
+    '- source list lookalike' \
+    '| source | table |' \
+    '#+end_src' \
+    '' \
+    '#+begin_src text' \
+    '#+end_quote' \
+    '- mismatched source list' \
+    '| mismatched | source |' \
+    '#+end_src' \
+    '' \
+    '* Source owner' \
+    '#+begin_src text' \
+    '* source fake heading' \
+    '#+end_src' \
+    '** Source real child' \
+    '* Source sibling' \
+    '' \
+    '#+begin_src text' \
+    '#+begin_quote' \
+    '* source fake after unmatched begin' \
+    '#+end_src' \
+    '* Real after literal begin' \
+    '' \
+    '| formula | result |' \
+    '| 1       | 2      |' \
+    '#+TBLFM: $2=$1' \
+    '' \
+    '| spaced formula | result |' \
+    '| 3              | 4      |' \
+    '' \
+    '#+TBLFM: $2=$1' \
+    '' \
+    '| value |' \
+    '| -     |' \
+    '|       |' \
+    '' \
+    'CLOCK: [2026-07-12 Sun 10:00]--[2026-07-12 Sun 11:00] =>  1:00' \
+    '' \
+    '| only |' \
+    '' \
+    '| disposable |' \
+    'AFTER SINGLE ROW' \
+    >"$edge_fixture"
 }
 
 SESSIONS=()
@@ -108,6 +184,16 @@ wait_report() {
     sleep 0.1
   done
   return 1
+}
+
+context_report() {
+  : >"$LEM_YATH_ORG_REPORT"
+  mx "$ORG_SESSION" lem-yath-test-org-context-report || return 1
+  grep '^CONTEXT ' "$LEM_YATH_ORG_REPORT" | tail -n1
+}
+
+context_hash() {
+  sed -n 's/^CONTEXT hash=\([^ ]*\).*/\1/p' <<<"$1"
 }
 
 screen_has() { lem_capture "$1" | grep -qE "$2"; }
@@ -373,11 +459,22 @@ if [ -n "${ORG_SESSION:-}" ]; then
   mx "$ORG_SESSION" lem-yath-test-org-point-report
   hline_ok=0
   grep -qF 'text="|---+-----|"' "$LEM_YATH_ORG_REPORT" && hline_ok=1
+  mx "$ORG_SESSION" lem-yath-test-org-goto-table-hline-second
+  tmux_cmd send-keys -t "$ORG_SESSION" BTab
+  sleep 0.3
+  mx "$ORG_SESSION" lem-yath-test-org-point-report
+  hline_previous_ok=0
+  grep -qF 'column=10 text="| name  | value |"' \
+    "$LEM_YATH_ORG_REPORT" && hline_previous_ok=1
   if [ "$above_row_ok" = 1 ] && [ "$advance_ok" = 1 ] &&
-     [ "$indentation_ok" = 1 ] && [ "$hline_ok" = 1 ]; then
+     [ "$indentation_ok" = 1 ] && [ "$hline_ok" = 1 ] &&
+     [ "$hline_previous_ok" = 1 ]; then
     pass table "O/TAB target new cells and alignment preserves table structure"
   else
     fail table "row target, cell movement, indentation, or hline handling failed" "$ORG_SESSION"
+    printf 'table flags above=%s advance=%s indentation=%s hline=%s previous=%s\n' \
+      "$above_row_ok" "$advance_ok" "$indentation_ok" "$hline_ok" \
+      "$hline_previous_ok"
   fi
 fi
 
@@ -392,33 +489,457 @@ if [ -n "${ORG_SESSION:-}" ]; then
   fi
 fi
 
-# 10: promote/demote and reorder operate on the complete heading subtree.
-if [ -n "${ORG_SESSION:-}" ]; then
-  mx "$ORG_SESSION" lem-yath-test-org-return-fixture
+# 10: the active additional theme dispatches by Org context and exact scope.
+if start_org structure; then
+  baseline_report=$(context_report)
+  baseline_hash=$(context_hash "$baseline_report")
+
+  # Lowercase horizontal Meta changes only the current heading.
   mx "$ORG_SESSION" lem-yath-test-org-goto-parent
   tmux_cmd send-keys -t "$ORG_SESSION" M-l
   sleep 0.3
-  demote_ok=0
-  if screen_has "$ORG_SESSION" '\*\* TODO Parent' &&
-     screen_has "$ORG_SESSION" '\*\*\* NEXT Child'; then
-    demote_ok=1
+  heading_local_report=$(context_report)
+  heading_local_ok=0
+  grep -q ' levels=2,2,3 ' <<<"$heading_local_report" && heading_local_ok=1
+  tmux_cmd send-keys -t "$ORG_SESSION" M-h
+  sleep 0.3
+  heading_local_restore=$(context_report)
+  heading_local_restore_ok=0
+  [ "$(context_hash "$heading_local_restore")" = "$baseline_hash" ] &&
+    heading_local_restore_ok=1
+
+  # Uppercase horizontal Meta changes the complete subtree.
+  tmux_cmd send-keys -t "$ORG_SESSION" M-L
+  sleep 0.3
+  heading_tree_report=$(context_report)
+  heading_tree_ok=0
+  grep -q ' levels=2,3,4 ' <<<"$heading_tree_report" && heading_tree_ok=1
+  tmux_cmd send-keys -t "$ORG_SESSION" M-H
+  sleep 0.3
+  heading_tree_restore=$(context_report)
+  heading_tree_restore_ok=0
+  [ "$(context_hash "$heading_tree_restore")" = "$baseline_hash" ] &&
+    heading_tree_restore_ok=1
+
+  # Lowercase vertical Meta moves a complete heading subtree.
+  tmux_cmd send-keys -t "$ORG_SESSION" M-j
+  sleep 0.3
+  heading_move_report=$(context_report)
+  heading_move_ok=0
+  heading_lines=$(sed -n 's/.* headings=\([^ ]*\).*/\1/p' \
+    <<<"$heading_move_report")
+  IFS=',' read -r parent_line child_line grand_line sibling_line \
+    <<<"$heading_lines"
+  [ "$sibling_line" -lt "$parent_line" ] &&
+    [ "$parent_line" -lt "$child_line" ] &&
+    [ "$child_line" -lt "$grand_line" ] && heading_move_ok=1
+  tmux_cmd send-keys -t "$ORG_SESSION" M-k
+  sleep 0.3
+  heading_move_restore=$(context_report)
+  heading_move_restore_ok=0
+  [ "$(context_hash "$heading_move_restore")" = "$baseline_hash" ] &&
+    heading_move_restore_ok=1
+
+  # List indentation is local and leaves the item's child at its old depth.
+  mx "$ORG_SESSION" lem-yath-test-org-goto-second-list
+  tmux_cmd send-keys -t "$ORG_SESSION" M-l
+  sleep 0.3
+  list_local_report=$(context_report)
+  list_local_ok=0
+  grep -qE ' lists=[0-9]+/0,[0-9]+/2,[0-9]+/2,[0-9]+/2 ' \
+    <<<"$list_local_report" && list_local_ok=1
+  tmux_cmd send-keys -t "$ORG_SESSION" M-h
+  sleep 0.3
+  list_local_restore=$(context_report)
+  list_local_restore_ok=0
+  [ "$(context_hash "$list_local_restore")" = "$baseline_hash" ] &&
+    list_local_restore_ok=1
+
+  # Moving an item carries its complete item tree and reverses exactly.
+  mx "$ORG_SESSION" lem-yath-test-org-goto-list
+  tmux_cmd send-keys -t "$ORG_SESSION" M-j
+  sleep 0.3
+  list_move_report=$(context_report)
+  list_move_ok=0
+  list_fields=$(sed -n 's/.* lists=\([^ ]*\) table=.*/\1/p' \
+    <<<"$list_move_report")
+  IFS=',/' read -r first_line first_indent first_child_line first_child_indent \
+    second_line second_indent second_child_line second_child_indent \
+    <<<"$list_fields"
+  [ "$second_line" -lt "$second_child_line" ] &&
+    [ "$second_child_line" -lt "$first_line" ] &&
+    [ "$first_line" -lt "$first_child_line" ] && list_move_ok=1
+  tmux_cmd send-keys -t "$ORG_SESSION" M-k
+  sleep 0.3
+  list_move_restore=$(context_report)
+  list_move_restore_ok=0
+  [ "$(context_hash "$list_move_restore")" = "$baseline_hash" ] &&
+    list_move_restore_ok=1
+
+  # Uppercase horizontal Meta indents the list item and its child together.
+  mx "$ORG_SESSION" lem-yath-test-org-goto-second-list
+  tmux_cmd send-keys -t "$ORG_SESSION" M-L
+  sleep 0.3
+  list_tree_report=$(context_report)
+  list_tree_ok=0
+  grep -qE ' lists=[0-9]+/0,[0-9]+/2,[0-9]+/2,[0-9]+/4 ' \
+    <<<"$list_tree_report" && list_tree_ok=1
+  tmux_cmd send-keys -t "$ORG_SESSION" M-H
+  sleep 0.3
+  list_tree_restore=$(context_report)
+  list_tree_restore_ok=0
+  [ "$(context_hash "$list_tree_restore")" = "$baseline_hash" ] &&
+    list_tree_restore_ok=1
+
+  # Tables route horizontal keys to columns and vertical keys to rows.
+  mx "$ORG_SESSION" lem-yath-test-org-goto-table
+  tmux_cmd send-keys -t "$ORG_SESSION" M-l
+  sleep 0.3
+  table_column_report=$(context_report)
+  table_column_ok=0
+  if grep -qF 'header="| value | name  |"' <<<"$table_column_report" &&
+     grep -qF 'alpha="| beta  | alpha |"' <<<"$table_column_report" &&
+     grep -qF 'omega="| theta | omega |"' <<<"$table_column_report"; then
+    table_column_ok=1
   fi
   tmux_cmd send-keys -t "$ORG_SESSION" M-h
   sleep 0.3
-  restore_ok=0
-  screen_has "$ORG_SESSION" '^.*\* TODO Parent' &&
-    screen_has "$ORG_SESSION" '\*\* NEXT Child' && restore_ok=1
+  table_column_restore=$(context_report)
+  table_column_restore_ok=0
+  [ "$(context_hash "$table_column_restore")" = "$baseline_hash" ] &&
+    table_column_restore_ok=1
+
   tmux_cmd send-keys -t "$ORG_SESSION" M-j
   sleep 0.3
-  reorder_ok=0
-  sibling_line=$(lem_capture "$ORG_SESSION" | grep -n 'Sibling body sentinel' | head -n1 | cut -d: -f1)
-  parent_line=$(lem_capture "$ORG_SESSION" | grep -n 'Parent body sentinel' | head -n1 | cut -d: -f1)
-  [ -n "$sibling_line" ] && [ -n "$parent_line" ] &&
-    [ "$sibling_line" -lt "$parent_line" ] && reorder_ok=1
-  if [ "$demote_ok" = 1 ] && [ "$restore_ok" = 1 ] && [ "$reorder_ok" = 1 ]; then
-    pass structure "M-h/l and M-j transform complete subtrees"
+  table_row_report=$(context_report)
+  table_row_ok=0
+  omega_line=$(sed -n 's/.* omega="[^"]*"\/\([0-9]*\).*/\1/p' \
+    <<<"$table_row_report")
+  alpha_line=$(sed -n 's/.* alpha="[^"]*"\/\([0-9]*\).*/\1/p' \
+    <<<"$table_row_report")
+  [ -n "$omega_line" ] && [ -n "$alpha_line" ] &&
+    [ "$omega_line" -lt "$alpha_line" ] && table_row_ok=1
+  tmux_cmd send-keys -t "$ORG_SESSION" M-k
+  sleep 0.3
+  table_row_restore=$(context_report)
+  table_row_restore_ok=0
+  [ "$(context_hash "$table_row_restore")" = "$baseline_hash" ] &&
+    table_row_restore_ok=1
+
+  # A plus sign is a field boundary while point is on a horizontal rule.
+  mx "$ORG_SESSION" lem-yath-test-org-goto-table-hline-second
+  tmux_cmd send-keys -t "$ORG_SESSION" M-h
+  sleep 0.3
+  table_hline_move_report=$(context_report)
+  table_hline_move_ok=0
+  if grep -qF 'header="| value | name  |"' <<<"$table_hline_move_report" &&
+     grep -qF 'alpha="| beta  | alpha |"' <<<"$table_hline_move_report" &&
+     grep -qF 'omega="| theta | omega |"' <<<"$table_hline_move_report"; then
+    table_hline_move_ok=1
+  fi
+  tmux_cmd send-keys -t "$ORG_SESSION" M-l
+  sleep 0.3
+  table_hline_move_restore=$(context_report)
+  table_hline_move_restore_ok=0
+  [ "$(context_hash "$table_hline_move_restore")" = "$baseline_hash" ] &&
+    table_hline_move_restore_ok=1
+
+  mx "$ORG_SESSION" lem-yath-test-org-goto-table-hline-second
+  tmux_cmd send-keys -t "$ORG_SESSION" M-H
+  sleep 0.3
+  table_hline_delete_report=$(context_report)
+  table_hline_delete_ok=0
+  if grep -q ' table=4/1 ' <<<"$table_hline_delete_report" &&
+     grep -qF 'header="| name  |"' <<<"$table_hline_delete_report" &&
+     grep -qF 'alpha="| alpha |"' <<<"$table_hline_delete_report" &&
+     grep -qF 'omega="| omega |"' <<<"$table_hline_delete_report"; then
+    table_hline_delete_ok=1
+  fi
+  tmux_cmd send-keys -t "$ORG_SESSION" u
+  sleep 0.3
+  table_hline_delete_restore=$(context_report)
+  table_hline_delete_restore_ok=0
+  [ "$(context_hash "$table_hline_delete_restore")" = "$baseline_hash" ] &&
+    table_hline_delete_restore_ok=1
+
+  # Uppercase table commands insert/delete columns and rows at point.
+  mx "$ORG_SESSION" lem-yath-test-org-goto-table-hline-second
+  tmux_cmd send-keys -t "$ORG_SESSION" M-L
+  sleep 0.3
+  table_insert_column_report=$(context_report)
+  table_insert_column_ok=0
+  grep -q ' table=4/3 ' <<<"$table_insert_column_report" &&
+    grep -qF 'alpha="| alpha |   | beta  |"' \
+      <<<"$table_insert_column_report" && table_insert_column_ok=1
+  tmux_cmd send-keys -t "$ORG_SESSION" M-H
+  sleep 0.3
+  table_insert_column_restore=$(context_report)
+  table_insert_column_restore_ok=0
+  [ "$(context_hash "$table_insert_column_restore")" = "$baseline_hash" ] &&
+    table_insert_column_restore_ok=1
+
+  mx "$ORG_SESSION" lem-yath-test-org-goto-table-hline-second
+  tmux_cmd send-keys -t "$ORG_SESSION" j
+  tmux_cmd send-keys -t "$ORG_SESSION" M-K
+  sleep 0.3
+  table_delete_row_report=$(context_report)
+  table_delete_row_ok=0
+  grep -q ' table=3/2 ' <<<"$table_delete_row_report" &&
+    grep -qF 'alpha="MISSING"/0' <<<"$table_delete_row_report" &&
+    table_delete_row_ok=1
+  tmux_cmd send-keys -t "$ORG_SESSION" u
+  sleep 0.3
+  table_delete_row_restore=$(context_report)
+  table_delete_row_restore_ok=0
+  [ "$(context_hash "$table_delete_row_restore")" = "$baseline_hash" ] &&
+    table_delete_row_restore_ok=1
+
+  mx "$ORG_SESSION" lem-yath-test-org-goto-table
+  tmux_cmd send-keys -t "$ORG_SESSION" M-J
+  sleep 0.3
+  table_insert_row_report=$(context_report)
+  table_insert_row_ok=0
+  grep -q ' table=5/2 ' <<<"$table_insert_row_report" &&
+    table_insert_row_ok=1
+  tmux_cmd send-keys -t "$ORG_SESSION" u
+  sleep 0.3
+  table_insert_row_restore=$(context_report)
+  table_insert_row_restore_ok=0
+  [ "$(context_hash "$table_insert_row_restore")" = "$baseline_hash" ] &&
+    table_insert_row_restore_ok=1
+
+  prose_safe_ok=0
+  prose_line_ok=0
+  prose_line_restore_ok=0
+  # Ordinary prose falls back to word motion and never edits its heading.
+  if start_org structure-prose; then
+    prose_baseline_report=$(context_report)
+    prose_baseline_hash=$(context_hash "$prose_baseline_report")
+    mx "$ORG_SESSION" lem-yath-test-org-goto-parent-body
+    tmux_cmd send-keys -t "$ORG_SESSION" M-l
+    sleep 0.2
+    prose_motion_report=$(context_report)
+    grep -q 'point="Parent body sentinel.*"/6 modified=no$' \
+      <<<"$prose_motion_report" &&
+      [ "$(context_hash "$prose_motion_report")" = "$prose_baseline_hash" ] &&
+      prose_safe_ok=1
+
+    tmux_cmd send-keys -t "$ORG_SESSION" M-J
+    sleep 0.3
+    prose_line_report=$(context_report)
+    prose_lines=$(sed -n 's/.* prose=\([^ ]*\).*/\1/p' \
+      <<<"$prose_line_report")
+    IFS=',' read -r prose_one_line prose_two_line <<<"$prose_lines"
+    [ "$prose_two_line" -lt "$prose_one_line" ] && prose_line_ok=1
+    tmux_cmd send-keys -t "$ORG_SESSION" M-K
+    sleep 0.3
+    prose_line_restore=$(context_report)
+    [ "$(context_hash "$prose_line_restore")" = "$prose_baseline_hash" ] &&
+      prose_line_restore_ok=1
+  fi
+
+  if [ "$heading_local_ok" = 1 ] && [ "$heading_local_restore_ok" = 1 ] &&
+     [ "$heading_tree_ok" = 1 ] && [ "$heading_tree_restore_ok" = 1 ] &&
+     [ "$heading_move_ok" = 1 ] && [ "$heading_move_restore_ok" = 1 ] &&
+     [ "$list_local_ok" = 1 ] && [ "$list_local_restore_ok" = 1 ] &&
+     [ "$list_move_ok" = 1 ] && [ "$list_move_restore_ok" = 1 ] &&
+     [ "$list_tree_ok" = 1 ] && [ "$list_tree_restore_ok" = 1 ] &&
+     [ "$table_column_ok" = 1 ] && [ "$table_column_restore_ok" = 1 ] &&
+     [ "$table_row_ok" = 1 ] && [ "$table_row_restore_ok" = 1 ] &&
+     [ "$table_hline_move_ok" = 1 ] &&
+     [ "$table_hline_move_restore_ok" = 1 ] &&
+     [ "$table_hline_delete_ok" = 1 ] &&
+     [ "$table_hline_delete_restore_ok" = 1 ] &&
+     [ "$table_insert_column_ok" = 1 ] &&
+     [ "$table_insert_column_restore_ok" = 1 ] &&
+     [ "$table_delete_row_ok" = 1 ] &&
+     [ "$table_delete_row_restore_ok" = 1 ] &&
+     [ "$table_insert_row_ok" = 1 ] &&
+     [ "$table_insert_row_restore_ok" = 1 ] &&
+     [ "$prose_safe_ok" = 1 ] && [ "$prose_line_ok" = 1 ] &&
+     [ "$prose_line_restore_ok" = 1 ]; then
+    pass structure "Meta keys dispatch safely across headings, lists, tables, and prose"
   else
-    fail structure "subtree promotion, restoration, or reorder failed" "$ORG_SESSION"
+    fail structure "one or more context-specific structural operations differed" "$ORG_SESSION"
+    printf '%s\n' \
+      "$heading_local_report" "$heading_local_restore" \
+      "$heading_tree_report" "$heading_tree_restore" \
+      "$heading_move_report" "$heading_move_restore" \
+      "$list_local_report" "$list_local_restore" \
+      "$list_move_report" "$list_move_restore" \
+      "$list_tree_report" "$list_tree_restore" \
+      "$table_column_report" "$table_column_restore" \
+      "$table_row_report" "$table_row_restore" \
+      "$table_hline_move_report" "$table_hline_move_restore" \
+      "$table_hline_delete_report" "$table_hline_delete_restore" \
+      "$table_insert_column_report" "$table_insert_column_restore" \
+      "$table_delete_row_report" "$table_delete_row_restore" \
+      "$table_insert_row_report" "$table_insert_row_restore" \
+      "${prose_motion_report:-}" "${prose_line_report:-}" \
+      "${prose_line_restore:-}"
+    cat "$LEM_YATH_ORG_REPORT"
+  fi
+fi
+
+# 11: incomplete rich semantics fail closed instead of corrupting structure.
+if start_org structure-edge; then
+  mx "$ORG_SESSION" lem-yath-test-org-open-edge
+  edge_baseline_report=$(context_report)
+  edge_baseline_hash=$(context_hash "$edge_baseline_report")
+
+  mx "$ORG_SESSION" lem-yath-test-org-goto-edge-child-b
+  tmux_cmd send-keys -t "$ORG_SESSION" M-h
+  sleep 0.3
+  nested_outdent_report=$(context_report)
+  nested_outdent_ok=0
+  grep -q 'point="  - child-b"/' <<<"$nested_outdent_report" &&
+    [ "$(context_hash "$nested_outdent_report")" != "$edge_baseline_hash" ] &&
+    nested_outdent_ok=1
+  tmux_cmd send-keys -t "$ORG_SESSION" M-l
+  sleep 0.3
+  nested_restore_report=$(context_report)
+  nested_restore_ok=0
+  [ "$(context_hash "$nested_restore_report")" = "$edge_baseline_hash" ] &&
+    nested_restore_ok=1
+
+  mx "$ORG_SESSION" lem-yath-test-org-goto-edge-star-child
+  tmux_cmd send-keys -t "$ORG_SESSION" M-h
+  sleep 0.3
+  star_outdent_report=$(context_report)
+  star_outdent_ok=0
+  grep -q 'point="- star child"/' <<<"$star_outdent_report" &&
+    star_outdent_ok=1
+  tmux_cmd send-keys -t "$ORG_SESSION" u
+  sleep 0.3
+  star_restore_report=$(context_report)
+  star_restore_ok=0
+  [ "$(context_hash "$star_restore_report")" = "$edge_baseline_hash" ] &&
+    star_restore_ok=1
+
+  # Real subtree edits ignore source-block heading lookalikes entirely.
+  mx "$ORG_SESSION" lem-yath-test-org-goto-edge-source-owner
+  tmux_cmd send-keys -t "$ORG_SESSION" M-L
+  sleep 0.3
+  mx "$ORG_SESSION" lem-yath-test-org-goto-edge-source-fake-heading
+  source_fake_report=$(context_report)
+  source_fake_ok=0
+  grep -q 'point="\* source fake heading"/0' <<<"$source_fake_report" &&
+    source_fake_ok=1
+  mx "$ORG_SESSION" lem-yath-test-org-goto-edge-source-real-child
+  source_real_child_report=$(context_report)
+  source_real_child_ok=0
+  grep -q 'point="\*\*\* Source real child"/0' \
+    <<<"$source_real_child_report" && source_real_child_ok=1
+  mx "$ORG_SESSION" lem-yath-test-org-goto-edge-source-owner
+  tmux_cmd send-keys -t "$ORG_SESSION" M-H
+  sleep 0.3
+  source_subtree_restore=$(context_report)
+  source_subtree_restore_ok=0
+  [ "$(context_hash "$source_subtree_restore")" = "$edge_baseline_hash" ] &&
+    source_subtree_restore_ok=1
+
+  # A literal unmatched begin marker in source content must not hide the
+  # first real heading after the source block.
+  mx "$ORG_SESSION" lem-yath-test-org-goto-edge-real-after-literal-begin
+  tmux_cmd send-keys -t "$ORG_SESSION" M-l
+  sleep 0.3
+  real_after_literal_report=$(context_report)
+  real_after_literal_ok=0
+  grep -q 'point="\*\* Real after literal begin"/1' \
+    <<<"$real_after_literal_report" && real_after_literal_ok=1
+  tmux_cmd send-keys -t "$ORG_SESSION" M-h
+  sleep 0.3
+  real_after_literal_restore=$(context_report)
+  real_after_literal_restore_ok=0
+  [ "$(context_hash "$real_after_literal_restore")" = \
+    "$edge_baseline_hash" ] && real_after_literal_restore_ok=1
+
+  # Dash-only and empty cells are data rows, not horizontal rules.
+  mx "$ORG_SESSION" lem-yath-test-org-goto-edge-sparse-data
+  tmux_cmd send-keys -t "$ORG_SESSION" C-c C-c
+  sleep 0.3
+  sparse_data_report=$(context_report)
+  sparse_data_ok=0
+  [ "$(context_hash "$sparse_data_report")" = "$edge_baseline_hash" ] &&
+    sparse_data_ok=1
+
+  edge_guards_ok=1
+  for spec in \
+    'lem-yath-test-org-goto-edge-tab-child M-h' \
+    'lem-yath-test-org-goto-edge-wide-child M-l' \
+    'lem-yath-test-org-goto-edge-body-item M-l' \
+    'lem-yath-test-org-goto-edge-ordered M-j' \
+    'lem-yath-test-org-goto-edge-separate M-j' \
+    'lem-yath-test-org-goto-edge-source-list M-l' \
+    'lem-yath-test-org-goto-edge-source-table M-l' \
+    'lem-yath-test-org-goto-edge-mismatched-list M-l' \
+    'lem-yath-test-org-goto-edge-mismatched-table M-l' \
+    'lem-yath-test-org-goto-edge-source-fake-heading M-l' \
+    'lem-yath-test-org-goto-edge-source-fake-heading M-L' \
+    'lem-yath-test-org-goto-edge-source-fake-heading M-k' \
+    'lem-yath-test-org-goto-edge-source-fake-after-begin M-l' \
+    'lem-yath-test-org-goto-edge-source-fake-after-begin M-L' \
+    'lem-yath-test-org-goto-edge-source-fake-after-begin M-k' \
+    'lem-yath-test-org-goto-edge-formula M-l' \
+    'lem-yath-test-org-goto-edge-formula M-L' \
+    'lem-yath-test-org-goto-edge-formula M-j' \
+    'lem-yath-test-org-goto-edge-formula M-K' \
+    'lem-yath-test-org-goto-edge-spaced-formula M-h' \
+    'lem-yath-test-org-goto-edge-spaced-formula M-l' \
+    'lem-yath-test-org-goto-edge-spaced-formula M-k' \
+    'lem-yath-test-org-goto-edge-spaced-formula M-j' \
+    'lem-yath-test-org-goto-edge-spaced-formula M-H' \
+    'lem-yath-test-org-goto-edge-spaced-formula M-L' \
+    'lem-yath-test-org-goto-edge-spaced-formula M-K' \
+    'lem-yath-test-org-goto-edge-spaced-formula M-J' \
+    'lem-yath-test-org-goto-edge-clock M-J' \
+    'lem-yath-test-org-goto-edge-one-column M-H'; do
+    command=${spec% *}
+    key=${spec##* }
+    mx "$ORG_SESSION" "$command"
+    tmux_cmd send-keys -t "$ORG_SESSION" "$key"
+    sleep 0.2
+    guard_report=$(context_report)
+    if [ "$(context_hash "$guard_report")" != "$edge_baseline_hash" ]; then
+      edge_guards_ok=0
+      break
+    fi
+  done
+
+  mx "$ORG_SESSION" lem-yath-test-org-goto-edge-one-row
+  tmux_cmd send-keys -t "$ORG_SESSION" M-K
+  sleep 0.3
+  one_row_delete_report=$(context_report)
+  one_row_delete_ok=0
+  grep -q 'point="AFTER SINGLE ROW"/0' <<<"$one_row_delete_report" &&
+    [ "$(context_hash "$one_row_delete_report")" != "$edge_baseline_hash" ] &&
+    one_row_delete_ok=1
+  tmux_cmd send-keys -t "$ORG_SESSION" u
+  sleep 0.3
+  one_row_restore_report=$(context_report)
+  one_row_restore_ok=0
+  [ "$(context_hash "$one_row_restore_report")" = "$edge_baseline_hash" ] &&
+    one_row_restore_ok=1
+
+  if [ "$nested_outdent_ok" = 1 ] && [ "$nested_restore_ok" = 1 ] &&
+     [ "$star_outdent_ok" = 1 ] && [ "$star_restore_ok" = 1 ] &&
+     [ "$source_fake_ok" = 1 ] && [ "$source_real_child_ok" = 1 ] &&
+     [ "$source_subtree_restore_ok" = 1 ] &&
+     [ "$real_after_literal_ok" = 1 ] &&
+     [ "$real_after_literal_restore_ok" = 1 ] &&
+     [ "$sparse_data_ok" = 1 ] &&
+     [ "$edge_guards_ok" = 1 ] && [ "$one_row_delete_ok" = 1 ] &&
+     [ "$one_row_restore_ok" = 1 ]; then
+    pass structure-edge "unsafe list, block, formula, clock, and degenerate-table edits fail closed"
+  else
+    fail structure-edge "an edge operation crossed scope or changed guarded bytes" "$ORG_SESSION"
+    printf '%s\n' "$nested_outdent_report" "$nested_restore_report" \
+      "$star_outdent_report" "$star_restore_report" \
+      "$source_fake_report" "$source_real_child_report" \
+      "$source_subtree_restore" \
+      "$real_after_literal_report" "$real_after_literal_restore" \
+      "$sparse_data_report" \
+      "${guard_report:-}" "$one_row_delete_report" "$one_row_restore_report"
   fi
 fi
 

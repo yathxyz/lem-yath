@@ -1094,7 +1094,16 @@ written to disk.
 
 The bounded editing layer supplies visible-row `j/k`,
 `gh/gl/gk/gj/gH` heading navigation, Org-aware `o/O`, heading insertion,
-complete-subtree promotion/demotion/reordering, the exact
+and context-dispatched Meta editing. `M-h/l` changes one heading or list item
+and moves a table column, while falling back to prose-word motion. `M-k/j`
+moves heading/simple unordered-list trees or table rows. `M-H/L` uses complete
+subtree/list-tree scope or deletes/inserts a formula-free table column;
+`M-K/J` deletes/inserts a table row or drags one literal non-CLOCK line.
+Ordered and structurally tabbed list transforms, point-only indentation of a
+continuation-bearing item, formula-table structure edits, CLOCK-line dragging,
+and every visual Meta operation fail byte-identically. Type-matched source
+blocks, including mismatched nested end markers, are excluded from heading,
+list, and table dispatch; literal `M-K/J` line dragging remains available. The exact
 `TODO → NEXT → WAITING → HOLD → SOMEDAY | DONE → CANCELLED`
 sequence with immediate saving, checklist continuation/toggling, bracket-link
 insertion plus file/URL/mailto/ID opening, and basic table alignment, cell
@@ -1109,13 +1118,21 @@ mutation, safe heading insertion before a sibling and at an unterminated EOF,
 the complete configured TODO cycle with immediate persistence, reload and
 multi-buffer kill cleanup, checklist `O`/`o` targeting and toggling, table row
 and cell targeting plus indented and hline-only alignment, relative file-link
-opening, and complete-subtree demotion/restoration/reordering. Mouse hit-testing,
+opening, current-heading versus complete-subtree scope, list-tree movement,
+table column/row movement, inverse whole-buffer hashes, nested outdent and
+star-bullet conversion, source-block fake-heading boundaries, hline column
+targeting/navigation, plus fail-closed ordered and structurally tabbed lists,
+point-only continuation indentation, blank-separated list movement,
+source-block structural dispatch, immediate/blank-gap formulas, CLOCK-line
+dragging, and degenerate tables. Mouse hit-testing,
 overlapping nested folds, non-file link variants, and several broader commands
 above remain outside this focused gate.
 
 This is intentionally narrower than GNU Org and Evil-Org. Heading/element text
 objects; Org-aware endpoints, insert/append commands, and structural operators;
-the full list/table meta-command set; timestamp, scheduling, and deadline
+true `<`/`>` Org ranges, region-aware Meta operations, generic Org-element
+movement, shift-control commands, and richer list/table semantics; timestamp,
+scheduling, and deadline
 workflows; source-block editing or execution; Babel, LaTeX preview, export and
 publishing; org-modern glyph composition in the terminal; and an initial Org
 scratch buffer remain explicit gaps. Agenda scanning and capture/roam workflows

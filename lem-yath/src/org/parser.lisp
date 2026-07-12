@@ -39,8 +39,49 @@
                (aref register-ends 0))
       (- (aref register-ends 0) (aref register-starts 0)))))
 
+(defun org-block-marker (line)
+  "Return LINE's type-qualified Org block marker, or NIL."
+  (let ((line (string-downcase
+               (string-left-trim '(#\Space #\Tab) line))))
+    (labels ((marker-for (prefix marker)
+               (when (alexandria:starts-with-subseq prefix line)
+                 (let* ((rest (subseq line (length prefix)))
+                        (end (or (position-if
+                                  (lambda (character)
+                                    (member character '(#\Space #\Tab)))
+                                  rest)
+                                 (length rest))))
+                   (and (plusp end)
+                        (cons marker (subseq rest 0 end)))))))
+      (or (marker-for "#+begin_" :begin)
+          (marker-for "#+end_" :end)))))
+
+(defun org-inside-block-p (&optional (origin (current-point)))
+  "Whether ORIGIN is inside a type-matched Org #+begin_/#+end_ block."
+  (with-point ((point (buffer-start-point (point-buffer origin)))
+               (target origin))
+    (line-start target)
+    ;; Inside an outer block, other begin/end-looking lines are literal body
+    ;; text.  Only its own end marker closes it.  Scanning forward preserves
+    ;; that distinction when a source body contains unmatched block keywords.
+    (loop :with open-type := nil
+          :for marker := (org-block-marker (line-string point))
+          :do (cond
+                ((null open-type)
+                 (when (and marker (eq (car marker) :begin))
+                   (setf open-type (cdr marker))))
+                ((and marker
+                      (eq (car marker) :end)
+                      (string= (cdr marker) open-type))
+                 (setf open-type nil)))
+          :when (same-line-p point target)
+            :return (not (null open-type))
+          :unless (line-offset point 1)
+            :return nil)))
+
 (defun org-heading-level-at (point)
-  (org-heading-level-from-line (line-string point)))
+  (unless (org-inside-block-p point)
+    (org-heading-level-from-line (line-string point))))
 
 (defun org-heading-line-p (point)
   (not (null (org-heading-level-at point))))
