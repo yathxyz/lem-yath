@@ -87,7 +87,8 @@ Output is marshalled onto the editor thread; returns the buffer immediately.
 ON-EXIT, if given, is called on the editor thread with the exit code."
   (let ((buffer (make-buffer buffer-name)))
     (when directory
-      (setf (buffer-directory buffer) directory))
+      (setf (buffer-directory buffer) directory
+            (buffer-value buffer 'lem-yath-direnv-process-buffer) t))
     (when clear (erase-buffer buffer))
     (pop-to-buffer buffer)
     (let ((process (uiop:launch-program command

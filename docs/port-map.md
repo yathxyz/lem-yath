@@ -98,7 +98,7 @@ Status legend:
 | ibuffer | lem-builtin/partial | `list-buffers` (`C-x C-b`) provides Buffer/File columns, fuzzy narrowing, and Return-to-open; the configured org/tramp/emacs/ediff/dired/terminal/help saved groups are absent |
 | bookmarks (built-in) | lem-builtin/partial | `lem-bookmark`, `SPC b m` / `SPC RET`; unlike the configured Emacs, modified bookmarks are not automatically saved at exit |
 | avy | partial | `SPC l` goto-line, `SPC a` snipe, `SPC s` isearch-symbol |
-| gcmh / no-littering / use-package / direnv / sops | n/a or gap | SBCL image needs no GC hacks; no-littering/use-package n/a; **direnv/sops: gap** |
+| gcmh / no-littering / use-package / direnv / sops | n/a, ported/partial, or gap | SBCL needs no Emacs GC hack and no-littering/use-package do not map directly. Direnv is isolated in `src/direnv.lisp`: the current eligible buffer selects Lem's global process environment, explicit `direnv-allow` is available without auto-authorization, and `PATH` affects future subprocesses (`scripts/direnv-test.sh`). SOPS remains a gap. |
 | editorconfig | ported/partial | the official CLI resolves hierarchy/inheritance for every steady-state local file buffer; Lem maps indentation, line endings, write charset, fill column, trailing whitespace, and final-newline policy (`src/editorconfig.lisp`, `scripts/formatting-test.sh`). Charset is applied only to subsequent writes, not initial decoding |
 | auto-revert / savehist / save-place / recentf (built-ins) | ported/partial | `src/persistence.lisp` safely polls every file buffer before commands, transactionally reloads only clean readable files up to a 64 MiB safety cap, protects stale saves, restores up to 600 local-file positions, and atomically persists allowlisted non-secret prompt histories, a 120-entry live/40-entry saved Vi-aware kill ring, and separate 16-entry literal/regexp search rings; recentf remains a 300-file MRU on `M-g r`. Idle-time/filesystem notifications, larger automatic reloads, directory-buffer positions, and broad non-file stale adapters remain gaps |
 | modus-vivendi-tinted (built-in) / doom-themes | ported/partial | the active Emacs startup theme is recreated natively in `src/theme.lisp`; resolved semantic colors are tested, while ncurses rendering is limited by the terminal color model and Lem has fewer face roles. `doom-themes` remains declared but inactive. |
@@ -133,7 +133,23 @@ Status legend:
   maps only the documented core properties. A charset rule cannot re-decode an
   already opened file and affects later writes only; UTF-16BE/LE writes do not
   add a BOM. `trim_trailing_whitespace=false` does not disable ws-butler's
-  touched-line policy. Direnv remains a separate, unimplemented integration.
+  touched-line policy. Direnv is a separate module and can change executable
+  lookup for later formatting runs through the process-wide `PATH`.
+- **Direnv process scope**: `src/direnv.lisp` follows the exact directory of the
+  current eligible buffer rather than the Git/project root, while
+  `src/workspace.lisp` keeps the notes `$WORKDIR` fixed at startup. An
+  unwind-protected `execute-find-file :around` provisionally supplies the
+  destination environment to initial mode hooks for selected opens, then the
+  switch hook makes it current; direct background `find-file-buffer` loads do
+  not retarget the editor. Derived process modes and explicitly marked
+  process/compilation buffers participate, while arbitrary scratch buffers do
+  not. Updates are synchronous, bounded by a 300-second safety timeout and
+  streaming 4 MiB limits per output stream, and affect Lem's global SBCL
+  environment and future subprocesses only. Prevalidated changes and any
+  rollback are applied sequentially, not atomically: existing processes keep
+  their launch environment, and worker threads may observe an intermediate
+  multi-variable state or whichever buffer environment is active when they
+  launch. `scripts/direnv-test.sh` supplies the focused ncurses evidence.
 - **Org editing scope**: `.org` files use the native lem-yath Org mode. Its
   TUI-tested boundary covers semantic faces, non-destructive local/global
   folding, atomic hidden-line motion and reveal, safe heading insertion, the

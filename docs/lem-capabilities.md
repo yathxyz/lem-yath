@@ -889,14 +889,83 @@ Unmapped programming modes, unavailable backends, and prose do not format
 automatically.
 
 This is not the asynchronous Apheleia execution model. There is no formatter
-prompt, Apheleia-compatible per-project backend override table, or direnv
-integration; project-local Prettier discovery is the one executable-selection
-special case. `scripts/formatting-test.sh` drives the real ncurses editor and
+prompt or Apheleia-compatible per-project backend override table;
+project-local Prettier discovery is the one formatter-specific executable
+selection rule. The separate Direnv module described below can change global
+`PATH` lookup before later formatter runs. `scripts/formatting-test.sh` drives
+the real ncurses editor and
 checks official-CLI parent/nearer/root/unset behavior, global no-tabs and local
 indentation, true/false/absent whitespace policy, LF/CR/CRLF and final-newline
 normalization, subsequent-write Latin-1 bytes, manual point/mark/undo and argv
 stability, save ordering and rewrite count, CLI failure without LSP fallback,
 prose exclusion, and reload idempotence.
+
+### Current-buffer Direnv environment — `lem-yath/src/direnv.lisp` (verified approximation)
+
+Direnv is deliberately separate from `lem-yath/src/workspace.lisp`.
+`workspace.lisp` resolves the notes `$WORKDIR` once at startup, matching the
+configured Emacs `org-directory`; entering a project must not retarget notes.
+The Direnv module instead tracks the exact existing directory of the current
+eligible buffer. It does not collapse nested `.envrc` files to a Git or Lem
+project root.
+
+Selected file opens participate without installing a global find-file hook.
+An unwind-protected `execute-find-file :around` method applies the destination
+environment provisionally while the file is created, so its first mode hooks
+and a synchronously launched language server see the right environment. It then
+restores the visible buffer's environment; the ordinary switch hook makes the
+destination current only when the open is actually selected. Direct background
+`find-file-buffer` loads therefore do not retarget Lem, although selecting such
+a buffer later does.
+
+The non-file allowlist covers the process-oriented counterparts of Emacs's
+default Direnv modes: directory, terminal and shell buffers; Lisp, Scheme,
+Clojure, and Python REPL/listener buffers; grep/peek results; and Legit or
+Jujutsu views. Matching walks each active major or minor mode's CLOS ancestry,
+so derived modes participate. Shared process/compilation helpers also mark
+their result buffers explicitly rather than relying on a mode name. Switch and
+post-command hooks run at weight 20000 and cache the exact attempted directory,
+covering selection and buffer-directory changes without exporting on every
+command. Arbitrary non-file scratch and prompt buffers retain the current
+environment.
+
+`direnv export json` updates SBCL's global process environment synchronously.
+Consequently a changed `PATH` is visible to lem-yath executable discovery and
+to formatters, terminals, language servers, and other subprocesses launched
+after the update. Already-running subprocesses are unchanged. `M-x
+direnv-update-environment` forces a refresh, while `M-x direnv-allow` is the
+only editor command that authorizes the current `.envrc`; automatic hooks never
+grant trust.
+
+Invocations use direct argv boundaries and a 300-second GNU `timeout` safety
+cap. Stdout and stderr are drained concurrently and bounded while streaming to
+4 MiB each, preventing either child pipe from blocking the other. Environment
+names and JSON values are completely parsed and validated before mutation, so
+malformed output changes nothing. Valid changes are then applied sequentially;
+if a mutation fails, the saved prior values are restored sequentially before
+the error is reported. This is rollback, not an atomic transaction. A nonzero
+export carrying a valid unload diff is applied before the safe status
+diagnostic, matching `emacs-direnv`; missing programs and timeouts retain the
+prior environment. Stderr is drained for safety but neither its contents nor
+environment values are retained in module state or displayed; summaries and
+diagnostics expose variable names and status only.
+
+This intentionally shares Emacs Direnv's global-environment model rather than
+inventing per-buffer environments. Lem worker threads share that environment,
+so a background subprocess created concurrently with a buffer transition can
+inherit whichever directory's environment is globally active at its launch.
+During a multi-variable apply or rollback, a worker can also observe a
+transient mixed environment. There is no retroactive update or per-process
+snapshot for work already running. User-facing knobs and mode allowlists use
+`defvar`, so preferences established before a source reload are preserved.
+
+`scripts/direnv-test.sh` drives the real ncurses editor and real Direnv binary.
+It verifies the command-line file's mode-hook and child-process environment,
+direct argv safety, exact-directory caching and reload idempotence, nested
+`.envrc` selection, project and outside-baseline transitions, eligible
+directory/listener buffers and ineligible scratch retention, post-command
+directory changes, denied files without auto-allow, explicit allow and manual
+refresh, hard timeout retention, malformed-output prevalidation, and recovery.
 
 ---
 

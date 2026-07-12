@@ -12,6 +12,7 @@
   :components ((:file "package")
                (:file "base")
                (:file "workspace")
+               (:file "direnv")
                (:file "editing")
                (:file "cursor-state")
                (:file "vi")

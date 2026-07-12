@@ -87,6 +87,16 @@ of writing `.fasl` files into the source tree.
   `SPC p f/g/p` and `SPC SPC`; the project switch menu preserves `f/g/d/v/e/o`,
   with root-correct Git status and close terminal/M-x approximations for Emacs's
   Eshell and arbitrary-command entries
+- current-buffer Direnv integration is implemented in `src/direnv.lisp`: file
+  buffers, derived process-oriented modes, and explicitly marked process output
+  buffers update Lem's global process environment, so `PATH` lookup and future
+  terminals, formatters, language servers, and other subprocesses use the
+  selected directory's environment. Selected file opens provision that
+  environment during initial mode hooks without letting direct background file
+  loads retarget the editor. Authorization remains explicit through `M-x
+  direnv-allow`; `.envrc` files are never allowed automatically. `$WORKDIR`
+  remains a separately initialized, startup-cached notes root in
+  `src/workspace.lisp` (`scripts/direnv-test.sh`).
 - safe global refresh of externally changed clean files, stale-save protection
   for dirty buffers, and private cross-process persistence for file positions,
   reviewed non-secret prompt histories, Vi-aware kills, and separate literal and
@@ -144,7 +154,7 @@ Use `docs/parity-ledger.tsv` for behavior-level planning: its dispositions are
 `nix flake check` runs the package, compile, boot, prompt and in-buffer
 completion, completion-lifecycle, automatic-completion, Embark-style actions,
 editing, formatting, Orderless completion, snippets, LSP snippets, real installed
-language-server handshakes, daily-workflows,
+language-server handshakes, daily-workflows, Direnv environment switching,
 electric-editing, UI parity, project navigation, VCS, persistence, retained undo/Vundo,
 project-scoped LSP lifecycle, LLM key dispatch, cursor/state parity, evil-snipe
 parity, screen-line/Evil parity, notes, native Org, agenda, and parity-ledger checks. The ledger can
@@ -176,6 +186,7 @@ nix run .#vundo-test
 nix run .#editing-test
 nix run .#formatting-test
 nix run .#daily-workflows-test
+nix run .#direnv-test
 nix run .#electric-editing-test
 nix run .#ui-parity-test
 nix run .#vcs-test
@@ -198,7 +209,7 @@ worktree to the dedicated cache directory on `ex44` and run the full gate there:
 
 Pass `check`, `compile`, `boot`, `completion`, `prompt-completion`,
 `completion-lifecycle`, `auto-completion`, `actions`, `editing`,
-`daily-workflows`, `llm-keybinding`, `orderless-completion`, `snippets`, `lsp-snippets`,
+`daily-workflows`, `direnv`, `llm-keybinding`, `orderless-completion`, `snippets`, `lsp-snippets`,
 `lsp-project`, `real-lsp`, `project-navigation`, `persistence`, `vundo`, `electric-editing`, `ui-parity`, `cursor-state`, `snipe`, `interactive`, `structural`, or
 `notes` to run only that gate.
 `LEM_YATH_TEST_HOST` and `LEM_YATH_REMOTE_ROOT` override the SSH host and remote
