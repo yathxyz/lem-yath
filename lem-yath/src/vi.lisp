@@ -98,8 +98,17 @@
   '((#\( "(" ")") (#\) "(" ")") (#\b "(" ")")
     (#\[ "[" "]") (#\] "[" "]")
     (#\{ "{" "}") (#\} "{" "}") (#\B "{" "}")
-    (#\< "<" ">") (#\> "<" ">")
+    (#\# "#{" "}") (#\> "<" ">")
     (#\" "\"" "\"") (#\' "'" "'") (#\` "`" "`")))
+
+(defparameter *surround-tag-pattern*
+  "<\\s*(/?)\\s*([0-9A-Za-z.-]+)(?:\\s+(?:\"[^\"]*\"|'[^']*'|[^>\"'])*)?\\s*/?\\s*>")
+
+(defun surround-tag-trigger-p (character)
+  (member character '(#\t #\<) :test #'char=))
+
+(defun surround-prefix-function-trigger-p (character)
+  (char= character (code-char 6)))
 
 (defun surround-delimiters (char)
   (let ((entry (assoc char *surround-pairs*)))
@@ -111,13 +120,6 @@
 (defun spaced-surround-character-p (char)
   (member char '(#\( #\[ #\{)))
 
-(defun surround-insertion-pair (char)
-  (multiple-value-bind (open close) (surround-delimiters char)
-    (if (spaced-surround-character-p char)
-        (values (concatenate 'string open " ")
-                (concatenate 'string " " close))
-        (values open close))))
-
 (defun read-vi-character (prompt)
   "Read one character without entering Lem's prompt state."
   (message "~A" prompt)
@@ -127,6 +129,82 @@
           ((key-to-char key))
           (t
            (editor-error "Expected a character")))))
+
+(defun read-surround-tag-input ()
+  "Read an evil-surround tag body, accepting Return or the first `>'."
+  (loop :with input := ""
+        :do (message "<~a" input)
+            (let* ((key (read-key))
+                   (character (key-to-char key)))
+              (cond
+                ((abort-key-p key)
+                 (error 'editor-abort))
+                ((match-key key :sym "Return")
+                 (return input))
+                ((match-key key :sym "Backspace")
+                 (when (plusp (length input))
+                   (setf input (subseq input 0 (1- (length input))))))
+                ((null character)
+                 (editor-error "Expected tag text"))
+                ((>= (length input) 4096)
+                 (editor-error "Tag input is too long"))
+                (t
+                 (setf input
+                       (concatenate 'string input (string character)))
+                 (when (char= character #\>)
+                   (return input)))))))
+
+(defun surround-tag-name-character-p (character)
+  (or (alphanumericp character)
+      (member character '(#\. #\-) :test #'char=)))
+
+(defun surround-tag-name-end (string &optional (start 0))
+  (position-if-not #'surround-tag-name-character-p string :start start))
+
+(defun surround-original-tag-attributes (open)
+  "Return OPEN's attributes including the final `>', or NIL."
+  (when (and open
+             (> (length open) 2)
+             (char= (char open 0) #\<))
+    (let ((name-end (or (surround-tag-name-end open 1)
+                        (length open))))
+      (when (< name-end (length open))
+        (subseq open name-end)))))
+
+(defun surround-tag-pair (original-open)
+  (let* ((input (read-surround-tag-input))
+         (explicit-close
+           (and (plusp (length input))
+                (char= (char input (1- (length input))) #\>)))
+         (body (string-right-trim '(#\>) input))
+         (name-end (or (surround-tag-name-end body) (length body))))
+    (when (zerop name-end)
+      (editor-error "A tag name is required"))
+    (let* ((name (subseq body 0 name-end))
+           (rest (subseq body name-end))
+           (suffix (if explicit-close
+                       ">"
+                       (or (surround-original-tag-attributes original-open)
+                           ">"))))
+      (values (format nil "<~a~a~a" name rest suffix)
+              (format nil "</~a>" name)))))
+
+(defun surround-insertion-pair (char &optional original-open)
+  (cond
+    ((surround-tag-trigger-p char)
+     (surround-tag-pair original-open))
+    ((char= char #\f)
+     (values (format nil "~a(" (prompt-for-string "Function: ")) ")"))
+    ((surround-prefix-function-trigger-p char)
+     (values (format nil "(~a "
+                     (prompt-for-string "Prefix function: "))
+             ")"))
+    (t
+     (multiple-value-bind (open close) (surround-delimiters char)
+       (if (spaced-surround-character-p char)
+           (values (concatenate 'string open " ")
+                   (concatenate 'string " " close))
+           (values open close))))))
 
 (lem-vi-mode:define-operator lem-yath-surround-operator (start end type) ("<R>")
   (:move-point nil)
@@ -335,6 +413,69 @@ a target inside one of those syntax domains."
                 point open-character close-character))))
     (surround-candidate-points (point-buffer point) candidate)))
 
+(defun surround-self-closing-tag-p (text)
+  (let ((index (- (length text) 2)))
+    (loop :while (and (>= index 0)
+                      (member (char text index) '(#\Space #\Tab #\Newline #\Return)
+                              :test #'char=))
+          :do (decf index))
+    (and (>= index 0) (char= (char text index) #\/))))
+
+(defun find-tag-surrounding ()
+  "Return points and exact delimiters for the narrowest balanced XML tag."
+  (let* ((buffer (current-buffer))
+         (text (points-to-string (buffer-start-point buffer)
+                                 (buffer-end-point buffer)))
+         (target (1- (position-at-point (current-point))))
+         (offset 0)
+         (stack '()))
+    (loop
+      (multiple-value-bind (match-start match-end register-starts register-ends)
+          (cl-ppcre:scan *surround-tag-pattern* text :start offset)
+        (unless match-start
+          (return))
+        (let* ((closing-start (aref register-starts 0))
+               (closing-end (aref register-ends 0))
+               (name-start (aref register-starts 1))
+               (name-end (aref register-ends 1))
+               (closing-p (and closing-start closing-end
+                               (< closing-start closing-end)))
+               (name (subseq text name-start name-end))
+               (raw (subseq text match-start match-end)))
+          (cond
+            (closing-p
+             (if (and stack (string= name (first (first stack))))
+                 (destructuring-bind (open-name open-start open-end open-text)
+                     (pop stack)
+                   (declare (ignore open-name open-end))
+                   (when (and (<= open-start target) (< target match-end))
+                     (with-point ((start (buffer-start-point buffer))
+                                  (end (buffer-start-point buffer)))
+                       (move-to-position start (1+ open-start))
+                       (move-to-position end (1+ match-end))
+                       (return-from find-tag-surrounding
+                         (values (copy-point start :temporary)
+                                 (copy-point end :temporary)
+                                 open-text raw)))))
+                 ;; Refuse to pair across malformed nesting.
+                 (setf stack nil)))
+            ((not (surround-self-closing-tag-p raw))
+             (push (list name match-start match-end raw) stack)))
+          (setf offset match-end))))))
+
+(defun find-surround-spec (character)
+  "Return START, END, OPEN, CLOSE, and padding policy for CHARACTER."
+  (if (surround-tag-trigger-p character)
+      (multiple-value-bind (start end open close)
+          (find-tag-surrounding)
+        (values start end open close nil))
+      (multiple-value-bind (open close)
+          (surround-delimiters character)
+        (multiple-value-bind (start end)
+            (find-surrounding open close)
+          (values start end open close
+                  (spaced-surround-character-p character))))))
+
 (defun surrounding-edit-ranges (start end open close trim-padding)
   "Return the disjoint opener and closer ranges that should be replaced."
   (with-point ((open-end start)
@@ -403,29 +544,30 @@ a target inside one of those syntax domains."
 (define-command lem-yath-surround-delete () ()
   "Delete the nearest surrounding pair (ds in evil-surround)."
   (let ((char (read-vi-character "Delete surround: ")))
-    (multiple-value-bind (open close) (surround-delimiters char)
-    (multiple-value-bind (s e) (find-surrounding open close)
-      (cond ((and s e)
-             (remove-surrounding s e open close
-                                 (spaced-surround-character-p char)))
+    (multiple-value-bind (start end open close trim-padding)
+        (find-surround-spec char)
+      (cond ((and start end)
+             (remove-surrounding
+              start end open close trim-padding))
             (t
-             (message "No surrounding ~a...~a found" open close)))))))
+             (message "No surrounding ~a found" char))))))
 
 (define-command lem-yath-surround-change () ()
   "Change the nearest surrounding pair (cs in evil-surround)."
   (let ((old-char (read-vi-character "Change surround: ")))
-    (multiple-value-bind (old-open old-close) (surround-delimiters old-char)
-      (multiple-value-bind (s e) (find-surrounding old-open old-close)
-        (if (and s e)
+    (multiple-value-bind (start end old-open old-close trim-padding)
+        (find-surround-spec old-char)
+      (if (and start end)
+          (let ((new-char
+                  (read-vi-character
+                   (format nil "Replace ~a...~a with: "
+                           old-open old-close))))
             (multiple-value-bind (new-open new-close)
-                (surround-insertion-pair
-                 (read-vi-character (format nil "Replace ~a...~a with: "
-                                            old-open old-close)))
+                (surround-insertion-pair new-char old-open)
               (change-surrounding-pair
-               s e old-open old-close new-open new-close
-               (spaced-surround-character-p old-char)))
-            (message "No surrounding ~a...~a found"
-                     old-open old-close))))))
+               start end old-open old-close new-open new-close
+               trim-padding)))
+          (message "No surrounding ~a found" old-char)))))
 
 (defun call-vi-operator (command argument key)
   "Run native vi operator COMMAND with ARGUMENT after restoring KEY."

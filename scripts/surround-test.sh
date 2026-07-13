@@ -286,6 +286,98 @@ else
   fail lisp-fence-delete 'symmetric fence surround did not complete'
 fi
 
+if invoke_setup lem-yath-test-surround-add-form add-form; then
+  lem_keys "$session" y s i w t
+  sleep 0.2
+  tmux_cmd send-keys -t "$session" -l 'em>'
+  sleep 0.35
+  record_result add-form &&
+    assert_result tag-add add-form '<em>alpha</em> beta' yes yes
+else
+  fail tag-add 'tag insertion fixture did not open'
+fi
+
+if invoke_setup lem-yath-test-surround-add-form add-form; then
+  lem_keys "$session" y s i w f
+  lem_wait_for "$session" 'Function:' "$WAIT_TIMEOUT" >/dev/null || true
+  tmux_cmd send-keys -t "$session" -l 'wrap'
+  lem_keys "$session" Enter
+  sleep 0.35
+  record_result add-form &&
+    assert_result function-add add-form 'wrap(alpha) beta' yes yes
+else
+  fail function-add 'function insertion fixture did not open'
+fi
+
+if invoke_setup lem-yath-test-surround-add-form add-form; then
+  lem_keys "$session" y s i w C-f
+  lem_wait_for "$session" 'Prefix function:' "$WAIT_TIMEOUT" >/dev/null || true
+  tmux_cmd send-keys -t "$session" -l 'when'
+  lem_keys "$session" Enter
+  sleep 0.35
+  record_result add-form &&
+    assert_result prefix-function-add add-form '(when alpha) beta' yes yes
+else
+  fail prefix-function-add 'prefix-function insertion fixture did not open'
+fi
+
+if setup_and_keys lem-yath-test-surround-add-form add-form y s i w '#'; then
+  assert_result hash-pair-add add-form '#{alpha} beta' yes yes
+else
+  fail hash-pair-add 'hash-pair insertion did not complete'
+fi
+
+if setup_and_keys lem-yath-test-surround-tag-delete tag-delete d s t; then
+  assert_result tag-delete tag-delete '<div>alpha</div>' yes yes
+else
+  fail tag-delete 'nested tag deletion did not complete'
+fi
+
+if invoke_setup lem-yath-test-surround-tag-change tag-change; then
+  lem_keys "$session" c s t t
+  tmux_cmd send-keys -t "$session" -l 'section'
+  lem_keys "$session" Enter
+  sleep 0.35
+  record_result tag-change &&
+    assert_result tag-change-preserve-attributes tag-change \
+      '<section class="lead">alpha</section>' yes yes
+else
+  fail tag-change-preserve-attributes 'attribute-preserving tag change did not open'
+fi
+
+if invoke_setup lem-yath-test-surround-tag-change tag-change; then
+  lem_keys "$session" c s '<' t
+  tmux_cmd send-keys -t "$session" -l 'section>'
+  sleep 0.35
+  record_result tag-change &&
+    assert_result tag-change-discard-attributes tag-change \
+      '<section>alpha</section>' yes yes
+  lem_keys "$session" u
+  sleep 0.25
+  record_result tag-change &&
+    assert_result tag-change-one-undo tag-change \
+      '<p class="lead">alpha</p>' no no
+else
+  fail tag-change-discard-attributes 'explicit tag change did not open'
+fi
+
+quoted_tag_source='<div data-value="x>y"><img src='"'"'z>q'"'"'/>alpha</div>'
+quoted_tag_result='<img src='"'"'z>q'"'"'/>alpha'
+if setup_and_keys lem-yath-test-surround-tag-quoted-attribute \
+    tag-quoted-attribute d s t; then
+  assert_result tag-quoted-attribute tag-quoted-attribute \
+    "$quoted_tag_result" yes yes
+else
+  fail tag-quoted-attribute 'quoted attribute or self-closing tag confused matching'
+fi
+
+if setup_and_keys lem-yath-test-surround-tag-malformed tag-malformed d s t; then
+  assert_result tag-malformed-fail-closed tag-malformed \
+    '<div><span>alpha</div></span>' no yes
+else
+  fail tag-malformed-fail-closed 'malformed tag command did not return safely'
+fi
+
 if ((failed)); then
   printf '%s\n' '--- surround report ---'
   sed -n '1,240p' "$LEM_YATH_SURROUND_REPORT"

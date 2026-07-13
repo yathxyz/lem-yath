@@ -62,7 +62,9 @@ of writing `.fasl` files into the source tree.
   `j/k`, `gj/gk`, endpoints, insert/append, operators, registers, paste, and
   `V`, with a focused ncurses gate; Lem hard-wraps at display width rather than
   preferring Emacs word boundaries
-- surround / exact configured evil-snipe 2.1.3 / comment operator (`gc`) plus Lispyville-compatible,
+- evil-surround defaults (`ys`/`ds`/`cs`/Visual `S`, padded and compact pairs,
+  XML tags, call and prefix forms) / exact configured evil-snipe 2.1.3 /
+  comment operator (`gc`) plus Lispyville-compatible,
   delimiter-safe structural editing in Common Lisp, Clojure, Scheme/Racket,
   and Emacs Lisp buffers
 - configured Avy jumps on `SPC l/a/s` use balanced `a/s/d/f/g/h/j/k/l`

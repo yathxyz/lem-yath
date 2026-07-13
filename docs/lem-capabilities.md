@@ -256,6 +256,15 @@ and quote/paren text objects but no `ys`/`cs`/`ds` surround commands and no `s`/
 2-char sneak motion. There IS a **jumplist** (`jumplist.lisp`, `:jumps` ex command,
 `C-o`/`C-i`-style) and registers (`registers.lisp`).
 
+Lem-yath supplies those configured modal layers in `src/vi.lisp`. Its surround
+dispatcher implements `ys`, `ds`, `cs`, and Visual `S`, the pinned
+evil-surround delimiter/padding table, `#{...}`, XML tag prompts on `t`/`<`,
+ordinary call prompts on `f`, and prefix forms on `C-f`. The XML path matches
+nested tags while respecting quoted `>` characters and self-closing children;
+tag changes preserve prior attributes when submitted with Return and discard
+them when the new tag ends explicitly with `>`. Malformed nesting and
+multi-character block-string delimiters fail closed.
+
 Lem-yath supplies the configured Evil/Avy navigation separately in
 `src/avy.lisp`. `SPC l/a/s` select visible line, character, and symbol-start
 targets through Avy's balanced `a/s/d/f/g/h/j/k/l` tree. Borderless floating

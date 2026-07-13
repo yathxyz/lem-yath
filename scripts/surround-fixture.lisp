@@ -162,6 +162,27 @@
   (surround-test-setup
    "lisp-fence-delete" "(|foo bar|)" "foo"))
 
+(define-command lem-yath-test-surround-add-form () ()
+  (surround-test-setup "add-form" "alpha beta" "alpha"))
+
+(define-command lem-yath-test-surround-tag-delete () ()
+  (surround-test-setup
+   "tag-delete" "<div><span>alpha</span></div>" "alpha"))
+
+(define-command lem-yath-test-surround-tag-change () ()
+  (surround-test-setup
+   "tag-change" "<p class=\"lead\">alpha</p>" "alpha"))
+
+(define-command lem-yath-test-surround-tag-quoted-attribute () ()
+  (surround-test-setup
+   "tag-quoted-attribute"
+   "<div data-value=\"x>y\"><img src='z>q'/>alpha</div>"
+   "alpha"))
+
+(define-command lem-yath-test-surround-tag-malformed () ()
+  (surround-test-setup
+   "tag-malformed" "<div><span>alpha</div></span>" "alpha"))
+
 ;; The fixture loads before its command-line Python file, so suppress only the
 ;; unrelated server startup in this isolated editor process.
 (ignore-errors
