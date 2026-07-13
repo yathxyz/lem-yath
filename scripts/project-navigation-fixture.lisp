@@ -12,7 +12,12 @@
 
 (defvar *project-navigation-test-alpha-sibling*
   (canonical-project-directory
-   (uiop:getenv "LEM_YATH_PROJECT_NAVIGATION_ALPHA_SIBLING")))
+    (uiop:getenv "LEM_YATH_PROJECT_NAVIGATION_ALPHA_SIBLING")))
+
+(defvar *project-navigation-test-alpha-alias*
+  (uiop:ensure-directory-pathname
+   (uiop:parse-native-namestring
+    (uiop:getenv "LEM_YATH_PROJECT_NAVIGATION_ALPHA_ALIAS"))))
 
 (defvar *project-navigation-test-beta*
   (canonical-project-directory
@@ -48,13 +53,35 @@
 
 (defvar *project-navigation-test-request-helper*
   (uiop:parse-native-namestring
-   (uiop:getenv "LEM_YATH_PROJECT_NAVIGATION_REQUEST_HELPER")))
+    (uiop:getenv "LEM_YATH_PROJECT_NAVIGATION_REQUEST_HELPER")))
+
+(defvar *project-navigation-test-preview-fixtures*
+  (uiop:ensure-directory-pathname
+   (uiop:parse-native-namestring
+    (uiop:getenv "LEM_YATH_PROJECT_NAVIGATION_PREVIEW_FIXTURES"))))
 
 (defvar *project-navigation-test-alpha-buffer* nil)
 (defvar *project-navigation-test-sibling-buffer* nil)
 (defvar *project-navigation-test-alpha-build-buffer* nil)
 (defvar *project-navigation-test-sibling-build-buffer* nil)
 (defvar *project-navigation-test-history-sample* 0)
+(defvar *project-navigation-test-picker-source-window* nil)
+(defvar *project-navigation-test-picker-duplicate-buffer* nil)
+(defvar *project-navigation-test-picker-alias-buffer* nil)
+(defvar *project-navigation-test-picker-last-preview-buffer* nil)
+(defvar *project-navigation-test-picker-preview-buffers* nil)
+(defvar *project-navigation-test-picker-history-snapshot* nil)
+(defvar *project-navigation-test-picker-buffer-list-snapshot* nil)
+(defvar *project-navigation-test-picker-completion-function* nil)
+(defvar *project-navigation-test-picker-provider-call-count* 0)
+(defvar *project-navigation-test-picker-preview-read-function* nil)
+(defvar *project-navigation-test-picker-preview-read-count* 0)
+(defvar *project-navigation-test-picker-find-hook-count* 0)
+(defvar *project-navigation-test-picker-kill-hook-count* 0)
+(defvar *project-navigation-test-picker-state-sample* 0)
+(defvar *project-navigation-test-picker-point-position* 7)
+(defvar *project-navigation-test-picker-view-position* 1)
+(defvar *project-navigation-test-picker-horizontal-scroll* 4)
 
 (defun project-navigation-test-path (root relative)
   (project-absolute-path root relative))
@@ -534,6 +561,350 @@
   (project-navigation-test-log
    "SETUP current=alpha alpha-file=yes sibling-file=yes alpha-nonfile=yes sibling-nonfile=yes"))
 
+(defun project-navigation-test-add-recent-file (pathname)
+  (lem/common/history:add-history
+   (lem-core/commands/file:file-history)
+   (uiop:native-namestring pathname)
+   :allow-duplicates nil
+   :move-to-top t
+   :test #'string=))
+
+(defun project-navigation-test-picker-find-hook (buffer)
+  (declare (ignore buffer))
+  (incf *project-navigation-test-picker-find-hook-count*))
+
+(defun project-navigation-test-picker-kill-hook (buffer)
+  (when (alexandria:starts-with-subseq " Preview:" (buffer-name buffer))
+    (incf *project-navigation-test-picker-kill-hook-count*)))
+
+(defun project-navigation-test-position-point (point position)
+  (move-to-position
+   point
+   (max 1
+        (min position
+             (position-at-point
+              (buffer-end-point (point-buffer point)))))))
+
+(defun project-navigation-test-reset-picker-origin-state ()
+  (switch-to-buffer *project-navigation-test-alpha-buffer*)
+  (setf *project-navigation-test-picker-source-window* (current-window))
+  (project-navigation-test-position-point
+   (buffer-point *project-navigation-test-alpha-buffer*)
+   *project-navigation-test-picker-point-position*)
+  (project-navigation-test-position-point
+   (window-view-point *project-navigation-test-picker-source-window*)
+   *project-navigation-test-picker-view-position*)
+  (setf (window-parameter
+         *project-navigation-test-picker-source-window*
+         'lem-core::horizontal-scroll-start)
+        *project-navigation-test-picker-horizontal-scroll*))
+
+(defun project-navigation-test-reset-picker-invariants ()
+  (setf *project-navigation-test-picker-last-preview-buffer* nil
+        *project-navigation-test-picker-preview-buffers* nil
+        *project-navigation-test-picker-history-snapshot*
+        (copy-list (lem-core/commands/file:recent-files))
+        *project-navigation-test-picker-buffer-list-snapshot*
+        (copy-list (buffer-list))))
+
+(define-command lem-yath-test-project-navigation-setup-picker () ()
+  (project-navigation-test-delete-buffer-if-present "src/recent-preview.txt")
+  (project-navigation-test-delete-buffer-if-present "*alias-build*")
+  (setf *project-navigation-test-picker-duplicate-buffer*
+        (project-navigation-test-make-directory-buffer
+         "src/recent-preview.txt"
+         *project-navigation-test-alpha*
+         "DUPLICATE PROJECT BUFFER")
+        *project-navigation-test-picker-alias-buffer*
+        (make-buffer
+         "*alias-build*"
+         :directory
+         (uiop:native-namestring
+          *project-navigation-test-alpha-alias*)))
+  (insert-string
+   (buffer-end-point *project-navigation-test-picker-alias-buffer*)
+   "ALIASED PROJECT BUFFER")
+  (project-navigation-test-add-recent-file
+   (merge-pathnames "src/recent-preview.txt"
+                    *project-navigation-test-alpha-alias*))
+  (project-navigation-test-add-recent-file
+   (project-navigation-test-path
+    *project-navigation-test-alpha* "src/lexical-out.txt"))
+  (project-navigation-test-add-recent-file
+   (project-navigation-test-path
+    *project-navigation-test-alpha* "src/recent-preview.txt"))
+  (lem/common/history:save-file (lem-core/commands/file:file-history))
+  (setf *project-navigation-test-picker-find-hook-count* 0
+        *project-navigation-test-picker-kill-hook-count* 0
+        *project-navigation-test-picker-provider-call-count* 0
+        *project-navigation-test-picker-preview-read-count* 0
+        *project-navigation-test-picker-point-position* 7
+        *project-navigation-test-picker-state-sample* 0)
+  (unless *project-navigation-test-picker-completion-function*
+    (setf *project-navigation-test-picker-completion-function*
+          (symbol-function 'project-picker-completion-items)))
+  (setf (symbol-function 'project-picker-completion-items)
+        (lambda (session input)
+          (incf *project-navigation-test-picker-provider-call-count*)
+          (funcall *project-navigation-test-picker-completion-function*
+                   session input)))
+  (unless *project-navigation-test-picker-preview-read-function*
+    (setf *project-navigation-test-picker-preview-read-function*
+          (symbol-function 'project-picker-read-preview-text)))
+  (setf (symbol-function 'project-picker-read-preview-text)
+        (lambda (pathname)
+          (incf *project-navigation-test-picker-preview-read-count*)
+          (funcall *project-navigation-test-picker-preview-read-function*
+                   pathname)))
+  (remove-hook *find-file-hook* 'project-navigation-test-picker-find-hook)
+  (add-hook *find-file-hook* 'project-navigation-test-picker-find-hook)
+  (remove-hook (variable-value 'kill-buffer-hook :global t)
+               'project-navigation-test-picker-kill-hook)
+  (add-hook (variable-value 'kill-buffer-hook :global t)
+            'project-navigation-test-picker-kill-hook)
+  (project-navigation-test-reset-picker-origin-state)
+  (project-navigation-test-reset-picker-invariants)
+  (project-navigation-test-log
+   "PICKER-SETUP duplicate=~a recent=~a lexical=~a alias-buffer=~a hooks=~d"
+   (project-navigation-test-yes-no
+    (and *project-navigation-test-picker-duplicate-buffer*
+         (null (buffer-filename
+                *project-navigation-test-picker-duplicate-buffer*))))
+   (project-navigation-test-yes-no
+    (member
+     (uiop:native-namestring
+      (project-navigation-test-path
+       *project-navigation-test-alpha* "src/recent-preview.txt"))
+     *project-navigation-test-picker-history-snapshot*
+     :test #'string=))
+   (project-navigation-test-yes-no
+    (member
+     (uiop:native-namestring
+      (project-navigation-test-path
+       *project-navigation-test-alpha* "src/lexical-out.txt"))
+     *project-navigation-test-picker-history-snapshot*
+     :test #'string=))
+   (project-navigation-test-yes-no
+    *project-navigation-test-picker-alias-buffer*)
+   *project-navigation-test-picker-find-hook-count*))
+
+(define-command lem-yath-test-project-navigation-bounded-preview () ()
+  (let ((small
+          (project-picker-read-preview-text
+           (merge-pathnames "small.txt"
+                            *project-navigation-test-preview-fixtures*)))
+        (large
+          (project-picker-read-preview-text
+           (merge-pathnames "large.txt"
+                            *project-navigation-test-preview-fixtures*)))
+        (binary
+          (project-picker-read-preview-text
+           (merge-pathnames "binary.bin"
+                            *project-navigation-test-preview-fixtures*)))
+        (fifo
+          (project-picker-read-preview-text
+           (merge-pathnames "fifo"
+                            *project-navigation-test-preview-fixtures*))))
+    (project-navigation-test-log
+     "PICKER-BOUNDED small=~a large=~a binary=~a fifo=~a"
+     (project-navigation-test-yes-no
+      (string= small (format nil "line one~%line two~%")))
+     (project-navigation-test-yes-no (null large))
+     (project-navigation-test-yes-no (null binary))
+     (project-navigation-test-yes-no (null fifo)))))
+
+(define-command lem-yath-test-project-navigation-reset-picker-origin () ()
+  (project-navigation-test-reset-picker-origin-state)
+  (project-navigation-test-reset-picker-invariants)
+  (project-navigation-test-log "PICKER-ORIGIN reset=yes"))
+
+(define-command lem-yath-test-project-navigation-edit-picker-origin () ()
+  (let ((text "ASYNC "))
+    (with-current-buffer *project-navigation-test-alpha-buffer*
+      (insert-string (buffer-start-point (current-buffer)) text))
+    (incf *project-navigation-test-picker-point-position* (length text))
+    (project-navigation-test-log
+     "PICKER-EDIT point=~d view=~d"
+     *project-navigation-test-picker-point-position*
+     *project-navigation-test-picker-view-position*)))
+
+(define-command lem-yath-test-project-navigation-seed-many-recent () ()
+  (let ((target
+          (project-navigation-test-path
+           *project-navigation-test-alpha* "src/deep-recent-target.txt")))
+    (project-navigation-test-add-recent-file target)
+    (dotimes (index 130)
+      (project-navigation-test-add-recent-file
+       (project-navigation-test-path
+        *project-navigation-test-alpha*
+        (format nil "src/stale-recent-~3,'0d.txt" index))))
+    (lem/common/history:save-file (lem-core/commands/file:file-history))
+    (project-navigation-test-reset-picker-origin-state)
+    (project-navigation-test-reset-picker-invariants)
+    (let* ((history-index
+             (position (uiop:native-namestring target)
+                       *project-navigation-test-picker-history-snapshot*
+                       :test #'string=))
+           (picker-files
+             (project-picker-recent-files *project-navigation-test-alpha*))
+           (candidate-index
+             (position target picker-files
+                       :test #'project-picker-file-equal-p)))
+      (project-navigation-test-log
+       (concatenate
+        'string
+        "PICKER-MANY history-index=~d candidate-index=~d "
+        "beyond-hundred=~a")
+       (or history-index -1)
+       (or candidate-index -1)
+       (project-navigation-test-yes-no
+        (and candidate-index (> candidate-index 100)))))))
+
+(define-command lem-yath-test-project-navigation-preview-read-error () ()
+  (let* ((session (make-project-picker-session :active-p t))
+         (kill-before *project-navigation-test-picker-kill-hook-count*)
+         (pathname
+           (project-navigation-test-path
+            *project-navigation-test-alpha* "src/missing-preview-file.txt"))
+         (name " Preview:missing-preview-file.txt")
+         (result (project-picker-read-preview-buffer session pathname))
+         (remaining (get-buffer name)))
+    (let ((listed (and remaining (member remaining (buffer-list) :test #'eq))))
+      (project-navigation-test-log
+       (concatenate
+        'string
+        "PICKER-PREVIEW-ERROR result=~a slot=~a remaining=~a "
+        "listed=~a kill-hooks=~d")
+       (if (null result) "nil" "non-nil")
+       (if (null (project-picker-session-preview-buffer session))
+           "nil"
+           "live")
+       (project-navigation-test-yes-no remaining)
+       (project-navigation-test-yes-no listed)
+       (- *project-navigation-test-picker-kill-hook-count* kill-before))
+      (when remaining
+        (ignore-errors
+          (with-global-variable-value (kill-buffer-hook nil)
+            (delete-buffer remaining)))))))
+
+(defun project-navigation-test-picker-source-label (buffer)
+  (cond
+    ((null buffer) "none")
+    ((eq buffer *project-navigation-test-alpha-buffer*) "origin")
+    ((eq buffer *project-navigation-test-picker-duplicate-buffer*) "duplicate")
+    ((eq buffer *project-navigation-test-alpha-build-buffer*) "alpha-build")
+    ((buffer-temporary-p buffer) "temporary")
+    ((and (buffer-filename buffer)
+          (project-picker-file-equal-p
+           (buffer-filename buffer)
+           (project-navigation-test-path
+            *project-navigation-test-alpha* "src/recent-preview.txt")))
+     "normal-file")
+    (t "other")))
+
+(define-command lem-yath-test-project-navigation-picker-state () ()
+  (incf *project-navigation-test-picker-state-sample*)
+  (let* ((prompt (lem/prompt-window:current-prompt-window))
+         (input
+           (if prompt
+               (handler-case
+                   (lem/prompt-window::get-input-string)
+                 (error () "unavailable"))
+               "none"))
+         (item
+           (and prompt
+                (handler-case
+                    (completion-focused-item)
+                  (error () nil))))
+         (focus
+           (if item
+               (lem/completion-mode:completion-item-label item)
+               "none"))
+         (group
+           (if item
+               (or (lem/completion-mode:completion-item-group item) "none")
+               "none"))
+         (window *project-navigation-test-picker-source-window*)
+         (buffer (and (project-picker-live-window-p window)
+                      (window-buffer window)))
+         (temporary (and buffer (buffer-temporary-p buffer)))
+         (point-position
+           (and window
+                (project-picker-live-window-p window)
+                (position-at-point (window-point window))))
+         (view-position
+           (and window
+                (project-picker-live-window-p window)
+                (position-at-point (window-view-point window))))
+         (horizontal
+           (and window
+                (project-picker-live-window-p window)
+                (window-parameter window 'lem-core::horizontal-scroll-start)))
+         (exact
+           (and (eq buffer *project-navigation-test-alpha-buffer*)
+                (= point-position
+                   *project-navigation-test-picker-point-position*)
+                (= view-position
+                   *project-navigation-test-picker-view-position*)
+                (eql horizontal
+                     *project-navigation-test-picker-horizontal-scroll*))))
+    (when temporary
+      (setf *project-navigation-test-picker-last-preview-buffer* buffer)
+      (pushnew buffer *project-navigation-test-picker-preview-buffers*
+               :test #'eq))
+    (project-navigation-test-log
+     (concatenate
+      'string
+      "PICKER-STATE sample=~d prompt=~a input=~s focus=~s group=~s calls=~d reads=~d "
+      "source=~a temp=~a temp-listed=~a "
+      "preview-deleted=~a hooks=~d kill-hooks=~d history-same=~a exact=~a "
+      "mru-same=~a point=~a view=~a horizontal=~a")
+     *project-navigation-test-picker-state-sample*
+     (project-navigation-test-yes-no prompt)
+     input
+     focus
+     group
+     *project-navigation-test-picker-provider-call-count*
+     *project-navigation-test-picker-preview-read-count*
+     (project-navigation-test-picker-source-label buffer)
+     (project-navigation-test-yes-no temporary)
+     (project-navigation-test-yes-no
+      (and temporary (member buffer (buffer-list) :test #'eq)))
+     (project-navigation-test-yes-no
+      (and *project-navigation-test-picker-preview-buffers*
+           (every #'deleted-buffer-p
+                  *project-navigation-test-picker-preview-buffers*)))
+     *project-navigation-test-picker-find-hook-count*
+     *project-navigation-test-picker-kill-hook-count*
+     (project-navigation-test-yes-no
+      (equal *project-navigation-test-picker-history-snapshot*
+             (lem-core/commands/file:recent-files)))
+     (project-navigation-test-yes-no exact)
+     (project-navigation-test-yes-no
+      (equal *project-navigation-test-picker-buffer-list-snapshot*
+             (buffer-list)))
+     (or point-position "none")
+     (or view-position "none")
+     (or horizontal "none"))))
+
+(define-command lem-yath-test-project-navigation-finish-picker () ()
+  (when *project-navigation-test-picker-completion-function*
+    (setf (symbol-function 'project-picker-completion-items)
+          *project-navigation-test-picker-completion-function*
+          *project-navigation-test-picker-completion-function* nil))
+  (when *project-navigation-test-picker-preview-read-function*
+    (setf (symbol-function 'project-picker-read-preview-text)
+          *project-navigation-test-picker-preview-read-function*
+          *project-navigation-test-picker-preview-read-function* nil))
+  (remove-hook *find-file-hook* 'project-navigation-test-picker-find-hook)
+  (remove-hook (variable-value 'kill-buffer-hook :global t)
+               'project-navigation-test-picker-kill-hook)
+  (project-navigation-test-reset-picker-origin-state)
+  (project-navigation-test-log
+   "PICKER-FINISH hooks=~d kill-hooks=~d"
+   *project-navigation-test-picker-find-hook-count*
+   *project-navigation-test-picker-kill-hook-count*))
+
 (define-command lem-yath-test-project-navigation-record-candidates () ()
   (let* ((files (project-file-candidates *project-navigation-test-alpha*))
          (unique (= (length files)
@@ -687,7 +1058,26 @@
   (define-key keymap "F6" 'lem-yath-test-project-navigation-record-spc-p-f)
   (define-key keymap "F7" 'lem-yath-test-project-navigation-record-spc-p-p)
   (define-key keymap "F8" 'lem-yath-test-project-navigation-record-grep)
-  (define-key keymap "F9" 'lem-yath-test-project-navigation-cancellation))
+  (define-key keymap "F9" 'lem-yath-test-project-navigation-cancellation)
+  (define-key keymap "F10" 'lem-yath-test-project-navigation-picker-state)
+  (define-key keymap "F11" 'lem-yath-test-project-navigation-edit-picker-origin))
+
+(define-key *project-picker-keymap*
+  "F10" 'lem-yath-test-project-navigation-picker-state)
+(define-key *project-picker-keymap*
+  "F11" 'lem-yath-test-project-navigation-edit-picker-origin)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "F10" 'lem-yath-test-project-navigation-picker-state)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "F11" 'lem-yath-test-project-navigation-edit-picker-origin)
+(define-key lem/prompt-window::*prompt-mode-keymap*
+  "F10" 'lem-yath-test-project-navigation-picker-state)
+(define-key lem/prompt-window::*prompt-mode-keymap*
+  "F11" 'lem-yath-test-project-navigation-edit-picker-origin)
+(pushnew 'lem-yath-test-project-navigation-picker-state
+         *auto-completion-continue-commands*)
+(pushnew 'lem-yath-test-project-navigation-edit-picker-origin
+         *auto-completion-continue-commands*)
 
 (define-key lem/peek-source:*peek-source-keymap*
   "F8" 'lem-yath-test-project-navigation-record-grep)

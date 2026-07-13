@@ -31,6 +31,7 @@
                (:file "formatting")
                (:file "git")
                (:file "project")
+               (:file "project-picker")
                (:module "org"
                 :serial t
                 :components ((:file "parser")

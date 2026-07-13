@@ -837,14 +837,24 @@ opens Git status through Legit at the selected root even in a colocated jj
 workspace. `e` creates a Lem terminal at that root and `o` invokes Lem's
 M-x-style command prompt with that root as the buffer directory. Those last two
 preserve the useful dispatch and working-directory behavior but remain
-approximations of Emacs `project-eshell` and `project-any-command`. `SPC SPC`
-uses each buffer's directory, so compilation, terminal,
-and REPL-style buffers participate without sibling-prefix leakage. The
-two-process ncurses gate is `scripts/project-navigation-test.sh`; it also forces
-overlapping cancellation and hostile submodule fixtures. File and buffer
-candidates now carry the bounded metadata described above. Consult's
-preview-on-move and `SPC SPC` multi-category Project Buffer/File/Root grouping
-remain unavailable.
+approximations of Emacs `project-eshell` and `project-any-command`.
+`lem-yath/src/project-picker.lisp` makes `SPC SPC` a grouped Project
+Buffer/File/Root picker. Buffer membership uses each buffer's lexical directory,
+so compilation, terminal, and REPL-style buffers participate without
+sibling-prefix or symlink-alias leakage; recent files and saved roots retain
+their source identity even when labels collide. The picker supports `b/f/r
+Space` source narrowing, empty-Backspace widening, `M-{`/`M-}` group rotation,
+and preview-on-move with exact point, view, and horizontal-scroll rollback on
+no match or abort. Unopened-file previews use raw UTF-8 text in unlisted
+temporary buffers, avoid file/mode/switch/kill hooks, and skip undecodable,
+binary, or over-1-MiB files; ordinary window-display hooks can still run. They
+deliberately do not activate major
+modes because Lem has no generic isolated activation path: arbitrary mode hooks
+and shared tree-sitter parser state could otherwise leak from a preview.
+The two-process ncurses gate is `scripts/project-navigation-test.sh`; it also
+forces overlapping cancellation, hostile submodule fixtures, grouped picker
+lifecycle/identity cases, lexical symlinks, and filtering beyond the display
+cap. File and buffer candidates carry the bounded metadata described above.
 
 ### Completion UI config
 `*prompt-buffer-completion-function*`, `*prompt-file-completion-function*`,

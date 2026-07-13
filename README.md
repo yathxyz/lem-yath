@@ -91,11 +91,12 @@ of writing `.fasl` files into the source tree.
   300-entry `M-g r` MRU, filterable `C-x C-b`, and asynchronous persistent
   `M-s f` name search with property-backed Return and persistent q/revisit behavior
 - project.el-style navigation: persistent automatic project MRU, Git-aware
-  tracked/untracked file finding, cancellable bounded asynchronous regexp search, exact
-  directory-based project buffers, and arbitrary-directory command dispatch on
-  `SPC p f/g/p` and `SPC SPC`; the project switch menu preserves `f/g/d/v/e/o`,
-  with root-correct Git status and close terminal/M-x approximations for Emacs's
-  Eshell and arbitrary-command entries
+  tracked/untracked file finding, cancellable bounded asynchronous regexp search,
+  and arbitrary-directory command dispatch on `SPC p f/g/p`; `SPC SPC` combines
+  lexical project buffers, recent files, and saved roots in fixed, narrowable
+  groups with reversible preview-on-move. The project switch menu preserves
+  `f/g/d/v/e/o`, with root-correct Git status and close terminal/M-x
+  approximations for Emacs's Eshell and arbitrary-command entries
 - current-buffer Direnv integration is implemented in `src/direnv.lisp`: file
   buffers, derived process-oriented modes, and explicitly marked process output
   buffers update Lem's global process environment, so `PATH` lookup and future

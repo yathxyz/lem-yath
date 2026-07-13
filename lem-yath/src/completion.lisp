@@ -212,11 +212,13 @@
       (prescient-initialism-match-p component label case-sensitive-p)))
 
 (defun prescient-filter (input candidates
-                         &key (key #'identity) (category :generic))
+                         &key (key #'identity) (category :generic)
+                           (rank-p t))
   "Filter and rank CANDIDATES like the active Vertico-Prescient setup.
 
 Every query component may match literally, as a regexp, or as an initialism;
-all components must match.  Uppercase input makes matching case-sensitive."
+all components must match.  Uppercase input makes matching case-sensitive.
+When RANK-P is false, preserve the provider's source-defined order."
   (setf *completion-current-category* category)
   (let* ((components (prescient-split-query input))
          (case-sensitive-p (prescient-case-sensitive-p (or input "")))
@@ -231,7 +233,9 @@ all components must match.  Uppercase input makes matching case-sensitive."
                               component label case-sensitive-p))
                            components)))
                 candidates))))
-    (completion-sort-candidates filtered :key key)))
+    (if rank-p
+        (completion-sort-candidates filtered :key key)
+        filtered)))
 
 (defvar *default-command-completion* *prompt-command-completion-function*)
 (defvar *default-buffer-completion* *prompt-buffer-completion-function*)

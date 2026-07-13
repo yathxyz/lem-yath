@@ -1011,51 +1011,6 @@ an escaped (), {}, or | becomes special and an unescaped one becomes literal."
                       (buffer-directory buffer) root))
             :collect buffer)))
 
-(defun project-buffer-at-root (root)
-  "Prompt for and return a buffer belonging to ROOT."
-  (let* ((buffers (project-buffers-at-root root))
-         (buffers (sort buffers #'string< :key #'buffer-name))
-         (choices (mapcar (lambda (buffer)
-                            (cons (buffer-name buffer) buffer))
-                          buffers))
-         (names (mapcar #'car choices))
-         (current (buffer-name (current-buffer))))
-    (unless names
-      (editor-error "No buffers in project ~a" root))
-    (let ((choice
-            (prompt-for-string
-             (if (member current names :test #'string=)
-                 "Project buffer (current): "
-                 "Project buffer: ")
-             :completion-function
-             (lambda (input)
-               (completion-annotated-prompt-choices
-                (prescient-filter input choices
-                                  :key #'car
-                                  :category :project-buffer)
-                (lambda (buffer)
-                  (let ((filename (buffer-filename buffer)))
-                    (completion-buffer-detail
-                     buffer
-                     (and filename
-                          (enough-namestring filename root)))))))
-             :test-function
-             (lambda (input)
-               (or (and (member current names :test #'string=)
-                        (zerop (length input)))
-                   (member input names :test #'string=))))))
-      (when (and (zerop (length choice))
-                 (member current names :test #'string=))
-        (setf choice current))
-      (cdr (assoc choice choices :test #'string=)))))
-
-(define-command lem-yath-project-buffers () ()
-  "Switch among file and non-file buffers belonging to the current project."
-  (let* ((root (current-project-directory))
-         (buffer (project-buffer-at-root root)))
-    (when buffer
-      (switch-to-buffer buffer))))
-
 (defun call-in-project-buffer-directory (root function)
   "Call FUNCTION with the current Lem buffer directory temporarily at ROOT."
   (let* ((buffer (current-buffer))
@@ -1167,7 +1122,6 @@ an escaped (), {}, or | becomes special and an unescaped one becomes literal."
 (define-key *global-keymap* "C-x p g" 'lem-yath-project-grep)
 (define-key *global-keymap* "C-x p p" 'lem-yath-project-switch)
 (define-key *global-keymap* "C-x p d" 'lem-yath-project-root-directory)
-(define-key *global-keymap* "C-x p b" 'lem-yath-project-buffers)
 
 ;; Hot reloads must not multiply registration work.
 (remove-hook *find-file-hook* 'register-buffer-project)

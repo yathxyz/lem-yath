@@ -19,6 +19,7 @@ export LEM_HOME="$root/lem-home/"
 export LEM_YATH_COMPLETION_STATE_FILE="$root/completion-ranking.sexp"
 export LEM_YATH_PROJECT_NAVIGATION_REPORT="$root/report"
 export LEM_YATH_PROJECT_NAVIGATION_ALPHA="$root/projects/alpha/"
+export LEM_YATH_PROJECT_NAVIGATION_ALPHA_ALIAS="$root/projects/alpha-alias/"
 export LEM_YATH_PROJECT_NAVIGATION_ALPHA_SIBLING="$root/projects/alpha-sibling/"
 export LEM_YATH_PROJECT_NAVIGATION_BETA="$root/projects/beta/"
 export LEM_YATH_PROJECT_NAVIGATION_GAMMA="$root/projects/gamma/"
@@ -29,6 +30,7 @@ export LEM_YATH_PROJECT_NAVIGATION_SUBMODULE_CYCLE="$root/projects/submodule-cyc
 export LEM_YATH_PROJECT_NAVIGATION_SUBMODULE_CYCLE_CHILD="$root/projects/submodule-cycle/child/"
 export LEM_YATH_PROJECT_NAVIGATION_REQUEST_STATE="$root/request-state/"
 export LEM_YATH_PROJECT_NAVIGATION_REQUEST_HELPER="$root/request-helper.sh"
+export LEM_YATH_PROJECT_NAVIGATION_PREVIEW_FIXTURES="$root/preview-fixtures/"
 submodule_child="$root/submodule-child"
 
 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$WORKDIR" "$LEM_HOME" \
@@ -43,6 +45,7 @@ mkdir -p "$HOME" "$XDG_CACHE_HOME" "$WORKDIR" "$LEM_HOME" \
   "$LEM_YATH_PROJECT_NAVIGATION_SUBMODULE_OUTSIDE_TARGET" \
   "$LEM_YATH_PROJECT_NAVIGATION_SUBMODULE_CYCLE_CHILD" \
   "$LEM_YATH_PROJECT_NAVIGATION_REQUEST_STATE" \
+  "$LEM_YATH_PROJECT_NAVIGATION_PREVIEW_FIXTURES" \
   "$submodule_child/nested"
 : >"$LEM_YATH_PROJECT_NAVIGATION_REPORT"
 
@@ -54,6 +57,10 @@ printf 'TRACKED PROJECT TARGET\nSHARED_GREP ALPHA\n' \
   >"$LEM_YATH_PROJECT_NAVIGATION_ALPHA/src/tracked-target.txt"
 printf 'UNTRACKED PROJECT TARGET\n' \
   >"$LEM_YATH_PROJECT_NAVIGATION_ALPHA/src/untracked-target.txt"
+printf 'RECENT PROJECT PREVIEW\n' \
+  >"$LEM_YATH_PROJECT_NAVIGATION_ALPHA/src/recent-preview.txt"
+printf 'DEEP RECENT PROJECT TARGET\n' \
+  >"$LEM_YATH_PROJECT_NAVIGATION_ALPHA/src/deep-recent-target.txt"
 printf 'SHARED_GREP TRACKED BUILD\n' \
   >"$LEM_YATH_PROJECT_NAVIGATION_ALPHA/build/kept.txt"
 printf 'SHARED_GREP IGNORED\n' \
@@ -72,6 +79,16 @@ printf 'OUTSIDE SUBMODULE TARGET\n' \
   >"$LEM_YATH_PROJECT_NAVIGATION_SUBMODULE_OUTSIDE_TARGET/outside.txt"
 printf 'CYCLE CHILD TARGET\n' \
   >"$LEM_YATH_PROJECT_NAVIGATION_SUBMODULE_CYCLE_CHILD/child.txt"
+printf 'line one\r\nline two\r' \
+  >"$LEM_YATH_PROJECT_NAVIGATION_PREVIEW_FIXTURES/small.txt"
+head -c 1048577 </dev/zero | tr '\0' x \
+  >"$LEM_YATH_PROJECT_NAVIGATION_PREVIEW_FIXTURES/large.txt"
+printf 'binary\0preview\n' \
+  >"$LEM_YATH_PROJECT_NAVIGATION_PREVIEW_FIXTURES/binary.bin"
+mkfifo "$LEM_YATH_PROJECT_NAVIGATION_PREVIEW_FIXTURES/fifo"
+ln -s alpha "$root/projects/alpha-alias"
+ln -s ../../beta/beta-main.txt \
+  "$LEM_YATH_PROJECT_NAVIGATION_ALPHA/src/lexical-out.txt"
 
 printf '%s\n' \
   '[submodule "dot"]' \
@@ -248,6 +265,48 @@ submit_completion_prompt() {
   return 1
 }
 
+open_project_picker() {
+  local session=$1
+  lem_keys "$session" Escape
+  sleep 0.2
+  send_chord "$session" Space Space
+  lem_wait_for "$session" 'Switch to:' "$WAIT_TIMEOUT" >/dev/null
+}
+
+narrow_project_picker() {
+  local session=$1 key=$2
+  tmux_cmd send-keys -t "$session" -l "$key"
+  sleep 0.2
+  lem_keys "$session" Space
+  sleep 0.4
+}
+
+capture_picker_state() {
+  local session=$1 before
+  before=$(report_count '^PICKER-STATE ')
+  lem_keys "$session" F10
+  if wait_report_count '^PICKER-STATE ' "$((before + 1))"; then
+    grep '^PICKER-STATE ' "$LEM_YATH_PROJECT_NAVIGATION_REPORT" | tail -1
+  fi
+}
+
+wait_screen_absent() {
+  local session=$1 pattern=$2 timeout=${3:-$WAIT_TIMEOUT} index=0
+  while ((index < timeout * 4)); do
+    if ! lem_capture "$session" | grep -qE "$pattern"; then
+      return 0
+    fi
+    sleep 0.25
+    index=$((index + 1))
+  done
+  return 1
+}
+
+reset_picker_origin() {
+  invoke_mx "$1" lem-yath-test-project-navigation-reset-picker-origin \
+    '^PICKER-ORIGIN '
+}
+
 register_session="lem-yath-project-register-$id"
 if start_phase "$register_session" register \
      "$LEM_YATH_PROJECT_NAVIGATION_ALPHA/alpha-main.txt" &&
@@ -391,58 +450,6 @@ if invoke_mx "$verify_session" \
     'buffer-directory includes non-files and exactly excludes alpha-sibling'
 else
   fail project-buffer-membership 'project buffer containment diverged' \
-    "$verify_session"
-fi
-
-lem_keys "$verify_session" Escape
-sleep 0.2
-send_chord "$verify_session" Space Space
-if lem_wait_for "$verify_session" 'Project buffer( \(current\))?:' "$WAIT_TIMEOUT" \
-     >/dev/null; then
-  buffer_screen=$(lem_capture "$verify_session")
-  if grep -Fq 'alpha-main.txt' <<<"$buffer_screen" &&
-     grep -Fq '*alpha-build*' <<<"$buffer_screen" &&
-     ! grep -Fq 'sibling-only.txt' <<<"$buffer_screen" &&
-     ! grep -Fq '*sibling-build*' <<<"$buffer_screen"; then
-    pass spc-space-candidates \
-      'SPC SPC rendered Alpha file and non-file candidates only'
-  else
-    fail spc-space-candidates 'SPC SPC rendered the wrong project buffers' \
-      "$verify_session"
-  fi
-  if grep -Eq 'alpha-main\.txt.*---.*19.*Fundamental.*alpha-main\.txt' \
-       <<<"$buffer_screen" &&
-     grep -Eq '\*alpha-build\*.*\*\*-.*26.*Fundamental' \
-       <<<"$buffer_screen"; then
-    pass project-buffer-annotations \
-      'SPC SPC showed state, size, mode, and file metadata'
-  else
-    fail project-buffer-annotations \
-      'project buffer metadata was incomplete or changed candidate labels' \
-      "$verify_session"
-  fi
-  tmux_cmd send-keys -t "$verify_session" -l 'alpha-build'
-  sleep 0.4
-  submit_completion_prompt "$verify_session" 'Project buffer( \(current\))?:'
-  if lem_wait_for "$verify_session" 'ALPHA NONFILE BUILD BUFFER' \
-       "$WAIT_TIMEOUT" >/dev/null; then
-    before=$(report_count '^CURRENT label=spc-space ')
-    lem_keys "$verify_session" F5
-    if wait_report_count '^CURRENT label=spc-space ' "$((before + 1))" &&
-       grep -q '^CURRENT label=spc-space root=alpha name=\*alpha-build\* file=none directory=build/$' \
-         "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
-      pass spc-space-selection \
-        'SPC SPC selected a fileless buffer from its buffer-directory'
-    else
-      fail spc-space-selection 'SPC SPC selected the wrong buffer identity' \
-        "$verify_session"
-    fi
-  else
-    fail spc-space-selection 'SPC SPC did not open the non-file buffer' \
-      "$verify_session"
-  fi
-else
-  fail spc-space-binding 'SPC SPC did not open the project-buffer prompt' \
     "$verify_session"
 fi
 
@@ -601,6 +608,430 @@ if lem_wait_for "$verify_session" 'Project( \(current\))?:' "$WAIT_TIMEOUT" >/de
   fi
 else
   fail spc-p-p-binding 'SPC p p did not open the project picker' \
+    "$verify_session"
+fi
+
+if invoke_mx "$verify_session" \
+     lem-yath-test-project-navigation-setup-picker '^PICKER-SETUP ' &&
+   grep -q '^PICKER-SETUP duplicate=yes recent=yes lexical=yes alias-buffer=yes hooks=0$' \
+     "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
+  pass project-picker-setup \
+    'Consult-style buffer, recent-file, root, and lexical alias fixtures loaded'
+else
+  fail project-picker-setup 'project picker fixture setup diverged' \
+    "$verify_session"
+fi
+
+if invoke_mx "$verify_session" \
+     lem-yath-test-project-navigation-bounded-preview '^PICKER-BOUNDED ' &&
+   grep -q '^PICKER-BOUNDED small=yes large=yes binary=yes fifo=yes$' \
+     "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
+  pass project-picker-bounded-preview \
+    'one bounded reader normalizes text and rejects large, binary, and FIFO inputs'
+else
+  fail project-picker-bounded-preview 'bounded preview input handling diverged' \
+    "$verify_session"
+fi
+
+if open_project_picker "$verify_session" &&
+   lem_wait_for "$verify_session" 'PROJECT BUFFER' "$WAIT_TIMEOUT" \
+     >/dev/null; then
+  picker_screen=$(lem_capture "$verify_session")
+  buffer_group_line=$(grep -n -m1 'Project Buffer' <<<"$picker_screen" | cut -d: -f1)
+  file_group_line=$(grep -n -m1 'Project File' <<<"$picker_screen" | cut -d: -f1)
+  root_group_line=$(grep -n -m1 'Project Root' <<<"$picker_screen" | cut -d: -f1)
+  if [[ -n "$buffer_group_line" && -n "$file_group_line" &&
+        -n "$root_group_line" ]] &&
+     ((buffer_group_line < file_group_line && file_group_line < root_group_line)); then
+    buffer_group_rows=$(sed -n "$((buffer_group_line + 1)),$((file_group_line - 1))p" \
+      <<<"$picker_screen")
+    file_group_rows=$(sed -n "$((file_group_line + 1)),$((root_group_line - 1))p" \
+      <<<"$picker_screen")
+    if grep -Fq 'alpha-main.txt' <<<"$buffer_group_rows" &&
+       grep -Fq '*alpha-build*' <<<"$buffer_group_rows" &&
+       grep -Fq 'src/recent-preview.txt' <<<"$buffer_group_rows" &&
+       grep -Fq 'src/recent-preview.txt' <<<"$file_group_rows" &&
+       grep -Fq 'src/lexical-out.txt' <<<"$file_group_rows" &&
+       ! grep -Fq 'sibling-only.txt' <<<"$picker_screen" &&
+       ! grep -Fq '*sibling-build*' <<<"$picker_screen" &&
+       ! grep -Fq '*alias-build*' <<<"$picker_screen" &&
+       ! grep -Fq 'alpha-alias' <<<"$picker_screen"; then
+      pass project-picker-sources \
+        'fixed groups preserve duplicate identities and lexical project membership'
+    else
+      fail project-picker-sources 'candidate source membership diverged' \
+        "$verify_session"
+    fi
+  else
+    fail project-picker-sources 'initial group order diverged' "$verify_session"
+  fi
+  picker_state=$(capture_picker_state "$verify_session")
+  if grep -q 'prompt=yes .*group="Project Buffer" .*source=duplicate .*hooks=0 kill-hooks=0 history-same=yes .*mru-same=yes' \
+       <<<"$picker_state"; then
+    pass project-picker-immediate-preview \
+      'the first buffer row previews without MRU, find-file, or kill-hook effects'
+  else
+    fail project-picker-immediate-preview \
+      "unexpected initial picker state: $picker_state" "$verify_session"
+  fi
+else
+  fail project-picker-binding 'SPC SPC did not open the grouped picker' \
+    "$verify_session"
+fi
+
+lem_keys "$verify_session" 'M-}'
+if lem_wait_for "$verify_session" 'PROJECT PREVIEW' "$WAIT_TIMEOUT" \
+     >/dev/null; then
+  picker_screen=$(lem_capture "$verify_session")
+  first_group=$(grep -E 'Project (Buffer|File|Root)' <<<"$picker_screen" | head -1)
+  picker_state=$(capture_picker_state "$verify_session")
+  if grep -Fq 'Project File' <<<"$first_group" &&
+     grep -q 'prompt=yes .*group="Project File" .*source=temporary temp=yes temp-listed=no .*hooks=0 kill-hooks=0 history-same=yes' \
+       <<<"$picker_state"; then
+    pass project-picker-next-group \
+      'M-} rotated Project File first and previewed it in an unlisted buffer'
+  else
+    fail project-picker-next-group \
+      "group rotation or file preview diverged: $picker_state" "$verify_session"
+  fi
+else
+  fail project-picker-next-group 'M-} did not focus Project File' \
+    "$verify_session"
+fi
+
+lem_keys "$verify_session" 'M-{'
+sleep 0.4
+picker_state=$(capture_picker_state "$verify_session")
+if grep -q 'prompt=yes .*group="Project Buffer" .*source=duplicate .*preview-deleted=yes .*kill-hooks=0' \
+     <<<"$picker_state"; then
+  pass project-picker-previous-group \
+    'M-{ restored Project Buffer and deleted the prior temporary preview'
+else
+  fail project-picker-previous-group \
+    "previous-group cleanup diverged: $picker_state" "$verify_session"
+fi
+lem_keys "$verify_session" C-g
+sleep 0.3
+picker_state=$(capture_picker_state "$verify_session")
+if grep -q 'prompt=no .*source=origin .*preview-deleted=yes .*kill-hooks=0 history-same=yes exact=yes .*mru-same=yes point=7 view=1 horizontal=4$' \
+     <<<"$picker_state"; then
+  pass project-picker-abort-rollback \
+    'abort restored the exact origin and deleted every sampled preview'
+else
+  fail project-picker-abort-rollback \
+    "abort rollback diverged: $picker_state" "$verify_session"
+fi
+
+if reset_picker_origin "$verify_session" &&
+   open_project_picker "$verify_session"; then
+  narrow_project_picker "$verify_session" f
+  if lem_wait_for "$verify_session" 'Switch to: \[Project File\]' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    picker_screen=$(lem_capture "$verify_session")
+    if grep -Fq 'Project File' <<<"$picker_screen" &&
+       ! grep -Fq 'Project Buffer' <<<"$picker_screen" &&
+       ! grep -Fq 'Project Root' <<<"$picker_screen"; then
+      pass project-picker-narrow-prefix \
+        'f Space visibly narrowed to the Project File source only'
+    else
+      fail project-picker-narrow-prefix 'file narrowing retained another group' \
+        "$verify_session"
+    fi
+  else
+    fail project-picker-narrow-prefix 'file narrowing omitted its prompt indicator' \
+      "$verify_session"
+  fi
+  edit_before=$(report_count '^PICKER-EDIT ')
+  lem_keys "$verify_session" F11
+  if ! wait_report_count '^PICKER-EDIT ' "$((edit_before + 1))"; then
+    fail project-picker-origin-edit 'could not edit the hidden origin during preview' \
+      "$verify_session"
+  fi
+  tmux_cmd send-keys -t "$verify_session" -l 'qqq-no-project-picker-match'
+  sleep 0.5
+  picker_state=$(capture_picker_state "$verify_session")
+  if grep -Fq 'prompt=yes input="qqq-no-project-picker-match" focus="none" group="none"' \
+       <<<"$picker_state" &&
+     grep -q 'source=origin .*hooks=0 kill-hooks=0 history-same=yes exact=yes .*point=13 view=1 horizontal=4$' \
+       <<<"$picker_state"; then
+    pass project-picker-no-match-rollback \
+      'zero results retain the query and restore durable origin markers'
+  else
+    fail project-picker-no-match-rollback \
+      "zero-result rollback diverged: $picker_state" "$verify_session"
+  fi
+  calls_before_space=$(sed -n 's/.* calls=\([0-9][0-9]*\) .*/\1/p' \
+    <<<"$picker_state")
+  lem_keys "$verify_session" Space
+  sleep 0.4
+  space_state=$(capture_picker_state "$verify_session")
+  calls_after_space=$(sed -n 's/.* calls=\([0-9][0-9]*\) .*/\1/p' \
+    <<<"$space_state")
+  if [[ -n "$calls_before_space" && -n "$calls_after_space" ]] &&
+     ((calls_after_space > calls_before_space)) &&
+     grep -Fq 'prompt=yes input="qqq-no-project-picker-match " focus="none" group="none"' \
+       <<<"$space_state"; then
+    pass project-picker-space-reopen \
+      'Space after zero results invoked the provider again and retained the prompt'
+  else
+    fail project-picker-space-reopen \
+      "Space did not reopen zero-result completion: $space_state" "$verify_session"
+  fi
+  lem_keys "$verify_session" C-g
+  sleep 0.3
+  picker_state=$(capture_picker_state "$verify_session")
+  if grep -q 'prompt=no .*source=origin .*hooks=0 kill-hooks=0 history-same=yes exact=yes .*point=13 view=1 horizontal=4$' \
+       <<<"$picker_state"; then
+    pass project-picker-no-match-abort \
+      'aborting from a zero-result query preserved exact restored state'
+  else
+    fail project-picker-no-match-abort \
+      "zero-result abort diverged: $picker_state" "$verify_session"
+  fi
+else
+  fail project-picker-no-match-setup 'could not open the narrowed no-match scenario' \
+    "$verify_session"
+fi
+
+if reset_picker_origin "$verify_session" &&
+   open_project_picker "$verify_session"; then
+  narrow_project_picker "$verify_session" f
+  tmux_cmd send-keys -t "$verify_session" -l 'recent-previewx'
+  sleep 0.4
+  no_match_state=$(capture_picker_state "$verify_session")
+  lem_keys "$verify_session" BSpace
+  if grep -q 'focus="none" group="none" .*source=origin' \
+       <<<"$no_match_state" &&
+     lem_wait_for "$verify_session" 'PROJECT PREVIEW' "$WAIT_TIMEOUT" \
+       >/dev/null; then
+    picker_state=$(capture_picker_state "$verify_session")
+    if grep -q 'prompt=yes input="recent-preview" focus="src/recent-preview.txt" group="Project File" .*source=temporary' \
+         <<<"$picker_state"; then
+      pass project-picker-backspace-recovery \
+        'Backspace from zero results reopened and previewed the matching file row'
+    else
+      fail project-picker-backspace-recovery \
+        "matching completion did not recover: $picker_state" "$verify_session"
+    fi
+  else
+    fail project-picker-backspace-recovery \
+      "zero-result setup or Backspace recovery failed: $no_match_state" \
+      "$verify_session"
+  fi
+  lem_keys "$verify_session" C-g
+else
+  fail project-picker-backspace-setup 'could not open the Backspace recovery scenario' \
+    "$verify_session"
+fi
+
+if reset_picker_origin "$verify_session" &&
+   open_project_picker "$verify_session"; then
+  narrow_project_picker "$verify_session" f
+  lem_keys "$verify_session" BSpace
+  sleep 0.4
+  picker_screen=$(lem_capture "$verify_session")
+  if grep -q 'Switch to:' <<<"$picker_screen" &&
+     ! grep -q 'Switch to: \[' <<<"$picker_screen" &&
+     grep -Fq 'Project Buffer' <<<"$picker_screen" &&
+     grep -Fq 'Project File' <<<"$picker_screen" &&
+     grep -Fq 'Project Root' <<<"$picker_screen"; then
+    pass project-picker-widen \
+      'Backspace on an empty narrow restored the base prompt and every source'
+  else
+    fail project-picker-widen 'empty Backspace did not widen the picker' \
+      "$verify_session"
+  fi
+  lem_keys "$verify_session" C-g
+else
+  fail project-picker-widen-setup 'could not open the widening scenario' \
+    "$verify_session"
+fi
+
+if reset_picker_origin "$verify_session" &&
+   open_project_picker "$verify_session"; then
+  narrow_project_picker "$verify_session" b
+  picker_screen=$(lem_capture "$verify_session")
+  if grep -q 'Switch to: \[Project Buffer\]' <<<"$picker_screen" &&
+     grep -Fq 'Project Buffer' <<<"$picker_screen" &&
+     ! grep -Fq 'Project File' <<<"$picker_screen" &&
+     ! grep -Fq 'Project Root' <<<"$picker_screen"; then
+    tmux_cmd send-keys -t "$verify_session" -l 'src/recent-preview.txt'
+    sleep 0.4
+    preview_state=$(capture_picker_state "$verify_session")
+    lem_keys "$verify_session" Enter
+    sleep 0.4
+    picker_state=$(capture_picker_state "$verify_session")
+    if grep -q 'prompt=yes .*group="Project Buffer" .*source=duplicate' \
+         <<<"$preview_state" &&
+       grep -q 'prompt=no .*source=duplicate .*hooks=0 kill-hooks=0' \
+         <<<"$picker_state"; then
+      pass project-picker-buffer-identity \
+        'b Space accepted and closed on the non-file duplicate-label buffer'
+    else
+      fail project-picker-buffer-identity \
+        "buffer identity or prompt closure diverged: $preview_state / $picker_state" \
+        "$verify_session"
+    fi
+  else
+    fail project-picker-buffer-prefix 'b Space did not isolate Project Buffer' \
+      "$verify_session"
+    lem_keys "$verify_session" C-g
+  fi
+else
+  fail project-picker-buffer-setup 'could not open the buffer identity scenario' \
+    "$verify_session"
+fi
+
+if reset_picker_origin "$verify_session" &&
+   open_project_picker "$verify_session"; then
+  narrow_project_picker "$verify_session" f
+  narrow_state=$(capture_picker_state "$verify_session")
+  reads_before_query=$(sed -n 's/.* reads=\([0-9][0-9]*\) .*/\1/p' \
+    <<<"$narrow_state")
+  tmux_cmd send-keys -t "$verify_session" -l 'src/recent-preview.txt'
+  sleep 0.4
+  preview_state=$(capture_picker_state "$verify_session")
+  reads_after_query=$(sed -n 's/.* reads=\([0-9][0-9]*\) .*/\1/p' \
+    <<<"$preview_state")
+  if [[ -n "$reads_before_query" && -n "$reads_after_query" ]] &&
+     ((reads_after_query == reads_before_query)); then
+    pass project-picker-preview-dedup \
+      'refreshing an unchanged focused file did not reread it'
+  else
+    fail project-picker-preview-dedup \
+      "unchanged focus reread the file: $narrow_state / $preview_state" \
+      "$verify_session"
+  fi
+  lem_keys "$verify_session" Enter
+  sleep 0.4
+  picker_state=$(capture_picker_state "$verify_session")
+  if grep -q 'prompt=yes .*group="Project File" .*source=temporary temp=yes temp-listed=no .*hooks=0 kill-hooks=0 history-same=yes' \
+       <<<"$preview_state" &&
+     grep -q 'prompt=no .*source=normal-file temp=no .*preview-deleted=yes hooks=1 kill-hooks=0' \
+       <<<"$picker_state"; then
+    pass project-picker-file-identity \
+      'the file source previewed temporarily, then accepted the duplicate-label file normally'
+  else
+    fail project-picker-file-identity \
+      "file preview/action identity diverged: $preview_state / $picker_state" \
+      "$verify_session"
+  fi
+else
+  fail project-picker-file-setup 'could not open the file identity scenario' \
+    "$verify_session"
+fi
+
+if reset_picker_origin "$verify_session" &&
+   open_project_picker "$verify_session"; then
+  narrow_project_picker "$verify_session" r
+  picker_screen=$(lem_capture "$verify_session")
+  if grep -q 'Switch to: \[Project Root\]' <<<"$picker_screen" &&
+     grep -Fq 'Project Root' <<<"$picker_screen" &&
+     ! grep -Fq 'Project Buffer' <<<"$picker_screen" &&
+     ! grep -Fq 'Project File' <<<"$picker_screen"; then
+    tmux_cmd send-keys -t "$verify_session" -l 'beta'
+    sleep 0.4
+    preview_state=$(capture_picker_state "$verify_session")
+    lem_keys "$verify_session" Enter
+    if grep -q 'prompt=yes .*group="Project Root" .*source=origin .*hooks=1 kill-hooks=0 .*exact=yes' \
+         <<<"$preview_state" &&
+       lem_wait_for "$verify_session" 'Find File:.*projects/beta/' \
+         "$WAIT_TIMEOUT" >/dev/null; then
+      tmux_cmd send-keys -t "$verify_session" -l 'beta-main.txt'
+      sleep 0.3
+      lem_keys "$verify_session" Enter
+      sleep 0.4
+      before=$(report_count '^CURRENT label=spc-p-f ')
+      lem_keys "$verify_session" F6
+      picker_state=$(capture_picker_state "$verify_session")
+      if wait_report_count '^CURRENT label=spc-p-f ' "$((before + 1))" &&
+         grep -q '^CURRENT label=spc-p-f root=beta name=beta-main\.txt file=beta-main\.txt directory=\.$' \
+           "$LEM_YATH_PROJECT_NAVIGATION_REPORT" &&
+         grep -q 'prompt=no .*hooks=2 kill-hooks=0' <<<"$picker_state"; then
+        pass project-picker-root-action \
+          'r Space restored origin, then opened an ordinary root-local Find File prompt'
+      else
+        fail project-picker-root-action \
+          "root action opened the wrong identity: $picker_state" "$verify_session"
+      fi
+    else
+      fail project-picker-root-action 'root row previewed or skipped nested Find File' \
+        "$verify_session"
+    fi
+  else
+    fail project-picker-root-prefix 'r Space did not isolate Project Root' \
+      "$verify_session"
+    lem_keys "$verify_session" C-g
+  fi
+else
+  fail project-picker-root-setup 'could not open the root action scenario' \
+    "$verify_session"
+fi
+
+if invoke_mx "$verify_session" \
+     lem-yath-test-project-navigation-seed-many-recent '^PICKER-MANY ' &&
+   grep -q '^PICKER-MANY history-index=130 candidate-index=130 beyond-hundred=yes$' \
+     "$LEM_YATH_PROJECT_NAVIGATION_REPORT" &&
+   open_project_picker "$verify_session"; then
+  narrow_project_picker "$verify_session" f
+  picker_screen=$(lem_capture "$verify_session")
+  if ! grep -Fq 'deep-recent-target.txt' <<<"$picker_screen"; then
+    tmux_cmd send-keys -t "$verify_session" -l 'deep-recent-target'
+    if lem_wait_for "$verify_session" 'RECENT PROJECT TARGET' \
+         "$WAIT_TIMEOUT" >/dev/null; then
+      preview_state=$(capture_picker_state "$verify_session")
+      lem_keys "$verify_session" Enter
+      sleep 0.4
+      before=$(report_count '^CURRENT label=spc-p-f ')
+      lem_keys "$verify_session" F6
+      picker_state=$(capture_picker_state "$verify_session")
+      if wait_report_count '^CURRENT label=spc-p-f ' "$((before + 1))" &&
+         grep -q '^CURRENT label=spc-p-f root=alpha name=deep-recent-target\.txt file=src/deep-recent-target\.txt directory=src/$' \
+           "$LEM_YATH_PROJECT_NAVIGATION_REPORT" &&
+         grep -q 'prompt=yes .*source=temporary temp=yes temp-listed=no .*hooks=2 kill-hooks=0 history-same=yes' \
+           <<<"$preview_state" &&
+         grep -q 'prompt=no .*preview-deleted=yes hooks=3 kill-hooks=0' \
+           <<<"$picker_state"; then
+        pass project-picker-beyond-limit \
+          'querying searched and accepted a candidate beyond the first hundred provider rows'
+      else
+        fail project-picker-beyond-limit \
+          "beyond-hundred action or cleanup diverged: $preview_state / $picker_state" \
+          "$verify_session"
+      fi
+    else
+      fail project-picker-beyond-limit 'deep query did not preview its hidden row' \
+        "$verify_session"
+    fi
+  else
+    fail project-picker-beyond-limit 'the 130th provider row was initially visible' \
+      "$verify_session"
+    lem_keys "$verify_session" C-g
+  fi
+else
+  fail project-picker-many-setup 'could not seed the beyond-hundred provider case' \
+    "$verify_session"
+fi
+
+if invoke_mx "$verify_session" \
+     lem-yath-test-project-navigation-preview-read-error '^PICKER-PREVIEW-ERROR ' &&
+   grep -q '^PICKER-PREVIEW-ERROR result=nil slot=nil remaining=no listed=no kill-hooks=0$' \
+     "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
+  pass project-picker-preview-error-cleanup \
+    'a failed preview read left no preview buffer and ran no kill hooks'
+else
+  fail project-picker-preview-error-cleanup \
+    'failed preview-read cleanup leaked state or ran hooks' "$verify_session"
+fi
+
+if invoke_mx "$verify_session" \
+     lem-yath-test-project-navigation-finish-picker '^PICKER-FINISH ' &&
+   grep -q '^PICKER-FINISH hooks=3 kill-hooks=0$' \
+     "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
+  pass project-picker-isolation \
+    'only three accepted files ran find hooks; sampled previews ran no kill hooks'
+else
+  fail project-picker-isolation 'picker hook isolation or fixture cleanup diverged' \
     "$verify_session"
 fi
 
