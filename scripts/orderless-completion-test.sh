@@ -8,6 +8,8 @@ root="$(mktemp -d "${TMPDIR:-/tmp}/lem-yath-orderless-completion.XXXXXX")"
 export HOME="$root/home"
 export XDG_CACHE_HOME="$root/cache"
 export WORKDIR="$root/work"
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
 export LEM_YATH_ORDERLESS_COMPLETION_REPORT="$root/report"
 export LEM_YATH_ORDERLESS_FILE_DIR="$root/files/"
 mkdir -p "$HOME" "$WORKDIR/roam" "$LEM_YATH_ORDERLESS_FILE_DIR"
@@ -124,6 +126,40 @@ if run_mx lem-yath-test-orderless-static-checks &&
   pass matcher-oracle "smart case, overlap, regexp, escaping, and affixes passed"
 else
   fail matcher-oracle "one or more pure matcher vectors failed"
+fi
+
+# The pinned % dispatcher is directional: plain ASCII input can match
+# diacritic-bearing filterText, while acceptance retains item insertion identity.
+if run_mx lem-yath-test-orderless-character-fold-setup &&
+   wait_report '^SETUP fold$' 10 && enter_insert; then
+  tmux_cmd send-keys -t "$session" -l caf
+  if lem_wait_for "$session" 'CAFE-DECOY' 10 >/dev/null; then
+    lem_keys "$session" M-Space
+    tmux_cmd send-keys -t "$session" -l %resume
+    if lem_wait_for "$session" 'CAFÉ-TARGET' 10 >/dev/null; then
+      sleep 0.4
+      state_before=$(report_count '^STATE ')
+      lem_keys "$session" F5
+      wait_report_count '^STATE ' $((state_before + 1)) 5 || true
+      fold_state=$(latest_state)
+      if [[ "$fold_state" == *'items=1 popup=T input=caf %resume buffer=caf %resume requests=1 focus=CAFÉ-TARGET'* ]]; then
+        lem_keys "$session" Enter
+        if wait_report '^ACCEPT label=CAFÉ-TARGET buffer=folded_identity$' 5; then
+          pass character-fold-popup "% matched diacritics through filterText and preserved insertion identity"
+        else
+          fail character-fold-popup "folded candidate acceptance lost insertion identity"
+        fi
+      else
+        fail character-fold-popup "local folding did not isolate the target from the plain decoy"
+      fi
+    else
+      fail character-fold-popup "% did not match the diacritic-bearing candidate"
+    fi
+  else
+    fail character-fold-popup "the initial character-fold provider did not open"
+  fi
+else
+  fail character-fold-setup "could not prepare the character-fold provider"
 fi
 
 # The provider returns 120 candidates; the sole second/third-component match

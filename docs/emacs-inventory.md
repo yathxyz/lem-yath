@@ -217,6 +217,12 @@ retaining the minibuffer, `RET` accepts and submits once, and `M-p`/`M-n` traver
 history. `C-g` aborts; one physical `Escape` starts a Meta sequence rather than
 aborting.
 
+The pinned Orderless default affix table includes `%` character folding and `&`
+annotation matching. `%` is effective in the ordinary Corfu/Orderless pipeline.
+Upstream `orderless-annotation` deliberately returns metadata only in a
+minibuffer, while this configuration's minibuffers use Vertico-Prescient rather
+than Orderless; consequently `&` has no effective configured completion path.
+
 The private corpus is exactly `org-mode/srcblock.snpt`. Its `jjs` trigger
 expands the following body, first visiting the `language` field and then the
 final position on the blank line:

@@ -81,6 +81,25 @@
         #'orderless-test-sync-provider)
   (orderless-test-report "SETUP sync"))
 
+(defun orderless-test-character-fold-provider (point)
+  (destructuring-bind (start end input)
+      (orderless-test-range point)
+    (incf *orderless-test-request-count*)
+    (orderless-test-report "REQUEST fold input=~s count=~d"
+                           input *orderless-test-request-count*)
+    (list
+     (orderless-test-item
+      "CAFÉ-TARGET" "café résumé" "folded_identity" start end)
+     (orderless-test-item
+      "CAFE-DECOY" "cafe ordinary" "plain_decoy" start end))))
+
+(define-command lem-yath-test-orderless-character-fold-setup () ()
+  (orderless-test-reset-current-buffer)
+  (setf (variable-value 'lem/language-mode:completion-spec
+                        :buffer (current-buffer))
+        #'orderless-test-character-fold-provider)
+  (orderless-test-report "SETUP fold"))
+
 (defun orderless-test-async-items (point)
   (destructuring-bind (start end input)
       (orderless-test-range point)
@@ -316,6 +335,56 @@
                   (orderless-filter
                    "~fbr" '("foo-bar" "fiber" "far"))
                   "flex-dispatch")
+            (same '("café" "cafe" "CAFÉ" "cafeteria")
+                  (orderless-filter
+                   "%cafe" '("café" "cafe" "CAFÉ" "cafeteria"))
+                  "character-fold-diacritics")
+            (same '("Café" "Cafe")
+                  (orderless-filter
+                   "%Cafe" '("Café" "CAFÉ" "café" "Cafe" "cafe"))
+                  "character-fold-preserves-smart-case")
+            (let ((decomposed (format nil "cafe~c" (code-char #x301))))
+              (same (list decomposed "café")
+                    (orderless-filter
+                     "%café" (list decomposed "café" "cafe"))
+                    "character-fold-preserves-query-diacritics"))
+            (same '("Ångström" "angstrom" "Angstrom" "ångström")
+                  (orderless-filter
+                   "angstrom%"
+                   '("Ångström" "angstrom" "Angstrom" "ångström"))
+                  "character-fold-suffix-dispatch")
+            (same '("ﬂower" "flower")
+                  (orderless-filter "%flower" '("ﬂower" "flower"))
+                  "character-fold-compatibility")
+            (same '("café")
+                  (orderless-filter "%café" '("café" "cafe"))
+                  "character-fold-is-directional")
+            (same '("aether")
+                  (orderless-filter "%aether" '("Æther" "aether"))
+                  "character-fold-does-not-invent-ae")
+            (same '("strasse")
+                  (orderless-filter "%strasse" '("Straße" "strasse"))
+                  "character-fold-does-not-invent-ss")
+            (same '("a.b")
+                  (orderless-filter "%." '("a.b" "axb"))
+                  "character-fold-is-literal")
+            (same '("\"hello" "“hello”" "«hello»")
+                  (orderless-filter
+                   "%\"hello"
+                   '("\"hello" "“hello”" "'hello'" "«hello»"))
+                  "character-fold-double-quotes")
+            (same '("'hello'" "‘hello’" "‹hello›")
+                  (orderless-filter
+                   "%'hello"
+                   '("\"hello" "'hello'" "‘hello’" "‹hello›"))
+                  "character-fold-single-quotes")
+            (same '("‘hello’" "`hello")
+                  (orderless-filter
+                   "%`hello" '("'hello'" "‘hello’" "`hello"))
+                  "character-fold-backtick")
+            (same '("“hello”")
+                  (orderless-filter "%“hello" '("\"hello" "“hello”"))
+                  "character-fold-punctuation-is-directional")
             (same '("f.o")
                   (orderless-filter "=f.o" '("f.o" "fao"))
                   "literal-dispatch")

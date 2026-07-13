@@ -523,9 +523,13 @@ identifier characters, matching Cape's explicit file trigger.
 `lem-yath/src/orderless.lisp` filters ordinary in-buffer candidates with the
 configured portable Orderless behavior: escaped-space components, whole-query
 smart case, any-order AND matching, overlapping and repeated components,
-literal-or-valid-regexp matching, and the default `~`, `=`, `^`, `!`, and `,`
-edge dispatchers. Filtering uses LSP `filterText` while acceptance retains the
-original item's display, insertion text, range, focus action, and final action.
+literal-or-valid-regexp matching, and the default `~`, `%`, `=`, `^`, `!`, and
+`,` edge dispatchers. `%` performs directional Unicode character folding like
+the pinned package: plain input can match diacritics, compatibility forms, and
+the package's ASCII quote variants, while non-ASCII forms typed in the query are
+not silently generalized. Filtering uses LSP
+`filterText` while acceptance retains the original item's display, insertion
+text, range, focus action, and final action.
 The `M-Space` command inserts Corfu's separator, invalidates any pending request,
 and freezes the last fully accepted provider batch. Further components are
 filtered locally, so a space-separated query is never sent to LSP. A zero-match
@@ -568,10 +572,12 @@ ownership is verified in the target single-frame ncurses frontend; multi-frame
 GUI ownership remains unverified.
 
 This is deliberately an approximation rather than a full Orderless claim:
-CL-PPCRE and Emacs use different regexp dialects, and the pinned Orderless
-package's `%` character-fold and `&` annotation dispatchers are not implemented.
-Initialism parity is verified for deterministic ASCII word boundaries rather than
-every Emacs syntax table.
+CL-PPCRE and Emacs use different regexp dialects. The pinned `&` annotation
+style is intentionally minibuffer-only upstream; because the active Emacs
+minibuffer pipeline is Vertico-Prescient, it has no effective configured path
+and is not added as extra behavior to Lem's ordinary popup. Initialism parity is
+verified for deterministic ASCII word boundaries rather than every Emacs syntax
+table.
 
 `scripts/auto-completion-test.sh` drives all of this through the ncurses editor,
 including the delay boundary, 12-candidate scrolling through a 10-row window,
@@ -583,6 +589,7 @@ Vi undo, preview geometry/layering, preview resize plus async cleanup, source-wi
 deletion, unrelated floating-window ownership, buffer-switch cleanup, and
 out-of-order asynchronous delivery.
 `scripts/orderless-completion-test.sh` separately exercises the matcher oracle,
+including directional diacritic/compatibility folding and a real `%` popup,
 raw-before-cap filtering, manual and automatic completion, local separator request
 ownership, stale asynchronous delivery, zero-match recovery, tracked replacement
 ranges, and prompt/file isolation through the real ncurses editor.
