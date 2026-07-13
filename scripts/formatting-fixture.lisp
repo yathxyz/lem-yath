@@ -360,6 +360,46 @@
 (define-command lem-yath-test-formatting-open-manual () ()
   (formatting-test-open "LEM_YATH_FORMATTING_MANUAL" "manual-open"))
 
+(define-command lem-yath-test-formatting-open-java () ()
+  (formatting-test-open "LEM_YATH_FORMATTING_JAVA" "java-open"))
+
+(define-command lem-yath-test-formatting-java-checks () ()
+  (let ((failures 0)
+        (buffer (current-buffer)))
+    (labels ((check (condition label)
+               (formatting-test-log "~a JAVA ~a"
+                                    (if condition "PASS" "FAIL") label)
+               (unless condition (incf failures))))
+      (let* ((formatter (formatting-resolve-spec buffer))
+             (command (and formatter
+                           (funcall (formatter-spec-command-builder formatter)
+                                    buffer)))
+             (expected (formatting-test-path
+                        "LEM_YATH_TEST_GOOGLE_JAVA_FORMAT")))
+        (check (eq 'lem-java-mode:java-mode (buffer-major-mode buffer))
+               "java-major-mode")
+        (check (and formatter
+                    (eq 'java (formatter-spec-id formatter)))
+               "java-formatter")
+        (check (and command
+                    (equal '("-") (rest command)))
+               "java-formatter-arguments")
+        (check (and command
+                    (uiop:pathname-equal (truename expected)
+                                         (truename (first command))))
+               "java-formatter-packaged-path")
+        (check (typep (lem-lsp-mode/spec:get-language-spec
+                       'lem-java-mode:java-mode)
+                      'lem-yath-java-spec)
+               "java-jdtls-spec")
+        (check (null (buffer-value buffer 'lem-lsp-mode::lsp-workspace))
+               "java-no-automatic-workspace")
+        (check (not (mode-active-p buffer 'lem-lsp-mode::lsp-mode))
+               "java-no-automatic-lsp-mode"))
+      (formatting-test-log "SUMMARY JAVA ~a failures=~d"
+                           (if (zerop failures) "PASS" "FAIL")
+                           failures))))
+
 (define-command lem-yath-test-formatting-open-auto () ()
   (formatting-test-open "LEM_YATH_FORMATTING_AUTO" "auto-open"))
 

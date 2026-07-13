@@ -35,6 +35,7 @@
               ./patches/lem-transient-bottom-restore.patch
               ./patches/lem-project-lsp-workspaces.patch
               ./patches/lem-lsp-pipe-stdio.patch
+              ./patches/lem-lsp-json-type-error.patch
               ./patches/lem-safe-revert.patch
               ./patches/lem-prompt-history-limit.patch
               ./patches/lem-undo-tree.patch

@@ -80,6 +80,8 @@ fi
 export LEM_YATH_TEST_PYTHON
 export LEM_YATH_TEST_FAKE_FORMATTER="$fake_formatter"
 LEM_YATH_TEST_PYTHON="$(command -v python3)"
+export LEM_YATH_TEST_GOOGLE_JAVA_FORMAT
+LEM_YATH_TEST_GOOGLE_JAVA_FORMAT="$(command -v google-java-format)"
 printf '%s\n' \
   "#!$(command -v bash)" \
   'exec "$LEM_YATH_TEST_PYTHON" "$LEM_YATH_TEST_FAKE_FORMATTER" "$@"' \
@@ -153,6 +155,7 @@ export LEM_YATH_FORMATTING_UNSET="$nested/unset.fmtfixture"
 export LEM_YATH_FORMATTING_FALSE="$false_dir/false.fmtfixture"
 export LEM_YATH_FORMATTING_BYTES="$project/bytes.txt"
 export LEM_YATH_FORMATTING_MANUAL="$nested/"'manual ; $(touch FORMATTER_INJECTED).py'
+export LEM_YATH_FORMATTING_JAVA="$nested/Main.java"
 export LEM_YATH_FORMATTING_AUTO="$nested/automatic.py"
 export LEM_YATH_FORMATTING_FAILURE="$nested/failure.py"
 export LEM_YATH_FORMATTING_TRANSACTION_MANUAL="$nested/transaction-manual.py"
@@ -171,6 +174,8 @@ printf '%s' 'initial bytes' >"$LEM_YATH_FORMATTING_BYTES"
 
 python_initial=$'prefix_value=1\nKEEP_MARKER = "stay"\nTAIL_MARKER=2'
 printf '%s' "$python_initial" >"$LEM_YATH_FORMATTING_MANUAL"
+java_initial=$'package example;\npublic class Main{public static void main(String[]args){System.out.println("hi");}}'
+printf '%s' "$java_initial" >"$LEM_YATH_FORMATTING_JAVA"
 printf '%s' "$python_initial" >"$LEM_YATH_FORMATTING_AUTO"
 printf '%s' "$python_initial" >"$LEM_YATH_FORMATTING_FAILURE"
 printf '%s' "$python_initial" >"$LEM_YATH_FORMATTING_TRANSACTION_MANUAL"
@@ -305,6 +310,27 @@ if ! lem_wait_for "$session" 'Dashboard' "$BOOT_TIMEOUT" >/dev/null ||
   die boot 'configured Lem did not load the formatting fixture'
 fi
 pass boot 'configured Lem loaded the formatting fixture in ncurses'
+
+java_expected_file="$root/java-expected"
+printf '%s' "$java_initial" | "$LEM_YATH_TEST_GOOGLE_JAVA_FORMAT" - \
+  >"$java_expected_file"
+java_expected_hex=$(od -An -tx1 "$java_expected_file" | tr -d ' \n' | tr '[:lower:]' '[:upper:]')
+if open_fixture lem-yath-test-formatting-open-java java-open &&
+   run_mx lem-yath-test-formatting-java-checks &&
+   wait_report_count '^SUMMARY JAVA PASS failures=0$' 1; then
+  pass java-configuration \
+    'Java mode resolves the packaged formatter while JDTLS remains manual'
+  send_leader_format
+  if lem_wait_for "$session" 'Formatted with JAVA' 30 >/dev/null &&
+     record_state java-open; then
+    assert_state_hex java-manual-format java-open \
+      "$java_expected_hex" "$(hex_of "$java_initial")" yes
+  else
+    fail java-manual-format 'SPC b f did not complete with google-java-format'
+  fi
+else
+  fail java-configuration 'Java mode, formatter, or manual-JDTLS assertions failed'
+fi
 
 if open_fixture lem-yath-test-formatting-open-manual manual-open &&
    run_mx lem-yath-test-formatting-static-checks &&

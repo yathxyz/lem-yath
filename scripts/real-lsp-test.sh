@@ -47,6 +47,13 @@ export LEM_YATH_REAL_LSP_REPORT="$root/report"
 export LEM_YATH_REAL_LSP_LOG="$root/lem.log"
 export LEM_YATH_LSP_STDERR="$root/language-servers.log"
 
+# The invoking shell may itself be inside direnv.  Its encoded transition
+# belongs to that shell's directory and would otherwise unload the installed
+# wrapper's runtime PATH when this hermetic process opens a fixture elsewhere.
+for variable in ${!DIRENV_@}; do
+  unset "$variable"
+done
+
 if [ -z "${LEM_YATH_REAL_LSP_NIXPKGS_SOURCE:-}" ] ||
    [ ! -d "$LEM_YATH_REAL_LSP_NIXPKGS_SOURCE" ]; then
   echo 'LEM_YATH_REAL_LSP_NIXPKGS_SOURCE must name the pinned nixpkgs source.' >&2
@@ -59,6 +66,7 @@ mkdir -p "$HOME" "$LEM_HOME" "$XDG_CACHE_HOME" "$WORKDIR" \
   "$LEM_YATH_REAL_LSP_FIXTURES/python" \
   "$LEM_YATH_REAL_LSP_FIXTURES/markdown/.git" \
   "$LEM_YATH_REAL_LSP_FIXTURES/nix" \
+  "$LEM_YATH_REAL_LSP_FIXTURES/java/src/main/java/example" \
   "$LEM_YATH_REAL_LSP_FIXTURES/go" \
   "$LEM_YATH_REAL_LSP_FIXTURES/terraform/.git"
 ln -s "$LEM_YATH_REAL_LSP_FIXTURES/nix" "$HOME/proj/nix/computer"
@@ -83,6 +91,21 @@ printf '%s\n' 'value: int = 1' \
 
 printf '%s\n' '# Real LSP fixture' '' 'This sentence is deliberately small.' \
   >"$LEM_YATH_REAL_LSP_FIXTURES/markdown/README.md"
+printf '%s\n' \
+  '<project xmlns="http://maven.apache.org/POM/4.0.0">' \
+  '  <modelVersion>4.0.0</modelVersion>' \
+  '  <groupId>example</groupId>' \
+  '  <artifactId>lem-yath-lsp-fixture</artifactId>' \
+  '  <version>1.0.0</version>' \
+  '</project>' \
+  >"$LEM_YATH_REAL_LSP_FIXTURES/java/pom.xml"
+printf '%s\n' \
+  'package example;' \
+  '' \
+  'public class Main {' \
+  '  public static void main(String[] args) {}' \
+  '}' \
+  >"$LEM_YATH_REAL_LSP_FIXTURES/java/src/main/java/example/Main.java"
 printf '%s\n' '{ }' >"$LEM_YATH_REAL_LSP_FIXTURES/nix/default.nix"
 printf '%s\n' \
   '{' \
@@ -110,6 +133,7 @@ required_programs=(
   "LEM_YATH_REAL_LSP_PYRIGHT:pyright-langserver"
   "LEM_YATH_REAL_LSP_HARPER:harper-ls"
   "LEM_YATH_REAL_LSP_NIXD:nixd"
+  "LEM_YATH_REAL_LSP_JDTLS:jdtls"
   "LEM_YATH_REAL_LSP_GOPLS:gopls"
   "LEM_YATH_REAL_LSP_TERRAFORM_LS:terraform-ls"
   "LEM_YATH_REAL_LSP_CARGO:cargo"
@@ -214,7 +238,7 @@ invoke_mx() {
 
 fixture="$(lem-yath_lisp_string "$here/scripts/real-lsp-fixture.lisp")"
 startup_file="$LEM_YATH_REAL_LSP_FIXTURES/rust/src/main.rs"
-expected_fixture_state='FIXTURE ready=yes boot=yes cases=6 command-line-file=yes command-line-workspace=yes lem-home=yes caller-evals=yes'
+expected_fixture_state='FIXTURE ready=yes boot=yes cases=7 command-line-file=yes command-line-workspace=yes lem-home=yes caller-evals=yes'
 
 # LEM_BIN must be the installed lem-yath wrapper.  It loads its own immutable
 # configuration before this test fixture; loading the repository init here
@@ -247,7 +271,7 @@ if (( ! aborted )); then
   done
 fi
 
-for case_id in rust python nix markdown go terraform; do
+for case_id in rust python nix markdown java go terraform; do
   if ((aborted)); then
     break
   fi

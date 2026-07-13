@@ -48,6 +48,16 @@
          :connection-mode :stdio
          :command '("harper-ls" "--stdio")
          :program-environment "LEM_YATH_REAL_LSP_HARPER")
+   (list :id "java"
+         :directory "java/"
+         :file "src/main/java/example/Main.java"
+         :mode 'lem-java-mode:java-mode
+         :spec-class 'lem-yath-java-spec
+         :language-id "java"
+         :connection-mode :stdio
+         :command '("jdtls")
+         :program-environment "LEM_YATH_REAL_LSP_JDTLS"
+         :manual t)
    (list :id "go"
          :directory "go/"
          :file "main.go"
@@ -72,6 +82,7 @@
     ("pyright-langserver" . "LEM_YATH_REAL_LSP_PYRIGHT")
     ("harper-ls" . "LEM_YATH_REAL_LSP_HARPER")
     ("nixd" . "LEM_YATH_REAL_LSP_NIXD")
+    ("jdtls" . "LEM_YATH_REAL_LSP_JDTLS")
     ("gopls" . "LEM_YATH_REAL_LSP_GOPLS")
     ("terraform-ls" . "LEM_YATH_REAL_LSP_TERRAFORM_LS")
     ("cargo" . "LEM_YATH_REAL_LSP_CARGO")
@@ -85,6 +96,7 @@
   client
   pid
   configuration-count
+  manual-clean-p
   watchdog)
 
 (defvar *real-lsp-test-next-case-index* 0)
@@ -279,6 +291,28 @@
                                root (cdr source))
                        (gethash "expr" entry ""))
                       (format nil "nix-~a-expr" (car source))))))))))
+        ((string= id "java")
+         (check (hash-table-p options) "java-options-map")
+         (when (hash-table-p options)
+           (let* ((settings (gethash "settings" options))
+                  (java (and (hash-table-p settings)
+                             (gethash "java" settings)))
+                  (format-options (and (hash-table-p java)
+                                       (gethash "format" java)))
+                  (format-settings (and (hash-table-p format-options)
+                                        (gethash "settings" format-options))))
+             (check (hash-table-p settings) "java-settings-map")
+             (check (hash-table-p java) "java-language-map")
+             (check (hash-table-p format-options) "java-format-map")
+             (when (hash-table-p format-options)
+               (check (eq t (gethash "enabled" format-options))
+                      "java-format-enabled"))
+             (check (hash-table-p format-settings)
+                    "java-format-settings-map")
+             (when (hash-table-p format-settings)
+               (check (string= *java-google-style-url*
+                               (gethash "url" format-settings ""))
+                      "java-google-style-url")))))
         (t
          (check (null options) "unexpected-initialization-options"))))
     (nreverse failures)))
@@ -357,7 +391,13 @@
           (check (null (lem-lsp-mode::workspace-initialization-timer workspace))
                  "initialization-timer")
           (check (null (lem-lsp-mode::workspace-startup-spinner workspace))
-                 "startup-spinner"))
+                 "startup-spinner")
+          (when (getf case :manual)
+            (check (real-lsp-test-current-manual-clean-p current)
+                   "manual-start-clean")
+            (check (uiop:directory-exists-p
+                    (java-jdtls-data-pathname expected-root))
+                   "jdtls-data-directory")))
         (let ((pid (real-lsp-test-client-pid client)))
           (setf (real-lsp-test-current-pid current) pid)
           (real-lsp-test-report
@@ -388,62 +428,75 @@
 (defun real-lsp-test-start-case (case)
   (handler-case
       (let* ((buffer (find-file-buffer (real-lsp-test-case-file case)))
-             (workspace
-               (buffer-value buffer 'lem-lsp-mode::lsp-workspace)))
+             (manual-p (getf case :manual))
+             (workspace-before
+               (buffer-value buffer 'lem-lsp-mode::lsp-workspace))
+             (manual-clean-p
+               (or (not manual-p)
+                   (and (null workspace-before)
+                        (not (mode-active-p
+                              buffer 'lem-lsp-mode::lsp-mode))))))
         (switch-to-buffer buffer)
-        (unless workspace
-          (let* ((mode (buffer-major-mode buffer))
-                 (hook-variable (mode-hook-variable mode))
-                 (hook-value (and hook-variable
-                                  (symbol-value hook-variable))))
-            (error
-             (concatenate
-              'string
-              "Opening the fixture did not attach an LSP workspace "
-              "(mode=~s spec=~s lsp=~s hook=~s entries=~s disabled=~s)")
-             mode
-             (lem-lsp-mode::buffer-language-spec buffer)
-             (mode-active-p buffer 'lem-lsp-mode::lsp-mode)
-             hook-variable
-             hook-value
-             lem-lsp-mode::*disable*)))
-        (let* ((client (lem-lsp-mode::workspace-client workspace))
-               (pid (real-lsp-test-client-pid client))
-               (current
-                 (make-real-lsp-test-current
-                  :case case
-                  :buffer buffer
-                  :workspace workspace
-                  :client client
-                  :pid pid
-                  :configuration-count
-                  *real-lsp-test-workspace-configuration-count*)))
-          (setf *real-lsp-test-current* current)
-          (setf (real-lsp-test-current-watchdog current)
-                (start-timer
-                 (make-timer
-                  (lambda () (real-lsp-test-watch-startup current))
-                  :name "real-lsp-startup-watchdog")
-                 250
-                 :repeat t))
-          (real-lsp-test-report
-           "START id=~a pid=~d state=~a"
-           (getf case :id)
-           pid
-           (lem-lsp-mode::workspace-state workspace))
-          (case (lem-lsp-mode::workspace-state workspace)
-            (:ready
-             (real-lsp-test-record-ready current))
-            (:starting
-             (lem-lsp-mode::queue-workspace-continuation
-              workspace
-              buffer
-              (lambda ()
-                (when (eq current *real-lsp-test-current*)
-                  (real-lsp-test-record-ready current)))))
-            (otherwise
-             (error "Workspace entered unexpected state ~S"
-                    (lem-lsp-mode::workspace-state workspace))))))
+        (when manual-p
+          (lem-yath-java-lsp))
+        (let* ((workspace
+                 (buffer-value buffer 'lem-lsp-mode::lsp-workspace))
+               (client (and workspace
+                            (lem-lsp-mode::workspace-client workspace))))
+          (unless workspace
+            (let* ((mode (buffer-major-mode buffer))
+                   (hook-variable (mode-hook-variable mode))
+                   (hook-value (and hook-variable
+                                    (symbol-value hook-variable))))
+              (error
+               (concatenate
+                'string
+                "Opening or explicitly enabling the fixture did not attach "
+                "an LSP workspace (mode=~s spec=~s lsp=~s hook=~s "
+                "entries=~s disabled=~s)")
+               mode
+               (lem-lsp-mode::buffer-language-spec buffer)
+               (mode-active-p buffer 'lem-lsp-mode::lsp-mode)
+               hook-variable
+               hook-value
+               lem-lsp-mode::*disable*)))
+          (let* ((pid (real-lsp-test-client-pid client))
+                 (current
+                   (make-real-lsp-test-current
+                    :case case
+                    :buffer buffer
+                    :workspace workspace
+                    :client client
+                    :pid pid
+                    :configuration-count
+                    *real-lsp-test-workspace-configuration-count*
+                    :manual-clean-p manual-clean-p)))
+            (setf *real-lsp-test-current* current)
+            (setf (real-lsp-test-current-watchdog current)
+                  (start-timer
+                   (make-timer
+                    (lambda () (real-lsp-test-watch-startup current))
+                    :name "real-lsp-startup-watchdog")
+                   250
+                   :repeat t))
+            (real-lsp-test-report
+             "START id=~a pid=~d state=~a"
+             (getf case :id)
+             pid
+             (lem-lsp-mode::workspace-state workspace))
+            (case (lem-lsp-mode::workspace-state workspace)
+              (:ready
+               (real-lsp-test-record-ready current))
+              (:starting
+               (lem-lsp-mode::queue-workspace-continuation
+                workspace
+                buffer
+                (lambda ()
+                  (when (eq current *real-lsp-test-current*)
+                    (real-lsp-test-record-ready current)))))
+              (otherwise
+               (error "Workspace entered unexpected state ~S"
+                      (lem-lsp-mode::workspace-state workspace)))))))
     (error (condition)
       (real-lsp-test-report
        "FAIL id=~a phase=start error=~a"

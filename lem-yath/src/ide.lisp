@@ -137,8 +137,8 @@
                                :error-output :output))))
     (subseq digest 0 (position #\Space digest))))
 
-(defun java-jdtls-data-directory (root)
-  "Return JDTLS's isolated data directory for canonical project ROOT."
+(defun java-jdtls-data-pathname (root)
+  "Return JDTLS's isolated data pathname for canonical project ROOT."
   (unless root
     (error "JDTLS requires a project root directory."))
   (let* ((cache-root
@@ -149,6 +149,11 @@
            (merge-pathnames
             (format nil "lem-yath/jdtls/~a/" (java-project-cache-key root))
             cache-root)))
+    directory))
+
+(defun java-jdtls-data-directory (root)
+  "Create and return JDTLS's isolated data directory for project ROOT."
+  (let ((directory (java-jdtls-data-pathname root)))
     (ensure-directories-exist directory)
     directory))
 
