@@ -33,7 +33,7 @@ Status legend:
 | wgrep | lem-builtin | grep results are editable & write back (better than default Emacs) |
 | eglot + eglot-booster | lem-builtin+ported/partial | `lem-lsp-mode` uses a native JSON-RPC client, so Eglot Booster is unnecessary. The installed application packages rust-analyzer, pyright, harper-ls, nixd, gopls, terraform-ls, and the `nixfmt` executable from nixfmt-rfc-style; an installed-wrapper ncurses gate performs real handshakes and process-cleanup checks. Stdio servers use real pipes with stderr isolated from JSON-RPC, and Lem advertises and answers `workspace/configuration` so servers can use their defaults. Ordinary local-file workspaces are isolated by stable server identity + canonical root, pending starts deduplicate and time out, save-as/mode changes rebind explicit ownership, restart/shutdown is project-scoped and graceful, and server cwd/init options are frozen to the project. Lem still differs in language-root selection, Python auto-start, Nix settings delivery, and Go/Terraform transport; resolved completion documentation/detail and completion commands also remain gaps. |
 | flycheck (+rust) | partial | LSP diagnostics overlays; no non-LSP linter framework |
-| apheleia | ported/partial | `SPC b f` formats unsaved buffer text through a mapped CLI/in-process backend, with ready LSP fallback only when manual formatting has no usable mapped backend; mapped programming modes with an available, successful backend also format synchronously after the first save and are silently rewritten before LSP `didSave` (`src/formatting.lisp`, `scripts/formatting-test.sh`). The registry is broad but finite, and async formatting, formatter prompts, and Apheleia-style per-project backend overrides are absent |
+| apheleia | ported/partial | `SPC b f` formats unsaved buffer text through a mapped CLI/in-process backend, with ready LSP fallback only when manual formatting has no usable mapped backend; mapped programming modes with an available backend format synchronously before the ordinary save, so the final text reaches disk through one write before LSP `didSave`. Formatter hunks, ws-butler, and EditorConfig normalization form one retained transaction: formatter hunk read-only conflicts are rejected before mutation, later normalization conflicts or safe hook/finalizer errors roll back coherently, and an unsafe rollback aborts saving with visibly dirty truncated history. A failed formatter contributes no output, but ordinary save normalization still runs (`src/formatting.lisp`, `patches/lem-after-change-undo.patch`, `scripts/formatting-test.sh`, `scripts/vundo-test.sh`). The registry is broad but finite, and async formatting, formatter prompts, and Apheleia-style per-project backend overrides are absent |
 | dape (DAP debugging) | gap | Lem has no DAP client |
 | treesit-auto / tree-sitter-langs / tsc / grammars | partial | `lem-tree-sitter` + 10 grammars baked in; modes default to TextMate highlighting (manual opt-in API) |
 | nix-mode | lem-builtin+ported/partial | Packaged **nixd** with flake-derived nixpkgs/options and packaged `nixfmt` from nixfmt-rfc-style (`src/ide.lisp`). Lem sends these as initialization options and roots at a Nix marker; Emacs uses workspace configuration at its project.el root and its declared daemon PATH normally supplies no formatter candidate. |
@@ -123,14 +123,23 @@ Status legend:
   Tag/function prompts and full multi-character delimiter editing remain absent;
   Python triple-quote edits fail closed.
 - **Formatting lifecycle**: mapped programming modes with an available,
-  successful backend format synchronously after the ordinary save, then receive
-  a silent second write before LSP `didSave`.
+  successful backend format synchronously before the ordinary save, so the
+  formatted state reaches disk through that single write before LSP `didSave`.
   External commands use stdin and direct argument vectors under a timeout. CLI
   launch, timeout, nonzero-exit, and output-limit failures occur before buffer
-  mutation, leave the first save intact, and do not fall back to LSP; diff
-  application itself has no transactional rollback. LSP fallback is manual-only
-  when no mapped backend is usable. There is no async worker, formatter prompt,
-  or Apheleia-style per-project backend table.
+  mutation, contribute no formatter output, and do not fall back to LSP;
+  transactional ws-butler and EditorConfig normalization still runs. Successful
+  diff application and save normalization share a retained change group;
+  formatter hunk read-only ranges are preflighted, while mutation-hook or
+  normalization errors
+  replay coherent inverse notifications and restore exact buffer/history state.
+  A safely missed touched-line cleanup remains pending for a later save.
+  If cancellation itself becomes unsafe, Lem fails visibly dirty with truncated
+  history and aborts the ordinary save. Safe formatter failures continue that
+  one save after retrying save normalization without formatter output. LSP
+  fallback is manual-only when no mapped
+  backend is usable. There is no async worker, formatter prompt, or
+  Apheleia-style per-project backend table.
 - **EditorConfig scope**: matching is delegated to the official CLI, but Lem
   maps only the documented core properties. A charset rule cannot re-decode an
   already opened file and affects later writes only; UTF-16BE/LE writes do not

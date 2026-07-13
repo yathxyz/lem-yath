@@ -516,8 +516,10 @@ On CLI failure, retain every previously applied property and buffer setting."
 
 (defun editorconfig-before-save (&optional (buffer (current-buffer)))
   (when (editorconfig-local-file-buffer-p buffer)
-    (editorconfig-refresh-buffer buffer)
-    (editorconfig-normalize-buffer buffer)))
+    ;; Text normalization is owned by formatting-before-save-hook so formatter
+    ;; output and EditorConfig cleanup share one retained transaction.  This
+    ;; hook resolves settings first and deliberately changes no live text.
+    (editorconfig-refresh-buffer buffer)))
 
 ;;; Hooks and reload ----------------------------------------------------------
 

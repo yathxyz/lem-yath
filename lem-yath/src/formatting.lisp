@@ -2,8 +2,8 @@
 ;;;;
 ;;;; Apheleia is enabled from prog-mode in the Emacs configuration.  This
 ;;;; module keeps its important contract: format unsaved buffer text, apply a
-;;;; patch without throwing point back to the start, and format again after a
-;;;; normal save before LSP's didSave hook observes the buffer.  External
+;;;; patch without throwing point back to the start, and format before the
+;;;; ordinary save and LSP didSave notification.  External
 ;;;; commands are always argv vectors and receive the buffer on stdin.
 
 (in-package :lem-yath)
@@ -492,36 +492,187 @@ text and buffer and returns formatted text."
         (push (window-view-point window) points)))
     (remove-duplicates points :test #'eq)))
 
-(defun formatting-apply-output (buffer old new)
-  "Apply NEW to BUFFER as diff hunks while preserving registered points."
-  (when (string= old new)
+(defun formatting-point-positions (points)
+  (mapcar (lambda (point)
+            (cons point (1- (position-at-point point))))
+          points))
+
+(defun formatting-restore-point-positions (positions text-length)
+  (dolist (entry positions)
+    (when (alive-point-p (car entry))
+      (move-to-position
+       (car entry)
+       (1+ (max 0 (min text-length (cdr entry))))))))
+
+(define-condition formatting-rollback-error (error)
+  ((detail :initarg :detail :reader formatting-rollback-error-detail))
+  (:report (lambda (condition stream)
+             (write-string (formatting-rollback-error-detail condition)
+                           stream))))
+
+(defun formatting-preflight-edits (buffer old edits)
+  "Validate every EDIT against BUFFER before changing any live text."
+  (unless (string= old (points-to-string (buffer-start-point buffer)
+                                         (buffer-end-point buffer)))
+    (error "Buffer changed while formatter output was being prepared"))
+  (unless lem/buffer/internal:*inhibit-read-only*
+    (lem/buffer/internal::check-read-only-buffer buffer))
+  (let ((previous-end 0)
+        (old-length (length old)))
+    (dolist (edit edits)
+      (let ((start (format-edit-start edit))
+            (end (format-edit-end edit)))
+        (unless (and (integerp start)
+                     (integerp end)
+                     (<= previous-end start end old-length))
+          (error "Formatter produced invalid or overlapping edit ranges"))
+        (unless lem/buffer/internal:*inhibit-read-only*
+          (with-point ((start-point (buffer-start-point buffer))
+                       (end-point (buffer-start-point buffer)))
+            (move-to-position start-point (1+ start))
+            (move-to-position end-point (1+ end))
+            (lem/buffer/internal::check-read-only-at-point
+             start-point (- end start))
+            ;; Replacements insert after the deletion.  Text immediately on
+            ;; either side can then own the insertion point, so preflight both
+            ;; original boundaries as well as the deleted range.
+            (unless (zerop (length (format-edit-replacement edit)))
+              (lem/buffer/internal::check-read-only-at-point start-point 0)
+              (lem/buffer/internal::check-read-only-at-point end-point 0))))
+        (setf previous-end end))))
+  t)
+
+(defun formatting-rollback-change-group
+    (group buffer old positions mark mark-active original-modified-p cause)
+  "Cancel GROUP exactly, notifying the same observers as ordinary undo."
+  (let ((rollback-condition nil))
+    (handler-case
+        (cond
+          ((buffer-change-group-active-p group)
+           ;; Hook-backed consumers have seen the forward edit, so inverse
+           ;; hooks are required to restore their state along with the text.
+           (buffer-cancel-change-group group))
+          ((and (string= old
+                         (points-to-string (buffer-start-point buffer)
+                                           (buffer-end-point buffer)))
+                (eql original-modified-p (buffer-modified-p buffer)))
+           t)
+          (t
+           (error "Formatter change group became inactive before rollback")))
+      (error (condition)
+        (setf rollback-condition condition)))
+    (if (or rollback-condition
+            (not (string= old
+                          (points-to-string (buffer-start-point buffer)
+                                            (buffer-end-point buffer))))
+            (not (eql original-modified-p (buffer-modified-p buffer))))
+        (progn
+          ;; A failed inverse cannot safely be hidden from observers.  Keep
+          ;; the live text visible, invalidate dishonest routes, and force a
+          ;; dirty state so it cannot be mistaken for saved content.
+          (when (buffer-change-group-active-p group)
+            (ignore-errors (buffer-abort-change-group group)))
+          (unless (deleted-buffer-p buffer)
+            (lem/buffer/internal::buffer-reset-undo-tree
+             buffer :dirty t :truncated t))
+          (error
+           'formatting-rollback-error
+           :detail
+           (format nil
+                   (concatenate
+                    'string
+                    "Formatting rollback failed; the buffer was left dirty "
+                    "and its undo history was reset: ~a"
+                    "~@[ (original error: ~a)~]")
+                   (or rollback-condition "restored state did not match")
+                   cause)))
+        (progn
+          (formatting-restore-point-positions positions (length old))
+          (setf (mark-active-p mark) mark-active)
+          t))))
+
+(defun formatting-call-with-change-group
+    (buffer old positions mark mark-active function)
+  "Call FUNCTION as an all-or-nothing retained BUFFER transaction."
+  (let ((group (buffer-prepare-change-group buffer))
+        (original-modified-p (buffer-modified-p buffer))
+        (completed-p nil)
+        (cause nil))
+    (handler-bind ((error (lambda (condition)
+                            (unless cause (setf cause condition)))))
+      (unwind-protect
+           (prog1 (funcall function)
+             (buffer-accept-change-group group)
+             (setf completed-p t))
+        (unless completed-p
+          (formatting-rollback-change-group
+           group buffer old positions mark mark-active
+           original-modified-p cause))))))
+
+(defun formatting-apply-output (buffer old new &optional finalizer)
+  "Apply NEW and FINALIZER as one transaction, preserving registered points."
+  (when (and (string= old new) (null finalizer))
     (return-from formatting-apply-output nil))
   (when (buffer-read-only-p buffer)
     (error "The buffer is read-only"))
-  (let* ((commands (formatting-rcs-patch old new))
+  (let* ((commands (unless (string= old new)
+                     (formatting-rcs-patch old new)))
          (edits (formatting-commands-to-edits commands old))
          (points (formatting-buffer-points buffer))
-         (positions (mapcar (lambda (point)
-                              (cons point
-                                    (1- (position-at-point point))))
-                            points))
+         (positions (formatting-point-positions points))
          (mark (cursor-mark (buffer-point buffer)))
          (mark-active (mark-active-p mark)))
-    (dolist (edit (reverse (copy-list edits)))
-      (with-point ((start (buffer-start-point buffer))
-                   (end (buffer-start-point buffer)))
-        (move-to-position start (1+ (format-edit-start edit)))
-        (move-to-position end (1+ (format-edit-end edit)))
-        (delete-between-points start end)
-        (insert-string start (format-edit-replacement edit))))
-    (dolist (entry positions)
-      (move-to-position
-       (car entry)
-       (1+ (max 0
-                (min (length new)
-                     (formatting-map-offset (cdr entry) edits))))))
-    (setf (mark-active-p mark) mark-active)
-    t))
+    (formatting-preflight-edits buffer old edits)
+    (formatting-call-with-change-group
+     buffer old positions mark mark-active
+     (lambda ()
+       (dolist (edit (reverse (copy-list edits)))
+         (with-point ((start (buffer-start-point buffer))
+                      (end (buffer-start-point buffer)))
+           (move-to-position start (1+ (format-edit-start edit)))
+           (move-to-position end (1+ (format-edit-end edit)))
+           (delete-between-points start end)
+           (insert-string start (format-edit-replacement edit))))
+       (dolist (entry positions)
+         (move-to-position
+          (car entry)
+          (1+ (max 0
+                   (min (length new)
+                        (formatting-map-offset (cdr entry) edits))))))
+       (unless (string= new
+                        (points-to-string (buffer-start-point buffer)
+                                          (buffer-end-point buffer)))
+         (error "Applied formatter hunks did not reproduce formatter output"))
+       (when finalizer
+         (funcall finalizer))
+       (setf (mark-active-p mark) mark-active)
+       t))
+    (not (string= old
+                  (points-to-string (buffer-start-point buffer)
+                                    (buffer-end-point buffer))))))
+
+(defun formatting-normalize-buffer (buffer)
+  "Apply every configured save-time text normalization to BUFFER."
+  (trim-touched-trailing-whitespace buffer)
+  (editorconfig-normalize-buffer buffer))
+
+(defun formatting-normalize-buffer-transactionally (buffer)
+  "Apply ws-butler and EditorConfig normalization in one retained transaction."
+  (let* ((old (points-to-string (buffer-start-point buffer)
+                                (buffer-end-point buffer)))
+         (points (formatting-buffer-points buffer))
+         (positions (formatting-point-positions points))
+         (mark (cursor-mark (buffer-point buffer)))
+         (mark-active (mark-active-p mark)))
+    (formatting-call-with-change-group
+     buffer old positions mark mark-active
+     (lambda ()
+       (formatting-normalize-buffer buffer)
+       (setf (mark-active-p mark) mark-active)
+       t))
+    (not (string= old
+                  (points-to-string (buffer-start-point buffer)
+                                    (buffer-end-point buffer))))))
 
 ;;; --- CLI/LSP dispatch and save lifecycle ---------------------------------
 
@@ -541,20 +692,20 @@ text and buffer and returns formatted text."
       (lem-lsp-mode::text-document/formatting buffer))
     t))
 
-(defun formatting-run-spec (buffer spec)
+(defun formatting-run-spec (buffer spec &optional finalizer)
   (let* ((old (points-to-string (buffer-start-point buffer)
                                 (buffer-end-point buffer)))
          (new (formatting-spec-output spec buffer old)))
     (when new
-      (values (formatting-apply-output buffer old new) t))))
+      (values (formatting-apply-output buffer old new finalizer) t))))
 
-(defun format-buffer-1 (buffer &key manual)
+(defun format-buffer-1 (buffer &key manual finalizer)
   "Format BUFFER, returning true when a formatter was available."
   (let ((spec (formatting-resolve-spec buffer)))
     (cond
       (spec
        (multiple-value-bind (changed available)
-           (formatting-run-spec buffer spec)
+           (formatting-run-spec buffer spec finalizer)
          (cond
            (available
             (when manual
@@ -583,35 +734,10 @@ text and buffer and returns formatted text."
     (error (condition)
       (message "Format failed: ~a" condition))))
 
-(defun lem-yath-format-after-save (buffer)
-  "Apheleia-style post-save formatting for one programming BUFFER."
-  (when (and (programming-buffer-p buffer)
-             (buffer-filename buffer)
-             (not (buffer-value buffer 'lem-yath-format-after-save-active)))
-    (setf (buffer-value buffer 'lem-yath-format-after-save-active) t)
-    (unwind-protect
-         (handler-case
-             (when (format-buffer-1 buffer)
-               (editorconfig-normalize-buffer buffer)
-               (lem/buffer/file:write-to-file-without-write-hook
-                buffer (buffer-filename buffer))
-               ;; This second write is the exact formatted state on disk.
-               ;; Core marks the initial pre-hook write before after-save
-               ;; hooks, so establish the formatter-produced saved node here.
-               (buffer-mark-saved buffer)
-               (lem/buffer/file:update-changed-disk-date buffer))
-           (error (condition)
-             (message "Format-on-save failed: ~a" condition)))
-      (setf (buffer-value buffer 'lem-yath-format-after-save-active) nil))))
-
 (defun formatting-configure-buffer (buffer)
+  ;; Remove the former post-save callback when reloading into a live session.
   (remove-hook (variable-value 'after-save-hook :buffer buffer)
                'lem-yath-format-after-save)
-  (when (programming-buffer-p buffer)
-    ;; Run before LSP's weight-zero didSave hook, so it observes the final
-    ;; formatted buffer and receives any formatter-induced didChange events.
-    (add-hook (variable-value 'after-save-hook :buffer buffer)
-              'lem-yath-format-after-save 1000))
   (setf (buffer-value buffer 'lem-yath-formatting-mode)
         (buffer-major-mode buffer)))
 
@@ -619,10 +745,53 @@ text and buffer and returns formatted text."
   (formatting-configure-buffer buffer))
 
 (defun formatting-before-save-hook (buffer)
-  ;; Lem's core process-file hook reactivates the detected major mode on every
-  ;; save, which clears buffer-local editor variables, including after-save-hook.
-  ;; Reinstall our callback after that mode activation and after EditorConfig.
-  (formatting-configure-buffer buffer))
+  ;; Core mode detection and EditorConfig property refresh have already run.
+  ;; This hook owns every text-normalization mutation before the sole write.
+  (formatting-configure-buffer buffer)
+  (when (and (buffer-filename buffer)
+             (not (buffer-value buffer 'lem-yath-format-before-save-active)))
+    (setf (buffer-value buffer 'lem-yath-format-before-save-active) t
+          (buffer-value buffer 'lem-yath-save-normalization-complete) nil)
+    (unwind-protect
+         (let ((formatted-p nil))
+           (when (programming-buffer-p buffer)
+             (handler-case
+                 ;; Formatter-generated edits are not user-touched ws-butler
+                 ;; lines. Existing touched-line points still track their new
+                 ;; positions and are cleaned by the transaction finalizer.
+                 (let ((*trimming-touched-lines* t))
+                   (setf formatted-p
+                         (format-buffer-1
+                          buffer
+                          :finalizer
+                          (lambda () (formatting-normalize-buffer buffer)))))
+               ;; An uncertain rollback must abort the ordinary save rather
+               ;; than write a partial live state.
+               (formatting-rollback-error (condition)
+                 (editor-error "~a" condition))
+               (error (condition)
+                 (message "Format-on-save failed; formatter output was discarded: ~a"
+                          condition))))
+           ;; Unmapped/unavailable formatters and safely rolled-back formatter
+           ;; failures still receive save normalization transactionally.
+           (unless formatted-p
+             (handler-case
+                 (progn
+                   (formatting-normalize-buffer-transactionally buffer)
+                   (setf (buffer-value
+                          buffer 'lem-yath-save-normalization-complete) t))
+               (formatting-rollback-error (condition)
+                 (editor-error "~a" condition))
+               (error (condition)
+                 (setf (buffer-value
+                        buffer 'lem-yath-save-normalization-pending) t)
+                 (message
+                  "Save normalization failed; saving pre-normalization text: ~a"
+                  condition))))
+           (when formatted-p
+             (setf (buffer-value
+                    buffer 'lem-yath-save-normalization-complete) t)))
+      (setf (buffer-value buffer 'lem-yath-format-before-save-active) nil))))
 
 (defun formatting-post-command-hook ()
   (let ((buffer (current-buffer)))
@@ -681,6 +850,8 @@ text and buffer and returns formatted text."
 ;; Reloading replaces hook weights as well as definitions.
 (remove-hook *find-file-hook* 'formatting-find-file-hook)
 (add-hook *find-file-hook* 'formatting-find-file-hook 3000)
+(remove-hook (variable-value 'before-save-hook :global t)
+             'trim-trailing-whitespace-hook)
 (remove-hook (variable-value 'before-save-hook :global t)
              'formatting-before-save-hook)
 (add-hook (variable-value 'before-save-hook :global t)

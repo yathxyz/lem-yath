@@ -1,14 +1,52 @@
 (in-package :lem-yath)
 
-;; This fixture is loaded after the real configuration but before Lem opens
-;; the file passed on its command line.  Consequently the first Python buffer
-;; exercises the production find-file hooks rather than a test-side reapply.
+;; The harness loads this fixture before opening its first file.  Every fixture
+;; buffer therefore exercises the production find-file hooks.
 
 (defvar *formatting-test-report*
   (uiop:getenv "LEM_YATH_FORMATTING_REPORT"))
 
 (defvar *formatting-test-lsp-call-count* 0)
 (defvar *formatting-test-lsp-originals* nil)
+(defvar *formatting-test-lsp-attempt-count* 0)
+(defvar *formatting-test-lsp-attempt-original* nil)
+(defvar *formatting-test-normalize-original* nil)
+
+(defun formatting-test-install-normalize-failure ()
+  (unless *formatting-test-normalize-original*
+    (let ((original (symbol-function 'editorconfig-normalize-buffer)))
+      (setf *formatting-test-normalize-original* original
+            (symbol-function 'editorconfig-normalize-buffer)
+            (lambda (buffer)
+              (prog1 (funcall original buffer)
+                (when (and (buffer-value
+                            buffer :formatting-test-fail-normalize)
+                           (buffer-value
+                            buffer 'lem-yath-format-before-save-active))
+                  (setf (buffer-value buffer :formatting-test-fail-normalize)
+                        nil)
+                  (with-point ((tail (buffer-end-point buffer) :left-inserting))
+                    (insert-string tail "# normalize hook mutation"))
+                  (setf (buffer-value
+                         buffer :formatting-test-normalize-forward-count)
+                        (or (buffer-value
+                             buffer :formatting-test-change-count)
+                            0))
+                  (formatting-test-log
+                   "NORMALIZE-INJECT label=~a changes=~d"
+                   (formatting-test-state-label buffer)
+                   (buffer-value
+                    buffer :formatting-test-normalize-forward-count))
+                  (error "Injected EditorConfig normalization failure"))))))))
+
+(defun formatting-test-install-lsp-attempt-probe ()
+  (unless *formatting-test-lsp-attempt-original*
+    (let ((original (symbol-function 'formatting-run-lsp)))
+      (setf *formatting-test-lsp-attempt-original* original
+            (symbol-function 'formatting-run-lsp)
+            (lambda (buffer)
+              (incf *formatting-test-lsp-attempt-count*)
+              (funcall original buffer))))))
 
 (defun formatting-test-log (control &rest arguments)
   (with-open-file (stream *formatting-test-report*
@@ -64,6 +102,58 @@
 (defun formatting-test-token-position (token &optional (buffer (current-buffer)))
   (search token (formatting-test-buffer-text buffer)))
 
+(defun formatting-test-protected-token-p (&optional (buffer (current-buffer)))
+  (let ((position (formatting-test-token-position "prefix_value" buffer)))
+    (when position
+      (with-point ((point (buffer-start-point buffer)))
+        (character-offset point position)
+        (text-property-at point :read-only)))))
+
+(defun formatting-test-shadow-current-p (&optional (buffer (current-buffer)))
+  (and (buffer-value buffer :formatting-test-shadow-valid)
+       (string= (or (buffer-value buffer :formatting-test-shadow-text) "")
+                (formatting-test-buffer-text buffer))))
+
+(defun formatting-test-shadow-before-change (point argument)
+  "Apply one Lem before-change notification to a shadow document."
+  (let ((buffer (point-buffer point)))
+    (when (buffer-value buffer :formatting-test-observe-shadow)
+      (let* ((live (formatting-test-buffer-text buffer))
+             (shadow (or (buffer-value buffer :formatting-test-shadow-text) ""))
+             (position (1- (position-at-point point))))
+        (unless (string= live shadow)
+          (setf (buffer-value buffer :formatting-test-shadow-valid) nil))
+        (handler-case
+            (setf (buffer-value buffer :formatting-test-shadow-text)
+                  (etypecase argument
+                    (string
+                     (concatenate 'string
+                                  (subseq shadow 0 position)
+                                  argument
+                                  (subseq shadow position)))
+                    (integer
+                     (concatenate
+                      'string
+                      (subseq shadow 0 position)
+                      (subseq shadow (min (length shadow)
+                                         (+ position argument)))))))
+          (error ()
+            (setf (buffer-value buffer :formatting-test-shadow-valid) nil)))
+        (setf (buffer-value buffer :formatting-test-shadow-version)
+              (1+ (or (buffer-value
+                       buffer :formatting-test-shadow-version)
+                      0)))))))
+
+(defun formatting-test-start-observers (buffer)
+  (setf (buffer-value buffer :formatting-test-change-count) 0
+        (buffer-value buffer :formatting-test-observe-changes) t
+        (buffer-value buffer :formatting-test-shadow-text)
+        (formatting-test-buffer-text buffer)
+        (buffer-value buffer :formatting-test-shadow-valid) t
+        (buffer-value buffer :formatting-test-shadow-version) 0
+        (buffer-value buffer :formatting-test-observe-shadow) t
+        (buffer-value buffer :formatting-test-normalize-forward-count) 0))
+
 (defun formatting-test-point-on-token-p (point token &optional (buffer (current-buffer)))
   (let ((position (formatting-test-token-position token buffer)))
     (and position (= (1+ position) (position-at-point point)))))
@@ -88,6 +178,11 @@
 (ignore-errors
   (remove-hook lem-python-mode:*python-mode-hook*
                'lem-lsp-mode::enable-lsp-mode))
+(ignore-errors
+  ;; The harness supplies Black through a private PATH.  Directory transitions
+  ;; belong to the dedicated direnv gate and must not restore a pre-harness
+  ;; PATH while formatter execution is under test.
+  (direnv-mode nil))
 (formatting-test-install-lsp-probes)
 
 (define-major-mode lem-yath-formatting-test-mode
@@ -101,10 +196,11 @@
       (file-namestring (or (buffer-filename buffer) (buffer-name buffer)))))
 
 (defun formatting-test-format-hook-entries (&optional (buffer (current-buffer)))
+  (declare (ignore buffer))
   (remove-if-not
    (lambda (entry)
-     (eq 'lem-yath-format-after-save (car entry)))
-   (variable-value 'after-save-hook :buffer buffer)))
+     (eq 'formatting-before-save-hook (car entry)))
+   (variable-value 'before-save-hook :global t)))
 
 (defun formatting-test-format-hook-summary (&optional (buffer (current-buffer)))
   (let ((entries (formatting-test-format-hook-entries buffer)))
@@ -120,7 +216,8 @@
          (point (current-point))
          (mark (cursor-mark point))
          (mark-point (mark-point mark))
-         (encoding (buffer-encoding buffer)))
+         (encoding (buffer-encoding buffer))
+         (undo (ignore-errors (lem:buffer-undo-tree-snapshot buffer))))
     (formatting-test-log
      (concatenate
       'string
@@ -128,7 +225,10 @@
       "point=~d mark=~a mark-point=~a point-keep=~a mark-tail=~a "
       "global-tabs=~a local-tabs=~a tab-width=~a editorconfig=~a "
       "trim=~s auto=~s formatter=~a format-hook-count=~d "
-      "format-hooks=~a encoding=~a eol=~a lsp=~d")
+      "format-hooks=~a encoding=~a eol=~a lsp=~d changes=~d "
+      "protected=~a shadow=~a shadow-version=~d normalize-forward=~d "
+      "normalization-pending=~a undo-truncated=~a undo-clean=~a "
+      "undo-saved=~a lsp-attempts=~d")
      (formatting-test-state-label buffer)
      (formatting-test-string-hex (formatting-test-buffer-text buffer))
      (if (buffer-filename buffer)
@@ -151,13 +251,24 @@
      (formatting-test-yes-no
       (buffer-value buffer 'lem-yath-editorconfig-mode))
      (buffer-value buffer 'lem-yath-editorconfig-trim)
-     (buffer-value buffer 'lem-yath-format-after-save-active)
+     (buffer-value buffer 'lem-yath-format-before-save-active)
      (formatting-test-formatter-id buffer)
      (length (formatting-test-format-hook-entries buffer))
      (formatting-test-format-hook-summary buffer)
      (type-of encoding)
      (encoding-end-of-line encoding)
-     *formatting-test-lsp-call-count*)))
+     *formatting-test-lsp-call-count*
+     (or (buffer-value buffer :formatting-test-change-count) 0)
+     (formatting-test-yes-no (formatting-test-protected-token-p buffer))
+     (formatting-test-yes-no (formatting-test-shadow-current-p buffer))
+     (or (buffer-value buffer :formatting-test-shadow-version) 0)
+     (or (buffer-value buffer :formatting-test-normalize-forward-count) 0)
+     (formatting-test-yes-no
+      (buffer-value buffer 'lem-yath-save-normalization-pending))
+     (formatting-test-yes-no (and undo (getf undo :truncated)))
+     (or (and undo (getf undo :clean)) "none")
+     (or (and undo (getf undo :last-saved)) "none")
+     *formatting-test-lsp-attempt-count*)))
 
 (define-command lem-yath-test-formatting-record () ()
   (formatting-test-record-state))
@@ -182,7 +293,7 @@
         (check (fboundp 'formatting-resolve-spec)
                "formatter-api-present")
         (check (and expected actual (equal expected actual))
-               "command-line-file-opened")
+               "production-find-file-opened")
         (check (programming-buffer-p buffer)
                "python-is-programming")
         (check (buffer-value buffer 'lem-yath-editorconfig-mode)
@@ -233,6 +344,10 @@
 (define-command lem-yath-test-formatting-open-true () ()
   (formatting-test-open "LEM_YATH_FORMATTING_TRUE" "true-open"))
 
+(define-command lem-yath-test-formatting-open-normalize-error () ()
+  (formatting-test-open
+   "LEM_YATH_FORMATTING_NORMALIZE_ERROR" "normalize-error"))
+
 (define-command lem-yath-test-formatting-open-unset () ()
   (formatting-test-open "LEM_YATH_FORMATTING_UNSET" "unset-open"))
 
@@ -250,6 +365,30 @@
 
 (define-command lem-yath-test-formatting-open-failure () ()
   (formatting-test-open "LEM_YATH_FORMATTING_FAILURE" "failure-open"))
+
+(define-command lem-yath-test-formatting-open-transaction-manual () ()
+  (formatting-test-open
+   "LEM_YATH_FORMATTING_TRANSACTION_MANUAL" "transaction-manual"))
+
+(define-command lem-yath-test-formatting-open-transaction-auto () ()
+  (formatting-test-open
+   "LEM_YATH_FORMATTING_TRANSACTION_AUTO" "transaction-auto"))
+
+(define-command lem-yath-test-formatting-open-transaction-finalizer () ()
+  (formatting-test-open
+   "LEM_YATH_FORMATTING_TRANSACTION_FINALIZER" "transaction-finalizer"))
+
+(define-command lem-yath-test-formatting-open-finalizer-mark () ()
+  (formatting-test-open
+   "LEM_YATH_FORMATTING_FINALIZER_MARK" "finalizer-mark"))
+
+(define-command lem-yath-test-formatting-open-rollback-failure () ()
+  (formatting-test-open
+   "LEM_YATH_FORMATTING_ROLLBACK_FAILURE" "rollback-failure"))
+
+(define-command lem-yath-test-formatting-open-read-only () ()
+  (formatting-test-open
+   "LEM_YATH_FORMATTING_READ_ONLY" "read-only-preflight"))
 
 (defun formatting-test-touch-second-line (label)
   (let ((buffer (current-buffer)))
@@ -279,6 +418,47 @@
 (define-command lem-yath-test-formatting-touch-false () ()
   (formatting-test-touch-second-line "false-touched"))
 
+(define-command lem-yath-test-formatting-prepare-normalize-error () ()
+  (let ((buffer (current-buffer)))
+    (setf (buffer-value buffer :formatting-test-label) "normalize-error")
+    (formatting-test-install-normalize-failure)
+    (formatting-test-start-observers buffer)
+    (setf (buffer-value buffer :formatting-test-fail-normalize) t)
+    ;; Make the whitespace-bearing second line touched without changing
+    ;; visible text.  ws-butler trims it first inside the same transaction in
+    ;; which EditorConfig trims the remaining line.
+    (with-point ((point (buffer-start-point buffer)))
+      (line-offset point 1)
+      (line-start point)
+      (insert-string point "X")
+      (with-point ((delete (buffer-start-point buffer)))
+        (line-offset delete 1)
+        (line-start delete)
+        (delete-character delete 1)))
+    (formatting-test-start-observers buffer)
+    (formatting-test-log
+     "PREPARE label=normalize-error modified=~a"
+     (formatting-test-yes-no (buffer-modified-p buffer)))))
+
+(define-command lem-yath-test-formatting-retry-normalize-error () ()
+  (let ((buffer (current-buffer)))
+    ;; A no-net-text edit starts the next dirty epoch. Pending normalization
+    ;; must retain the earlier touched-line marker across this change.
+    (with-point ((point (buffer-start-point buffer)))
+      (line-offset point 2)
+      (line-start point)
+      (insert-character point #\X)
+      (with-point ((delete (buffer-start-point buffer)))
+        (line-offset delete 2)
+        (line-start delete)
+        (delete-character delete 1)))
+    (formatting-test-start-observers buffer)
+    (formatting-test-log
+     "RETRY label=normalize-error modified=~a pending=~a"
+     (formatting-test-yes-no (buffer-modified-p buffer))
+     (formatting-test-yes-no
+      (buffer-value buffer 'lem-yath-save-normalization-pending)))))
+
 (define-command lem-yath-test-formatting-prepare-bytes () ()
   (let ((buffer (current-buffer)))
     (with-buffer-read-only buffer nil
@@ -291,26 +471,165 @@
                          (formatting-test-yes-no
                           (buffer-modified-p buffer)))))
 
-(define-command lem-yath-test-formatting-prepare-manual () ()
-  (let* ((buffer (current-buffer))
-         (text (formatting-test-buffer-text buffer))
+(defun formatting-test-set-token-anchors (buffer)
+  (let* ((text (formatting-test-buffer-text buffer))
          (keep (search "KEEP_MARKER" text))
          (tail (search "TAIL_MARKER" text)))
     (unless (and keep tail)
-      (error "Manual fixture tokens are missing"))
+      (error "Formatting fixture tokens are missing"))
     (buffer-mark-cancel buffer)
     (buffer-start (buffer-point buffer))
     (character-offset (buffer-point buffer) keep)
     (with-point ((mark (buffer-start-point buffer)))
       (character-offset mark tail)
       (setf (buffer-mark buffer) mark))
-    (clear-buffer-edit-history buffer)
-    (setf (buffer-value buffer :formatting-test-label) "manual-ready")
+    (values keep tail)))
+
+(defun formatting-test-restore-mark-before-format (buffer)
+  (when (buffer-value buffer :formatting-test-restore-mark-before-format)
+    (setf (buffer-value buffer :formatting-test-restore-mark-before-format)
+          nil)
+    (formatting-test-set-token-anchors buffer)))
+
+(define-command lem-yath-test-formatting-prepare-manual () ()
+  (let ((buffer (current-buffer)))
+    (multiple-value-bind (keep tail)
+        (formatting-test-set-token-anchors buffer)
+      (declare (ignore keep))
+      (clear-buffer-edit-history buffer)
+      (setf (buffer-value buffer :formatting-test-label) "manual-ready")
+      (formatting-test-log
+       "PREPARE label=manual-ready point=~d mark=~d modified=~a"
+       (position-at-point (buffer-point buffer))
+       tail
+       (formatting-test-yes-no (buffer-modified-p buffer))))))
+
+(defun formatting-test-fail-after-change-once (start end old-length)
+  (declare (ignore end))
+  (let ((buffer (point-buffer start)))
+    (when (buffer-value buffer :formatting-test-fail-after-change)
+      (setf (buffer-value buffer :formatting-test-fail-after-change) nil)
+      (formatting-test-log
+       "INJECT label=~a old-length=~d modified=~a"
+       (formatting-test-state-label buffer)
+       old-length
+       (formatting-test-yes-no (buffer-modified-p buffer)))
+      ;; Mutate recursively before throwing.  The outer edit must already be
+      ;; retained so cancellation can replay this nested edit first.
+      (with-point ((tail (buffer-end-point buffer) :left-inserting))
+        (insert-string tail "# nested hook mutation"))
+      (error "Injected one-shot formatter after-change failure"))))
+
+(defun formatting-test-fail-after-change-persistently (start end old-length)
+  (declare (ignore end))
+  (let ((buffer (point-buffer start)))
+    (when (buffer-value buffer :formatting-test-fail-persistently)
+      (formatting-test-log
+       "PERSISTENT-INJECT label=~a old-length=~d"
+       (formatting-test-state-label buffer) old-length)
+      (error "Injected persistent formatter after-change failure"))))
+
+(defun formatting-test-count-after-change (start end old-length)
+  (declare (ignore end old-length))
+  (let ((buffer (point-buffer start)))
+    (when (buffer-value buffer :formatting-test-observe-changes)
+      (setf (buffer-value buffer :formatting-test-change-count)
+            (1+ (or (buffer-value buffer :formatting-test-change-count)
+                    0))))))
+
+(defun formatting-test-install-after-change-failure (buffer)
+  (formatting-test-start-observers buffer)
+  (setf (buffer-value buffer :formatting-test-fail-after-change) t))
+
+(defun formatting-test-install-persistent-failure (buffer)
+  (formatting-test-start-observers buffer)
+  (setf (buffer-value buffer :formatting-test-fail-persistently) t))
+
+(define-command lem-yath-test-formatting-prepare-transaction-manual () ()
+  (let ((buffer (current-buffer)))
+    (with-point ((start (buffer-start-point buffer) :left-inserting))
+      (insert-string start (format nil "# transaction edit~%")))
+    (setf (buffer-value buffer :formatting-test-label) "transaction-manual")
+    (multiple-value-bind (keep tail)
+        (formatting-test-set-token-anchors buffer)
+      (formatting-test-install-after-change-failure buffer)
+      (formatting-test-log
+       (concatenate
+        'string
+        "PREPARE label=transaction-manual point=~d mark=~d "
+        "keep=~d modified=~a")
+       (position-at-point (buffer-point buffer)) tail keep
+       (formatting-test-yes-no (buffer-modified-p buffer))))))
+
+(define-command lem-yath-test-formatting-prepare-transaction-auto () ()
+  (let ((buffer (current-buffer)))
+    (setf (buffer-value buffer :formatting-test-label) "transaction-auto")
+    (formatting-test-insert-first-line "# transaction save")
+    (formatting-test-install-after-change-failure buffer)
     (formatting-test-log
-     "PREPARE label=manual-ready point=~d mark=~d modified=~a"
-     (position-at-point (buffer-point buffer))
-     tail
+     "PREPARE label=transaction-auto modified=~a"
      (formatting-test-yes-no (buffer-modified-p buffer)))))
+
+(define-command lem-yath-test-formatting-prepare-transaction-finalizer () ()
+  (let ((buffer (current-buffer)))
+    (setf (buffer-value buffer :formatting-test-label)
+          "transaction-finalizer")
+    (formatting-test-insert-first-line "# transaction finalizer")
+    (formatting-test-install-normalize-failure)
+    (formatting-test-start-observers buffer)
+    (setf (buffer-value buffer :formatting-test-fail-normalize) t)
+    (formatting-test-log
+     "PREPARE label=transaction-finalizer modified=~a"
+     (formatting-test-yes-no (buffer-modified-p buffer)))))
+
+(define-command lem-yath-test-formatting-prepare-finalizer-mark () ()
+  (let ((buffer (current-buffer)))
+    (setf (buffer-value buffer :formatting-test-label) "finalizer-mark")
+    (formatting-test-insert-first-line "# mark save")
+    (multiple-value-bind (keep tail)
+        (formatting-test-set-token-anchors buffer)
+      (formatting-test-start-observers buffer)
+      (setf (buffer-value buffer :formatting-test-restore-mark-before-format)
+            t)
+      (formatting-test-log
+       (concatenate
+        'string
+        "PREPARE label=finalizer-mark point=~d mark=~d keep=~d "
+        "modified=~a")
+       (position-at-point (buffer-point buffer)) tail keep
+       (formatting-test-yes-no (buffer-modified-p buffer))))))
+
+(define-command lem-yath-test-formatting-prepare-rollback-failure () ()
+  (let ((buffer (current-buffer)))
+    (setf (buffer-value buffer :formatting-test-label) "rollback-failure")
+    (formatting-test-insert-first-line "# rollback failure")
+    (formatting-test-install-persistent-failure buffer)
+    (formatting-test-log
+     "PREPARE label=rollback-failure modified=~a"
+     (formatting-test-yes-no (buffer-modified-p buffer)))))
+
+(define-command lem-yath-test-formatting-prepare-read-only () ()
+  (let ((buffer (current-buffer)))
+    ;; Establish one known user undo step before the refusal.
+    (with-point ((start (buffer-start-point buffer) :left-inserting))
+      (insert-string start (format nil "# read-only edit~%")))
+    (let* ((text (formatting-test-buffer-text buffer))
+         (keep (search "KEEP_MARKER" text))
+         (prefix (search "prefix_value" text)))
+      (unless (and keep prefix)
+        (error "Read-only formatting fixture tokens are missing"))
+      (with-point ((start (buffer-start-point buffer))
+                   (end (buffer-start-point buffer)))
+        (character-offset start prefix)
+        (character-offset end (+ prefix (length "prefix_value")))
+        (put-text-property start end :read-only t))
+      (setf (buffer-value buffer :formatting-test-label) "read-only-preflight")
+      (formatting-test-set-token-anchors buffer)
+      (formatting-test-start-observers buffer)
+      (formatting-test-log
+       "PREPARE label=read-only-preflight protected=~d modified=~a"
+       prefix
+       (formatting-test-yes-no (buffer-modified-p buffer))))))
 
 (defun formatting-test-insert-first-line (text)
   (let ((buffer (current-buffer)))
@@ -334,7 +653,11 @@
   (formatting-test-insert-first-line "# user edit"))
 
 (define-command lem-yath-test-formatting-edit-failure () ()
-  (formatting-test-insert-first-line "# failure edit"))
+  (formatting-test-install-lsp-attempt-probe)
+  (formatting-test-insert-first-line "# failure edit   ")
+  ;; Observe save normalization after the formatter process fails, without
+  ;; accepting its partial stdout.
+  (formatting-test-start-observers (current-buffer)))
 
 (defun formatting-test-one-hook-p (hooks callback weight)
   (let ((matches (remove-if-not (lambda (entry)
@@ -362,9 +685,12 @@
        (formatting-test-one-hook-p
         (variable-value 'before-save-hook :global t)
         'formatting-before-save-hook -100)
-       (formatting-test-one-hook-p
-        (variable-value 'after-save-hook :buffer buffer)
-        'lem-yath-format-after-save 1000)))
+       (not (find 'trim-trailing-whitespace-hook
+                  (variable-value 'before-save-hook :global t)
+                  :key #'car))
+       (not (find 'lem-yath-format-after-save
+                  (variable-value 'after-save-hook :buffer buffer)
+                  :key #'car))))
 
 (defun formatting-test-after-save-observer (&optional (buffer (current-buffer)))
   (when (typep buffer 'lem:buffer)
@@ -392,6 +718,11 @@
              (formatting-source
                (asdf:system-relative-pathname
                 "lem-yath" "src/formatting.lisp")))
+        ;; Simulate reloading from the former post-save implementation.
+        (add-hook (variable-value 'after-save-hook :buffer buffer)
+                  'lem-yath-format-after-save 1000)
+        (add-hook (variable-value 'before-save-hook :global t)
+                  'trim-trailing-whitespace-hook)
         (load editorconfig-source)
         (load editorconfig-source)
         (let ((editorconfig-hooks
@@ -407,8 +738,9 @@
            (formatting-test-yes-no
             (formatting-test-formatting-hooks-ok-p buffer))
            (formatting-test-yes-no
-            (equal properties-before
-                   (formatting-test-properties buffer)))
+            (and properties-before
+                 (equal properties-before
+                        (formatting-test-properties buffer))))
            (formatting-test-yes-no
             (equal spec-before (formatting-test-formatter-id buffer))))))
     (error (condition)
@@ -421,6 +753,27 @@
                       lem-vi-mode:*insert-keymap*
                       lem-vi-mode:*visual-keymap*))
   (define-key keymap "F5" 'lem-yath-test-formatting-record))
+
+(remove-hook (variable-value 'before-change-functions :global t)
+             'formatting-test-shadow-before-change)
+(add-hook (variable-value 'before-change-functions :global t)
+          'formatting-test-shadow-before-change 30000)
+(remove-hook (variable-value 'before-save-hook :global t)
+             'formatting-test-restore-mark-before-format)
+(add-hook (variable-value 'before-save-hook :global t)
+          'formatting-test-restore-mark-before-format -75)
+(remove-hook (variable-value 'after-change-functions :global t)
+             'formatting-test-count-after-change)
+(add-hook (variable-value 'after-change-functions :global t)
+          'formatting-test-count-after-change 20000)
+(remove-hook (variable-value 'after-change-functions :global t)
+             'formatting-test-fail-after-change-persistently)
+(add-hook (variable-value 'after-change-functions :global t)
+          'formatting-test-fail-after-change-persistently 11000)
+(remove-hook (variable-value 'after-change-functions :global t)
+             'formatting-test-fail-after-change-once)
+(add-hook (variable-value 'after-change-functions :global t)
+          'formatting-test-fail-after-change-once 10000)
 
 (remove-hook (variable-value 'after-save-hook :global t)
              'formatting-test-after-save-observer)

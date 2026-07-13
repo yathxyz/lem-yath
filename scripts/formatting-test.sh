@@ -119,6 +119,9 @@ printf '%s\n' \
   '' \
   '[true.fmtfixture]' \
   'trim_trailing_whitespace = true' \
+  '' \
+  '[normalize-error.fmtfixture]' \
+  'trim_trailing_whitespace = false' \
   >"$project/.editorconfig"
 
 printf '%s\n' \
@@ -145,15 +148,23 @@ printf '%s\n' \
   >"$false_dir/.editorconfig"
 
 export LEM_YATH_FORMATTING_TRUE="$project/true.fmtfixture"
+export LEM_YATH_FORMATTING_NORMALIZE_ERROR="$project/normalize-error.fmtfixture"
 export LEM_YATH_FORMATTING_UNSET="$nested/unset.fmtfixture"
 export LEM_YATH_FORMATTING_FALSE="$false_dir/false.fmtfixture"
 export LEM_YATH_FORMATTING_BYTES="$project/bytes.txt"
 export LEM_YATH_FORMATTING_MANUAL="$nested/"'manual ; $(touch FORMATTER_INJECTED).py'
 export LEM_YATH_FORMATTING_AUTO="$nested/automatic.py"
 export LEM_YATH_FORMATTING_FAILURE="$nested/failure.py"
+export LEM_YATH_FORMATTING_TRANSACTION_MANUAL="$nested/transaction-manual.py"
+export LEM_YATH_FORMATTING_TRANSACTION_AUTO="$nested/transaction-auto.py"
+export LEM_YATH_FORMATTING_TRANSACTION_FINALIZER="$nested/transaction-finalizer.py"
+export LEM_YATH_FORMATTING_FINALIZER_MARK="$project/finalizer-mark.py"
+export LEM_YATH_FORMATTING_ROLLBACK_FAILURE="$nested/rollback-failure.py"
+export LEM_YATH_FORMATTING_READ_ONLY="$nested/read-only.py"
 
 whitespace_initial=$'untouched   \ntouched   '
 printf '%s' "$whitespace_initial" >"$LEM_YATH_FORMATTING_TRUE"
+printf '%s' $'left   \nright   \nclean' >"$LEM_YATH_FORMATTING_NORMALIZE_ERROR"
 printf '%s' "$whitespace_initial" >"$LEM_YATH_FORMATTING_UNSET"
 printf '%s' "$whitespace_initial" >"$LEM_YATH_FORMATTING_FALSE"
 printf '%s' 'initial bytes' >"$LEM_YATH_FORMATTING_BYTES"
@@ -162,6 +173,13 @@ python_initial=$'prefix_value=1\nKEEP_MARKER = "stay"\nTAIL_MARKER=2'
 printf '%s' "$python_initial" >"$LEM_YATH_FORMATTING_MANUAL"
 printf '%s' "$python_initial" >"$LEM_YATH_FORMATTING_AUTO"
 printf '%s' "$python_initial" >"$LEM_YATH_FORMATTING_FAILURE"
+printf '%s' "$python_initial" >"$LEM_YATH_FORMATTING_TRANSACTION_MANUAL"
+printf '%s' "$python_initial" >"$LEM_YATH_FORMATTING_TRANSACTION_AUTO"
+printf '%s' "$python_initial" >"$LEM_YATH_FORMATTING_TRANSACTION_FINALIZER"
+printf '%s' "$python_initial" >"$LEM_YATH_FORMATTING_READ_ONLY"
+printf '%s' "$python_initial" >"$LEM_YATH_FORMATTING_ROLLBACK_FAILURE"
+printf '%s' $'prefix_value=1   \nKEEP_MARKER = "stay"   \nTAIL_MARKER=2   ' \
+  >"$LEM_YATH_FORMATTING_FINALIZER_MARK"
 
 report_count() {
   grep -cE "$1" "$LEM_YATH_FORMATTING_REPORT" 2>/dev/null || true
@@ -281,15 +299,15 @@ else
 fi
 
 fixture="$(lem-yath_lisp_string "$here/scripts/formatting-fixture.lisp")"
-lem_start_lem-yath_eval "$session" "(load #P$fixture)" \
-  "$LEM_YATH_FORMATTING_MANUAL"
-if ! lem_wait_for "$session" 'NORMAL' "$BOOT_TIMEOUT" >/dev/null ||
+lem_start_lem-yath_eval "$session" "(load #P$fixture)"
+if ! lem_wait_for "$session" 'Dashboard' "$BOOT_TIMEOUT" >/dev/null ||
    ! wait_report_count '^READY$' 1 "$BOOT_TIMEOUT"; then
   die boot 'configured Lem did not load the formatting fixture'
 fi
-pass boot 'configured Lem opened the real Python file in ncurses'
+pass boot 'configured Lem loaded the formatting fixture in ncurses'
 
-if run_mx lem-yath-test-formatting-static-checks &&
+if open_fixture lem-yath-test-formatting-open-manual manual-open &&
+   run_mx lem-yath-test-formatting-static-checks &&
    wait_report_count '^SUMMARY STATIC PASS failures=0$' 1; then
   pass open-properties \
     'real find-file applied root, precedence, unset, indentation, and the Python backend'
@@ -360,6 +378,80 @@ if open_fixture lem-yath-test-formatting-open-false false-open &&
   assert_no_formatter_events trim-false-no-cli "$before"
 else
   fail trim-false-touched-only 'false-trim fixture did not complete'
+fi
+
+# An unmapped programming buffer normalizes through one retained transaction.
+# A late error after ws-butler cleanup and final-newline normalization restores
+# all text. The touched-line marker survives that ordinary save and the next
+# edit epoch, so a later successful save retries the missed cleanup.
+before=$(event_count)
+normalize_before=$(report_count '^NORMALIZE-INJECT label=normalize-error changes=')
+if open_fixture lem-yath-test-formatting-open-normalize-error normalize-error &&
+   run_mx lem-yath-test-formatting-prepare-normalize-error &&
+   wait_report_count '^PREPARE label=normalize-error modified=yes$' 1; then
+  after_before=$(report_count '^AFTER-SAVE label=normalize-error ')
+  lem_keys "$session" C-x C-s
+  if wait_report_count '^NORMALIZE-INJECT label=normalize-error changes=' \
+       "$((normalize_before + 1))" 8 &&
+     wait_report_count '^AFTER-SAVE label=normalize-error ' \
+       "$((after_before + 1))" 8 &&
+     record_state normalize-error; then
+    normalize_original=$'left   \nright   \nclean'
+    normalize_disk=$'left   \r\nright   \r\nclean'
+    normalize_hex=$(hex_of "$normalize_original")
+    assert_state_hex editorconfig-normalize-rollback normalize-error \
+      "$normalize_hex" "$(hex_of "$normalize_disk")" no
+    line=$(last_state normalize-error)
+    normalize_line=$(grep '^NORMALIZE-INJECT label=normalize-error changes=' \
+      "$LEM_YATH_FORMATTING_REPORT" | tail -n 1)
+    normalize_forward=${normalize_line##*=}
+    if [[ "$line" =~ changes=([0-9]+) ]] &&
+       [ "${BASH_REMATCH[1]}" -eq "$((normalize_forward * 2))" ] &&
+       [ "$(event_count)" -eq "$before" ] &&
+       [[ "$line" == *'shadow=yes '* && "$line" == *'trim=NIL '* &&
+          "$line" == *'normalization-pending=yes '* ]]; then
+      pass editorconfig-normalize-observers \
+        'save normalization rollback restored bytes, observer ranges, and retry state'
+    else
+      fail editorconfig-normalize-observers \
+        "combined save-normalization rollback was incoherent: $line"
+    fi
+  else
+    fail editorconfig-normalize-rollback \
+      'save-normalization failure was not observed'
+  fi
+else
+  fail editorconfig-normalize-rollback \
+    'save-normalization fixture did not initialize'
+fi
+
+if run_mx lem-yath-test-formatting-retry-normalize-error &&
+   wait_report_count '^RETRY label=normalize-error modified=yes pending=yes$' 1; then
+  after_before=$(report_count '^AFTER-SAVE label=normalize-error ')
+  lem_keys "$session" C-x C-s
+  if wait_report_count '^AFTER-SAVE label=normalize-error ' \
+       "$((after_before + 1))" 8 &&
+     record_state normalize-error; then
+    normalize_retry=$'left   \nright\nclean\n'
+    normalize_retry_disk=$'left   \r\nright\r\nclean\r\n'
+    assert_state_hex editorconfig-normalize-retry normalize-error \
+      "$(hex_of "$normalize_retry")" "$(hex_of "$normalize_retry_disk")" no
+    line=$(last_state normalize-error)
+    if [[ "$line" == *'shadow=yes '* &&
+          "$line" == *'normalization-pending=no '* ]]; then
+      pass editorconfig-normalize-retry-state \
+        'a later successful save consumed retained touched-line retry state'
+    else
+      fail editorconfig-normalize-retry-state \
+        "successful retry left incoherent state: $line"
+    fi
+  else
+    fail editorconfig-normalize-retry \
+      'successful save did not retry pending normalization'
+  fi
+else
+  fail editorconfig-normalize-retry \
+    'pending-normalization retry fixture did not initialize'
 fi
 
 # A fundamental-mode local file still receives EditorConfig.  Its subsequent
@@ -442,9 +534,305 @@ else
   fail manual-format-buffer 'manual formatter fixture did not initialize'
 fi
 
-# Automatic formatting uses the after-save policy: an initial successful save,
-# one CLI invocation, and one silent rewrite leave disk and buffer formatted
-# and clean.
+# A formatter edit is a transaction even when an after-change hook throws
+# after the first live mutation.  The dirty pre-format state, point, mark, and
+# prior undo/redo route must all survive exactly.
+printf '%s\n' format >"$LEM_YATH_FAKE_FORMATTER_MODE_FILE"
+before=$(event_count)
+inject_before=$(report_count '^INJECT label=transaction-manual ')
+if open_fixture lem-yath-test-formatting-open-transaction-manual \
+     transaction-manual &&
+   run_mx lem-yath-test-formatting-prepare-transaction-manual &&
+   wait_report_count '^PREPARE label=transaction-manual ' 1; then
+  send_leader_format
+  if wait_event_count "$((before + 1))" &&
+     wait_report_count '^INJECT label=transaction-manual ' \
+       "$((inject_before + 1))" &&
+     record_state transaction-manual; then
+    transaction_dirty=$'# transaction edit\nprefix_value=1\nKEEP_MARKER = "stay"\nTAIL_MARKER=2'
+    assert_state_hex manual-transaction-rollback transaction-manual \
+      "$(hex_of "$transaction_dirty")" "$(hex_of "$python_initial")" yes
+    line=$(last_state transaction-manual)
+    if [[ "$line" == *'mark=yes '* &&
+          "$line" == *'point-keep=yes mark-tail=yes '* &&
+          "$line" == *'lsp=0 changes=4 protected=no shadow=yes '* ]]; then
+      pass manual-transaction-anchors \
+        'rollback restored anchors and notified observers of both inverse edits'
+    else
+      fail manual-transaction-anchors "rollback moved an anchor: $line"
+    fi
+    if [ "$(event_count)" -eq "$((before + 1))" ]; then
+      pass manual-transaction-one-invocation \
+        'the throwing hook did not cause a formatter retry or fallback'
+    else
+      fail manual-transaction-one-invocation \
+        "unexpected formatter count: $(event_count)"
+    fi
+
+    lem_keys "$session" Escape
+    sleep 0.25
+    lem_keys "$session" u
+    sleep 0.4
+    if record_state transaction-manual; then
+      assert_state_hex manual-transaction-undo transaction-manual \
+        "$(hex_of "$python_initial")" "$(hex_of "$python_initial")" no
+    else
+      fail manual-transaction-undo 'the retained pre-format undo route failed'
+    fi
+    lem_keys "$session" C-r
+    sleep 0.4
+    if record_state transaction-manual; then
+      assert_state_hex manual-transaction-redo transaction-manual \
+        "$(hex_of "$transaction_dirty")" "$(hex_of "$python_initial")" yes
+    else
+      fail manual-transaction-redo 'the retained pre-format redo route failed'
+    fi
+  else
+    fail manual-transaction-rollback \
+      'the one-shot after-change failure was not observed'
+  fi
+else
+  fail manual-transaction-rollback \
+    'manual transaction fixture did not initialize'
+fi
+
+# A local read-only range is discovered before any hunk can mutate.  The
+# refusal adds no undo entry and keeps the known user edit as the first undo.
+printf '%s\n' format >"$LEM_YATH_FAKE_FORMATTER_MODE_FILE"
+before=$(event_count)
+if open_fixture lem-yath-test-formatting-open-read-only read-only-preflight &&
+   run_mx lem-yath-test-formatting-prepare-read-only &&
+   wait_report_count '^PREPARE label=read-only-preflight ' 1; then
+  send_leader_format
+  if wait_event_count "$((before + 1))" &&
+     record_state read-only-preflight; then
+    read_only_dirty=$'# read-only edit\nprefix_value=1\nKEEP_MARKER = "stay"\nTAIL_MARKER=2'
+    initial_hex=$(hex_of "$python_initial")
+    assert_state_hex formatter-read-only-preflight read-only-preflight \
+      "$(hex_of "$read_only_dirty")" "$initial_hex" yes
+    line=$(last_state read-only-preflight)
+    if [[ "$line" == *'mark=yes '* &&
+          "$line" == *'point-keep=yes mark-tail=yes '* &&
+          "$line" == *'lsp=0 changes=0 protected=yes shadow=yes '* ]]; then
+      pass formatter-read-only-anchors \
+        'preflight emitted no change callbacks and preserved anchors/property'
+    else
+      fail formatter-read-only-anchors "preflight moved an anchor: $line"
+    fi
+    lem_keys "$session" Escape
+    sleep 0.25
+    lem_keys "$session" u
+    sleep 0.35
+    if record_state read-only-preflight; then
+      assert_state_hex formatter-read-only-no-undo read-only-preflight \
+        "$initial_hex" "$initial_hex" no
+    else
+      fail formatter-read-only-no-undo 'state probe after the known user undo failed'
+    fi
+  else
+    fail formatter-read-only-preflight \
+      'the formatter or state probe did not complete'
+  fi
+else
+  fail formatter-read-only-preflight \
+    'read-only preflight fixture did not initialize'
+fi
+
+# A throwing formatter hook before the ordinary write must roll formatting back
+# and let that one write save the user's original edit.  No ghost formatter undo
+# node may appear; the saved user edit remains the first undoable command.
+printf '%s\n' format >"$LEM_YATH_FAKE_FORMATTER_MODE_FILE"
+before=$(event_count)
+inject_before=$(report_count '^INJECT label=transaction-auto ')
+if open_fixture lem-yath-test-formatting-open-transaction-auto transaction-auto &&
+   run_mx lem-yath-test-formatting-prepare-transaction-auto &&
+   wait_report_count '^PREPARE label=transaction-auto modified=yes$' 1; then
+  after_before=$(report_count '^AFTER-SAVE label=transaction-auto ')
+  lem_keys "$session" C-x C-s
+  if wait_report_count '^INJECT label=transaction-auto ' \
+       "$((inject_before + 1))" 8 &&
+     wait_report_count '^AFTER-SAVE label=transaction-auto ' \
+       "$((after_before + 1))" 8 &&
+     record_state transaction-auto; then
+    transaction_saved=$'# transaction save\nprefix_value=1\nKEEP_MARKER = "stay"\nTAIL_MARKER=2'
+    transaction_saved_hex=$(hex_of "$transaction_saved")
+    assert_state_hex after-save-transaction-rollback transaction-auto \
+      "$transaction_saved_hex" "$transaction_saved_hex" no
+    line=$(last_state transaction-auto)
+    if [ "$(event_count)" -eq "$((before + 1))" ] &&
+       [[ "$line" == *'lsp=0 changes=4 protected=no shadow=yes '* ]]; then
+      pass after-save-transaction-one-invocation \
+        'failed apply performed no retry and notified coherent inverse callbacks'
+    else
+      fail after-save-transaction-one-invocation \
+        "unexpected formatter count: $(event_count)"
+    fi
+    lem_keys "$session" u
+    sleep 0.4
+    if record_state transaction-auto; then
+      assert_state_hex after-save-transaction-undo transaction-auto \
+        "$(hex_of "$python_initial")" "$transaction_saved_hex" yes
+    else
+      fail after-save-transaction-undo \
+        'the saved user edit was not the first undo step'
+    fi
+    lem_keys "$session" C-r
+    sleep 0.4
+    if record_state transaction-auto; then
+      assert_state_hex after-save-transaction-redo transaction-auto \
+        "$transaction_saved_hex" "$transaction_saved_hex" no
+    else
+      fail after-save-transaction-redo \
+        'redo did not return to the exact saved version'
+    fi
+  else
+    fail after-save-transaction-rollback \
+      'save-path mutation failure did not finish cleanly'
+  fi
+else
+  fail after-save-transaction-rollback \
+    'after-save transaction fixture did not initialize'
+fi
+
+# If the same hook also rejects inverse replay, saving must abort.  The disk
+# stays at its previous bytes while the uncertain buffer is visibly dirty with
+# truncated history and no fabricated clean/saved identity.
+printf '%s\n' format >"$LEM_YATH_FAKE_FORMATTER_MODE_FILE"
+before=$(event_count)
+persistent_before=$(report_count '^PERSISTENT-INJECT label=rollback-failure ')
+if open_fixture lem-yath-test-formatting-open-rollback-failure rollback-failure &&
+   run_mx lem-yath-test-formatting-prepare-rollback-failure &&
+   wait_report_count '^PREPARE label=rollback-failure modified=yes$' 1; then
+  lem_keys "$session" C-x C-s
+  if wait_report_count '^PERSISTENT-INJECT label=rollback-failure ' \
+       "$((persistent_before + 2))" 8; then
+    lem_keys "$session" Escape
+    sleep 0.25
+    if record_state rollback-failure; then
+      line=$(last_state rollback-failure)
+      initial_hex=$(hex_of "$python_initial")
+      if [ "$(event_count)" -eq "$((before + 1))" ] &&
+         [[ "$line" == *"disk-hex=$initial_hex modified=yes "* &&
+            "$line" == *'lsp=0 '* && "$line" == *'shadow=yes '* &&
+            "$line" == *'undo-truncated=yes undo-clean=none undo-saved=none '* ]]; then
+        pass formatter-rollback-fail-dirty \
+          'unsafe inverse aborted the save with dirty truncated history'
+      else
+        fail formatter-rollback-fail-dirty \
+          "rollback failure was not visibly fail-closed: $line"
+      fi
+    else
+      fail formatter-rollback-fail-dirty \
+        'state probe did not run after the rejected save'
+    fi
+  else
+    fail formatter-rollback-fail-dirty \
+      'persistent hook did not reject both forward and inverse edits'
+  fi
+else
+  fail formatter-rollback-fail-dirty \
+    'rollback-failure fixture did not initialize'
+fi
+
+# A failure after every formatter hunk has applied, inside EditorConfig
+# normalization, belongs to the same transaction and restores the initial
+# saved bytes rather than exposing a completely formatted intermediate state.
+printf '%s\n' format >"$LEM_YATH_FAKE_FORMATTER_MODE_FILE"
+before=$(event_count)
+normalize_before=$(report_count '^NORMALIZE-INJECT label=transaction-finalizer changes=')
+if open_fixture lem-yath-test-formatting-open-transaction-finalizer \
+     transaction-finalizer &&
+   run_mx lem-yath-test-formatting-prepare-transaction-finalizer &&
+   wait_report_count '^PREPARE label=transaction-finalizer modified=yes$' 1; then
+  after_before=$(report_count '^AFTER-SAVE label=transaction-finalizer ')
+  lem_keys "$session" C-x C-s
+  if wait_report_count '^NORMALIZE-INJECT label=transaction-finalizer changes=' \
+       "$((normalize_before + 1))" 8 &&
+     wait_report_count '^AFTER-SAVE label=transaction-finalizer ' \
+       "$((after_before + 1))" 8 &&
+     record_state transaction-finalizer; then
+    finalizer_saved=$'# transaction finalizer\nprefix_value=1\nKEEP_MARKER = "stay"\nTAIL_MARKER=2'
+    finalizer_saved_hex=$(hex_of "$finalizer_saved")
+    assert_state_hex after-save-finalizer-rollback transaction-finalizer \
+      "$finalizer_saved_hex" "$finalizer_saved_hex" no
+    line=$(last_state transaction-finalizer)
+    normalize_line=$(grep '^NORMALIZE-INJECT label=transaction-finalizer changes=' \
+      "$LEM_YATH_FORMATTING_REPORT" | tail -n 1)
+    normalize_forward=${normalize_line##*=}
+    if [[ "$line" =~ changes=([0-9]+) ]] &&
+       [ "$(event_count)" -eq "$((before + 1))" ] &&
+       [ "${BASH_REMATCH[1]}" -eq "$((normalize_forward * 2))" ] &&
+       [[ "$line" == *'lsp=0 '* && "$line" == *'shadow=yes '* ]]; then
+      pass after-save-finalizer-observers \
+        'normalization failure rolled back all formatter edits through observers'
+    else
+      fail after-save-finalizer-observers \
+        "unexpected formatter or observer state: $line"
+    fi
+    lem_keys "$session" u
+    sleep 0.4
+    if record_state transaction-finalizer; then
+      assert_state_hex after-save-finalizer-undo transaction-finalizer \
+        "$(hex_of "$python_initial")" "$finalizer_saved_hex" yes
+    else
+      fail after-save-finalizer-undo \
+        'normalization rollback left a ghost formatter undo node'
+    fi
+    lem_keys "$session" C-r
+    sleep 0.4
+    if record_state transaction-finalizer; then
+      assert_state_hex after-save-finalizer-redo transaction-finalizer \
+        "$finalizer_saved_hex" "$finalizer_saved_hex" no
+    else
+      fail after-save-finalizer-redo \
+        'redo did not return to the exact saved user edit'
+    fi
+  else
+    fail after-save-finalizer-rollback \
+      'the post-format normalization failure was not observed'
+  fi
+else
+  fail after-save-finalizer-rollback \
+    'normalization transaction fixture did not initialize'
+fi
+
+# Successful EditorConfig trimming runs after all formatter hunks inside the
+# transaction and must not deactivate the mapped point/mark anchors.
+printf '%s\n' format-spaces >"$LEM_YATH_FAKE_FORMATTER_MODE_FILE"
+before=$(event_count)
+if open_fixture lem-yath-test-formatting-open-finalizer-mark finalizer-mark &&
+   run_mx lem-yath-test-formatting-prepare-finalizer-mark &&
+   wait_report_count '^PREPARE label=finalizer-mark ' 1; then
+  after_before=$(report_count '^AFTER-SAVE label=finalizer-mark ')
+  lem_keys "$session" C-x C-s
+  if wait_report_count '^AFTER-SAVE label=finalizer-mark ' \
+       "$((after_before + 1))" 8 &&
+     record_state finalizer-mark; then
+    mark_formatted=$'# mark save\n# formatted by fake black\nprefix_value = 1\nKEEP_MARKER = "stay"\nTAIL_MARKER = 2\n'
+    mark_disk=$'# mark save\r\n# formatted by fake black\r\nprefix_value = 1\r\nKEEP_MARKER = "stay"\r\nTAIL_MARKER = 2\r\n'
+    mark_hex=$(hex_of "$mark_formatted")
+    assert_state_hex finalizer-mark-format finalizer-mark \
+      "$mark_hex" "$(hex_of "$mark_disk")" no
+    line=$(last_state finalizer-mark)
+    if [ "$(event_count)" -eq "$((before + 1))" ] &&
+       [[ "$line" == *'mark=yes '* &&
+          "$line" == *'point-keep=yes mark-tail=yes '* &&
+          "$line" == *'trim=T '* && "$line" == *'shadow=yes '* ]]; then
+      pass finalizer-mark-active \
+        'successful normalization preserved the active mapped mark'
+    else
+      fail finalizer-mark-active "normalization lost an anchor: $line"
+    fi
+  else
+    fail finalizer-mark-format \
+      'successful finalizer mark fixture did not save and record'
+  fi
+else
+  fail finalizer-mark-format 'finalizer mark fixture did not initialize'
+fi
+
+# Automatic formatting runs before the ordinary write: one CLI invocation and
+# one save leave disk and buffer formatted and clean.
 printf '%s\n' format >"$LEM_YATH_FAKE_FORMATTER_MODE_FILE"
 before=$(event_count)
 if open_fixture lem-yath-test-formatting-open-auto auto-open &&
@@ -480,8 +868,8 @@ else
   fail after-save-format 'automatic formatter fixture did not initialize'
 fi
 
-# Failure occurs after the initial write.  Partial stdout is discarded, the
-# saved unformatted content remains clean in buffer and on disk, and no LSP
+# Failure occurs before the ordinary write.  Partial stdout is discarded,
+# ordinary save normalization still trims the touched line, and no LSP
 # formatter is consulted after a selected CLI fails.
 printf '%s\n' fail >"$LEM_YATH_FAKE_FORMATTER_MODE_FILE"
 before=$(event_count)
@@ -512,7 +900,16 @@ if open_fixture lem-yath-test-formatting-open-failure failure-open &&
     else
       fail formatter-failure-no-mutation 'partial formatter stdout reached the buffer'
     fi
-    if [[ "$line" == *'lsp=0' ]] &&
+    if [[ "$line" =~ changes=([0-9]+) ]] &&
+       [ "${BASH_REMATCH[1]}" -gt 0 ] &&
+       [[ "$line" == *'shadow=yes '* ]]; then
+      pass formatter-failure-normalization \
+        'formatter failure discarded its output but retained transactional save normalization'
+    else
+      fail formatter-failure-normalization \
+        "save normalization did not run coherently after CLI failure: $line"
+    fi
+    if [[ "$line" == *'lsp=0 '* && "$line" == *'lsp-attempts=0' ]] &&
        [ "$(event_count)" -eq "$((before + 1))" ]; then
       pass formatter-failure-no-fallback \
         'CLI failure invoked once and did not fall back to LSP'

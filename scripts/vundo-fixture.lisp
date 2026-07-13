@@ -351,6 +351,123 @@
     (let ((*vundo-test-mutating-hook-active-p* t))
       (insert-string (buffer-end-point (point-buffer start)) "!"))))
 
+(defun vundo-test-mutating-delete-after-change (start end old-length)
+  (declare (ignore end old-length))
+  (unless *vundo-test-mutating-hook-active-p*
+    (let ((*vundo-test-mutating-hook-active-p* t))
+      (delete-character (buffer-start-point (point-buffer start)) 1))))
+
+(defun vundo-test-forward-mutating-insert-order-p ()
+  "A same-buffer hook edit follows its triggering insertion in undo history."
+  (let ((buffer (make-buffer " *vundo-forward-insert-hook*" :temporary t)))
+    (unwind-protect
+         (with-current-buffer buffer
+           (let ((point (buffer-point buffer)))
+             (add-hook (variable-value 'after-change-functions :buffer buffer)
+                       'vundo-test-mutating-after-change)
+             (unwind-protect
+                  (insert-string point "A")
+               (remove-hook
+                (variable-value 'after-change-functions :buffer buffer)
+                'vundo-test-mutating-after-change))
+             (buffer-undo-boundary buffer)
+             (let ((forward (buffer-text buffer))
+                   (undone (and (buffer-undo point) (buffer-text buffer)))
+                   (redone (and (buffer-redo point) (buffer-text buffer)))
+                   (snapshot (lem:buffer-undo-tree-snapshot buffer)))
+               (and (string= "A!" forward)
+                    (stringp undone) (string= "" undone)
+                    (stringp redone) (string= "A!" redone)
+                    (not (getf snapshot :truncated))
+                    (vundo-test-snapshot-valid-p snapshot)))))
+      (ignore-errors
+        (remove-hook (variable-value 'after-change-functions :buffer buffer)
+                     'vundo-test-mutating-after-change))
+      (ignore-errors (delete-buffer buffer)))))
+
+(defun vundo-test-forward-mutating-delete-order-p ()
+  "A same-buffer hook edit follows its triggering deletion in undo history."
+  (let ((buffer (make-buffer " *vundo-forward-delete-hook*" :temporary t)))
+    (unwind-protect
+         (with-current-buffer buffer
+           (let ((point (buffer-point buffer)))
+             (insert-string point "AB")
+             (buffer-undo-boundary buffer)
+             (move-point point (buffer-start-point buffer))
+             (add-hook (variable-value 'after-change-functions :buffer buffer)
+                       'vundo-test-mutating-delete-after-change)
+             (unwind-protect
+                  (delete-character point 1)
+               (remove-hook
+                (variable-value 'after-change-functions :buffer buffer)
+                'vundo-test-mutating-delete-after-change))
+             (buffer-undo-boundary buffer)
+             (let ((forward (buffer-text buffer))
+                   (undone (and (buffer-undo point) (buffer-text buffer)))
+                   (redone (and (buffer-redo point) (buffer-text buffer)))
+                   (snapshot (lem:buffer-undo-tree-snapshot buffer)))
+               (and (string= "" forward)
+                    (stringp undone) (string= "AB" undone)
+                    (stringp redone) (string= "" redone)
+                    (not (getf snapshot :truncated))
+                    (vundo-test-snapshot-valid-p snapshot)))))
+      (ignore-errors
+        (remove-hook (variable-value 'after-change-functions :buffer buffer)
+                     'vundo-test-mutating-delete-after-change))
+      (ignore-errors (delete-buffer buffer)))))
+
+(defun vundo-test-mutating-throwing-after-change (start end old-length)
+  (declare (ignore end old-length))
+  (unless *vundo-test-mutating-hook-active-p*
+    (let ((*vundo-test-mutating-hook-active-p* t))
+      (insert-string (buffer-end-point (point-buffer start)) "!")
+      (editor-error "test nested after-change failure"))))
+
+(defun vundo-test-mutating-throwing-change-group-p ()
+  "Cancel retains order when a hook mutates the buffer and then throws."
+  (let ((buffer (make-buffer " *vundo-throwing-group-hook*" :temporary t)))
+    (unwind-protect
+         (with-current-buffer buffer
+           (let ((point (buffer-point buffer)))
+             (insert-string point "base")
+             (buffer-undo-boundary buffer)
+             (let* ((baseline (lem:buffer-undo-tree-snapshot buffer))
+                    (group (buffer-prepare-change-group buffer)))
+               (add-hook
+                (variable-value 'after-change-functions :buffer buffer)
+                'vundo-test-mutating-throwing-after-change)
+               (let ((thrown
+                       (unwind-protect
+                            (vundo-test-error-p
+                             (lambda () (insert-string point "A")))
+                         (remove-hook
+                          (variable-value 'after-change-functions
+                                          :buffer buffer)
+                          'vundo-test-mutating-throwing-after-change))))
+                 (let ((live-text (buffer-text buffer))
+                       (active-before-cancel
+                         (buffer-change-group-active-p group)))
+                   (let* ((cancelled (buffer-cancel-change-group group))
+                          (snapshot (lem:buffer-undo-tree-snapshot buffer)))
+                     (and thrown
+                          (string= "baseA!" live-text)
+                          active-before-cancel
+                          cancelled
+                          (string= "base" (buffer-text buffer))
+                          (not (buffer-change-group-active-p group))
+                          (not (getf snapshot :truncated))
+                          (= (getf baseline :node-count)
+                             (getf snapshot :node-count))
+                          (= (getf baseline :payload-bytes)
+                             (getf snapshot :payload-bytes))
+                          (eql (getf baseline :current)
+                               (getf snapshot :current))
+                          (vundo-test-snapshot-valid-p snapshot))))))))
+      (ignore-errors
+        (remove-hook (variable-value 'after-change-functions :buffer buffer)
+                     'vundo-test-mutating-throwing-after-change))
+      (ignore-errors (delete-buffer buffer)))))
+
 (defun vundo-test-mutating-replay-guard-p ()
   (let ((buffer (make-buffer " *vundo-hook-guard*" :temporary t)))
     (unwind-protect
@@ -576,6 +693,18 @@
   (let* ((path (uiop:getenv "LEM_YATH_VUNDO_DIRTY_FILE"))
          (buffer (find-file-buffer path))
          (other (make-buffer " *vundo-foreign*" :temporary t))
+         (forward-insert-ordered
+           (vundo-test-run-probe
+            "forward-mutating-insert"
+            #'vundo-test-forward-mutating-insert-order-p))
+         (forward-delete-ordered
+           (vundo-test-run-probe
+            "forward-mutating-delete"
+            #'vundo-test-forward-mutating-delete-order-p))
+         (throwing-group-cancelled
+           (vundo-test-run-probe
+            "throwing-mutating-change-group"
+            #'vundo-test-mutating-throwing-change-group-p))
          (hook-guard (vundo-test-mutating-replay-guard-p))
          (throwing-hook-recovered
            (vundo-test-run-probe
@@ -672,6 +801,9 @@
                                     (unless condition (incf failures))))
                              (check (= tick-edit tick-save))
                              (check noop-clean)
+                             (check forward-insert-ordered)
+                             (check forward-delete-ordered)
+                             (check throwing-group-cancelled)
                              (check hook-guard)
                              (check throwing-hook-recovered)
                              (check pruning-bounded)
@@ -706,6 +838,8 @@
                              "CORE dirty-branch=~a tick-edit=~d tick-save=~d "
                              "tick-undo=~d tick-branch=~d tick-undo2=~d "
                              "tick-redo=~d increasing=~a no-op=~a hook=~a "
+                             "forward-insert=~a forward-delete=~a "
+                             "throwing-group=~a "
                              "throwing-hook=~a "
                              "prune=~a read-only=~a asymmetric=~a "
                              "after-save=~a "
@@ -721,6 +855,9 @@
                                 "yes" "no")
                             (if noop-clean "clean" "dirty")
                             (if hook-guard "guarded" "escaped")
+                            (if forward-insert-ordered "ordered" "broken")
+                            (if forward-delete-ordered "ordered" "broken")
+                            (if throwing-group-cancelled "cancelled" "broken")
                             (if throwing-hook-recovered
                                 "recovered" "escaped")
                             (if pruning-bounded "bounded" "failed")

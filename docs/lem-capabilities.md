@@ -898,6 +898,9 @@ second parser. The CLI is invoked with a direct argument vector under a
 five-second GNU `timeout`. At steady state, every absolute local file buffer is
 resolved after find-file, re-resolved after filename or major-mode changes, and
 queried again before save; buffer switches perform a cheap stale-state check.
+The EditorConfig hook refreshes properties without changing text, then the
+formatting save hook owns transactional ws-butler and EditorConfig text
+normalization for mapped, unmapped, programming, and prose buffers alike.
 This scope is deliberately broader than programming buffers. An error retains
 the last successfully applied state rather than partially reverting it.
 
@@ -911,8 +914,8 @@ buffer-local state. Charset runs after Lem has decoded an opened file and
 therefore controls subsequent writes only; UTF-16BE/LE output intentionally has
 no BOM. `insert_final_newline=true` adds a newline to a nonempty buffer, while
 false or absent never removes one. `trim_trailing_whitespace=true` cleans every
-line; false or absent leaves the existing ws-butler hook active, so only touched
-lines in programming buffers are cleaned.
+line; false or absent retains ws-butler's touched-line policy for programming
+buffers inside the same save transaction.
 
 The formatter registry currently has these finite built-in mappings:
 
@@ -936,18 +939,36 @@ clang-format; the remaining external mappings activate when their executable is
 available. External backends receive the unsaved buffer through stdin, run in
 the buffer directory with direct argv boundaries and a ten-second timeout, and
 reject stdout beyond the configured result limit. Changes are applied as diff
-hunks while keeping point, mark, and visible window points stable.
+hunks while keeping point, mark, and visible window points stable. All formatter
+hunk ranges, ordering, overlap, bounds, and local read-only properties are
+preflighted before the first live edit. Save normalization runs inside the
+retained transaction, so a later read-only conflict replays its earlier edits
+rather than exposing a partial result.
 
 `SPC b f` invokes the mapped CLI or in-process backend without saving. If no
 mapped backend is usable, manual formatting may use a ready, current LSP
 workspace that advertises document formatting. A CLI which starts and then
 fails does not fall back to LSP. For a mapped programming file, the normal save
-hook instead formats synchronously after the first write when its backend is
-available. A successful result is normalized through EditorConfig and silently
-written before LSP `didSave`. Automatic formatting never falls back to LSP, and
-a CLI launch, timeout, output-limit, or nonzero-exit failure leaves the original
-save clean and unchanged in the buffer. Applying a successful diff is not
-transactional, so an error during patch application has no rollback guarantee.
+hook instead formats synchronously before the ordinary write when its backend is
+available. A successful result is normalized through ws-butler and EditorConfig,
+then reaches disk through that one write before LSP `didSave`. Automatic
+formatting never falls back to LSP, and
+a CLI launch, timeout, output-limit, or nonzero-exit failure applies no formatter
+output; ordinary transactional ws-butler and EditorConfig normalization still
+runs before the save. Applying the successful diff and the subsequent save
+normalization is one retained change group. A throwing
+change observer or normalization error cancels every edit, delivers ordinary
+inverse change notifications to hook-backed consumers, and restores registered
+points, active mark, modified state, and pre-existing undo/redo routes. The core
+records a completed primitive before dispatching its after-change hooks, so
+recursive same-buffer hook edits retain chronological undo order even when a
+later hook throws. If cancellation itself fails, the uncertain live result is
+left visibly dirty, its dishonest history is truncated, and the ordinary save is
+aborted. A safe formatter or finalizer failure discards formatter output, then
+retries only transactional save normalization before continuing the ordinary
+save. If that normalization also fails safely, ws-butler's touched-line markers
+remain pending across the save and next edit epoch until a later save completes
+normalization successfully.
 Unmapped programming modes, unavailable backends, and prose do not format
 automatically.
 
@@ -960,8 +981,14 @@ the real ncurses editor and
 checks official-CLI parent/nearer/root/unset behavior, global no-tabs and local
 indentation, true/false/absent whitespace policy, LF/CR/CRLF and final-newline
 normalization, subsequent-write Latin-1 bytes, manual point/mark/undo and argv
-stability, save ordering and rewrite count, CLI failure without LSP fallback,
-prose exclusion, and reload idempotence.
+stability, formatter-hunk read-only zero-mutation preflight, recursive observer
+failure with coherent inverse notifications, save-path and post-format
+normalization rollback, combined ws-butler/EditorConfig rollback,
+pending-normalization retry, unsafe-rollback save abortion,
+before-save/didSave ordering, CLI failure without an LSP fallback attempt,
+prose exclusion, and reload idempotence. `scripts/vundo-test.sh` independently
+checks ordinary nested insert/delete hook ordering and throwing change-group
+cancellation in the patched core.
 
 ### Current-buffer Direnv environment — `lem-yath/src/direnv.lisp` (verified approximation)
 

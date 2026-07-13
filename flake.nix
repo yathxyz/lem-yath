@@ -38,6 +38,7 @@
               ./patches/lem-prompt-history-limit.patch
               ./patches/lem-undo-tree.patch
               ./patches/lem-completion-observer-change-group.patch
+              ./patches/lem-after-change-undo.patch
               ./patches/lem-completion-presentation-focus.patch
               ./patches/lem-vi-screen-line.patch
               ./patches/lem-git-worktree.patch

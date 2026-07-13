@@ -68,6 +68,8 @@
     (when (and *trim-trailing-whitespace*
                (not *trimming-touched-lines*)
                (programming-buffer-p buffer)
+               (not (buffer-value
+                     buffer 'lem-yath-save-normalization-pending))
                (not (buffer-modified-p buffer)))
       (clear-touched-line-points buffer))))
 
@@ -102,15 +104,13 @@
       (dolist (point (touched-line-points buffer))
         (trim-line-trailing-whitespace point)))))
 
-(defun trim-trailing-whitespace-hook (&rest args)
-  (let ((buffer (or (first args) (current-buffer))))
-    (when (typep buffer 'lem:buffer)
-      (trim-touched-trailing-whitespace buffer))))
-
 (defun clear-touched-lines-after-save (&rest args)
   (let ((buffer (or (first args) (current-buffer))))
     (when (typep buffer 'lem:buffer)
-      (clear-touched-line-points buffer))))
+      (when (buffer-value buffer 'lem-yath-save-normalization-complete)
+        (clear-touched-line-points buffer)
+        (setf (buffer-value buffer 'lem-yath-save-normalization-pending) nil))
+      (setf (buffer-value buffer 'lem-yath-save-normalization-complete) nil))))
 
 (add-hook (variable-value 'before-change-functions :global t)
           'begin-touched-line-epoch)
@@ -118,8 +118,10 @@
 (add-hook (variable-value 'after-change-functions :global t)
           'track-touched-lines)
 
-(add-hook (variable-value 'before-save-hook :global t)
-          'trim-trailing-whitespace-hook)
+;; Save-time text mutation is owned by formatting-before-save-hook so touched
+;; line cleanup and EditorConfig normalization share its retained transaction.
+(remove-hook (variable-value 'before-save-hook :global t)
+             'trim-trailing-whitespace-hook)
 
 (add-hook (variable-value 'after-save-hook :global t)
           'clear-touched-lines-after-save)

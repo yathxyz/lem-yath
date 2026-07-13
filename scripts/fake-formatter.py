@@ -168,7 +168,7 @@ def main() -> int:
     if mode == "noop":
         sys.stdout.buffer.write(source_bytes)
         return 0
-    if mode != "format":
+    if mode not in {"format", "format-spaces"}:
         sys.stderr.write(f"unknown fake formatter mode: {mode}\n")
         return 64
 
@@ -177,7 +177,12 @@ def main() -> int:
     except UnicodeDecodeError as error:
         sys.stderr.write(f"fake black received non-UTF-8 stdin: {error}\n")
         return 65
-    sys.stdout.write(format_source(source))
+    formatted = format_source(source)
+    if mode == "format-spaces":
+        formatted = "".join(
+            f"{line}   \n" for line in formatted.rstrip("\n").split("\n")
+        )
+    sys.stdout.write(formatted)
     return 0
 
 

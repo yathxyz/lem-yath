@@ -180,8 +180,15 @@ else
 fi
 
 if invoke_mx lem-yath-test-vundo-core-probes '^SUMMARY CORE ' 120 &&
-   grep -q '^SUMMARY CORE PASS failures=0$' "$LEM_YATH_VUNDO_REPORT"; then
-  pass core-invariants 'dirty/tick, graph copy, and invalid move contracts hold'
+   grep -q '^SUMMARY CORE PASS failures=0$' "$LEM_YATH_VUNDO_REPORT" &&
+   grep -q '^PROBE forward-mutating-insert result=pass$' \
+     "$LEM_YATH_VUNDO_REPORT" &&
+   grep -q '^PROBE forward-mutating-delete result=pass$' \
+     "$LEM_YATH_VUNDO_REPORT" &&
+   grep -q '^PROBE throwing-mutating-change-group result=pass$' \
+     "$LEM_YATH_VUNDO_REPORT"; then
+  pass core-invariants \
+    'dirty/tick, graph, hook ordering, and invalid move contracts hold'
 else
   fail core-invariants 'core retained-tree probes failed'
 fi
