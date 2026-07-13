@@ -52,15 +52,39 @@
                       (and (stringp content) content))))))
           (error () nil))))))
 
+(defun llm-word-or-punctuation-char-p (character)
+  "Whether CHARACTER has gptel's `w' (word) or `.' (punctuation) syntax."
+  (and character
+       (or (syntax-word-char-p character)
+           (let ((syntax (current-syntax)))
+             (not
+              (or (syntax-space-char-p character)
+                  (member character
+                          (lem/buffer/syntax-table:syntax-table-symbol-chars
+                           syntax))
+                  (syntax-open-paren-char-p character)
+                  (syntax-closed-paren-char-p character)
+                  (syntax-string-quote-char-p character)
+                  (syntax-escape-char-p character)
+                  (syntax-expr-prefix-char-p character)
+                  (member character
+                          (lem/buffer/syntax-table:syntax-table-fence-chars
+                           syntax))))))))
+
 (defun llm-source-text ()
-  "Region if a mark is active, else the buffer up to point (gptel's rule)."
+  "Return gptel-send's source text without moving the live point.
+Use an active region when present.  Otherwise include buffer text through the
+end of the current word or punctuation run."
   (let ((buffer (current-buffer)))
     (if (buffer-mark-p buffer)
         (let ((global-mode (current-global-mode)))
           (points-to-string
            (region-beginning-using-global-mode global-mode buffer)
            (region-end-using-global-mode global-mode buffer)))
-        (points-to-string (buffer-start-point buffer) (current-point)))))
+        (with-point ((end (current-point)))
+          (with-point-syntax end
+            (skip-chars-forward end #'llm-word-or-punctuation-char-p))
+          (points-to-string (buffer-start-point buffer) end)))))
 
 (defun llm-output-buffer ()
   (let ((buffer (make-buffer *llm-buffer-name*)))

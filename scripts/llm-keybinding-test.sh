@@ -132,9 +132,11 @@ run_case() {
 }
 
 run_case F5 up-to-point 7072656669782070726F6D7074 16 no insert
-run_case F9 mid-word 707265666978207072 12 no insert
-run_case F11 mid-punctuation 7072656669782E 8 no insert \
+run_case F9 mid-word 7072656669782070726F6D7074 12 no insert
+run_case F11 mid-punctuation 7072656669782E2E2E 8 no insert \
   7072656669782E2E2E207375666669780A
+run_case F4 symbol-stop 616C706861 3 no insert \
+  616C7068615F62657461207375666669780A
 
 blank_setup_before=$(report_count '^SETUP label=blank ')
 blank_send_before=$(report_count '^SEND ')
@@ -159,8 +161,8 @@ pass blank 'whitespace-only input did not dispatch a backend request'
 run_case F6 forward-region 70726F6D7074 10 yes visual
 run_case F7 reverse-region 70726F6D7074 15 yes visual
 
-if (( $(report_count '^SEND ') != 5 )); then
-  die exact-once 'the five nonblank key invocations did not produce exactly five sends'
+if (( $(report_count '^SEND ') != 6 )); then
+  die exact-once 'the six nonblank key invocations did not produce exactly six sends'
 fi
 pass exact-once 'each real C-c i invocation dispatched exactly once'
 

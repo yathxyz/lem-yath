@@ -417,6 +417,7 @@
             orderless-completion = mkCheck "orderless-completion" "orderless-completion-test.sh";
             snippets = mkCheck "snippets" "snippet-test.sh";
             lsp-snippets = mkCheck "lsp-snippets" "lsp-snippet-test.sh";
+            interactive = mkCheck "interactive" "interactive-test.sh";
             expreg = mkCheck "expreg" "expreg-test.sh";
             surround = mkCheck "surround" "surround-test.sh";
             structural = mkCheckWithLem lemYath "structural" "structural-test.sh";

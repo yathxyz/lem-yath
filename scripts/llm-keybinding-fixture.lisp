@@ -91,6 +91,10 @@
   (llm-keybinding-setup "mid-punctuation" 7 nil
                         (format nil "prefix... suffix~%")))
 
+(define-command lem-yath-test-llm-symbol-stop () ()
+  (llm-keybinding-setup "symbol-stop" 2 nil
+                        (format nil "alpha_beta suffix~%")))
+
 (define-command lem-yath-test-llm-static () ()
   (let ((insert-command
           (llm-keybinding-key-command
@@ -123,6 +127,7 @@
                       lem-vi-mode:*insert-keymap*
                       lem-vi-mode:*visual-keymap*))
   (define-key keymap "F5" 'lem-yath-test-llm-up-to-point)
+  (define-key keymap "F4" 'lem-yath-test-llm-symbol-stop)
   (define-key keymap "F6" 'lem-yath-test-llm-forward-region)
   (define-key keymap "F7" 'lem-yath-test-llm-reverse-region)
   (define-key keymap "F8" 'lem-yath-test-llm-static)
