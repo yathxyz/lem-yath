@@ -477,6 +477,19 @@ cover exact and glob root markers, `.git/` directory fallback, filesystem-root
 termination, safe URI conversion, spec-instance-stable keys, fileless guards, global Lisp-v2
 connection selection/restart, and both leader states.
 
+Java deliberately follows the current Emacs configuration's manual activation
+policy. `lem-yath-java-spec` is registered without adding a Java mode hook, and
+`M-x lem-yath-java-lsp` starts packaged JDTLS only in the selected Java buffer.
+It sends the exact configured Google Java style URL and `enabled=true`, roots at
+the nearest Maven, Gradle, settings, or Git marker, and gives each canonical
+project root an isolated JDTLS data directory under
+`$XDG_CACHE_HOME/lem-yath/jdtls/`. The real installed-wrapper gate proves that
+opening Java alone creates no workspace, explicit activation completes a JDTLS
+handshake with those initialization options, and normal project shutdown
+releases ownership and the server process. `patches/lem-lsp-json-type-error.patch`
+makes malformed server results catchable as errors; this is required because
+JDTLS 1.52 returns an object instead of the protocol's null shutdown result.
+
 ### Automatic in-buffer completion — `lem-yath/src/auto-completion.lisp` (verified)
 
 Lem-yath mirrors the active Corfu defaults with a 200 ms wall timer after
@@ -965,12 +978,13 @@ The formatter registry currently has these finite built-in mappings:
 | Lua | `stylua -` |
 | Common Lisp | in-process `indent-buffer` in a temporary buffer |
 
-The packaged core runtime supplies Black, rustfmt, gofmt, nixfmt-rfc-style, and
-clang-format; the remaining external mappings activate when their executable is
-available. External backends receive the unsaved buffer through stdin, run in
-the buffer directory with direct argv boundaries and a ten-second timeout, and
-reject stdout beyond the configured result limit. Changes are applied as diff
-hunks while keeping point, mark, and visible window points stable. All formatter
+The packaged core runtime supplies Black, rustfmt, gofmt, nixfmt-rfc-style,
+clang-format, and google-java-format; the remaining external mappings activate
+when their executable is available. External backends receive the unsaved
+buffer through stdin, run in the buffer directory with direct argv boundaries
+and a ten-second timeout, and reject stdout beyond the configured result limit.
+Changes are applied as diff hunks while keeping point, mark, and visible window
+points stable. All formatter
 hunk ranges, ordering, overlap, bounds, and local read-only properties are
 preflighted before the first live edit. Save normalization runs inside the
 retained transaction, so a later read-only conflict replays its earlier edits
