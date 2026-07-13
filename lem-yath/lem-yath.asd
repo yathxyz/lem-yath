@@ -47,6 +47,7 @@
                (:file "tools")
                (:file "llm")
                (:file "theme")
+               (:file "centered-view")
                (:file "ui")
                (:module "apps"
                 :components ((:file "agenda")

@@ -108,6 +108,7 @@
   ;; citations / display
   ("y o" 'lem-yath-citar-open)                       ; SPC y o
   ("y a" 'lem-yath-toggle-auto-fill)                 ; SPC y a
+  ("y c" 'centered-view-mode)                        ; SPC y c
   ("y v" 'lem-core/commands/window::toggle-line-wrap) ; SPC y v
   ("y w" 'lem-yath-fill-paragraph)                   ; SPC y w
 

@@ -46,6 +46,7 @@
               ./patches/lem-completion-presentation-focus.patch
               ./patches/lem-completion-groups.patch
               ./patches/lem-vi-screen-line.patch
+              ./patches/lem-centered-content-width.patch
               ./patches/lem-git-worktree.patch
               ./patches/lem-legit-status-sections.patch
               ./patches/lem-hidden-lines.patch
@@ -396,6 +397,7 @@
             bookmark-test = mkTestApp "lem-yath-bookmark-test" "bookmark-test.sh";
             electric-editing-test = mkTestApp "lem-yath-electric-editing-test" "electric-editing-test.sh";
             ui-parity-test = mkTestAppWithLem lemYath "lem-yath-ui-parity-test" "ui-parity-test.sh";
+            centered-view-test = mkTestAppWithLem lemYath "lem-yath-centered-view-test" "centered-view-test.sh";
             vcs-test = mkTestAppWithLemAndInputs lemYath vcsRuntimeInputs "lem-yath-vcs-test" "vcs-test.sh";
             vundo-test = mkTestApp "lem-yath-vundo-test" "vundo-test.sh";
             actions-test = mkTestApp "lem-yath-actions-test" "actions-test.sh";
@@ -437,6 +439,7 @@
             bookmarks = mkCheck "bookmarks" "bookmark-test.sh";
             electric-editing = mkCheck "electric-editing" "electric-editing-test.sh";
             ui-parity = mkCheckWithLem lemYath "ui-parity" "ui-parity-test.sh";
+            centered-view = mkCheckWithLem lemYath "centered-view" "centered-view-test.sh";
             vcs = mkCheckWithLemAndInputs lemYath vcsRuntimeInputs "vcs" "vcs-test.sh";
             vundo = mkCheck "vundo" "vundo-test.sh";
             actions = mkCheck "actions" "actions-test.sh";

@@ -1494,6 +1494,20 @@ buffers and not in Markdown, AsciiDoc, XML/HTML, patch, fundamental, or utility
 buffers. `nix run .#ui-parity-test` checks the actual synthesized mode class,
 relative distance, unsaved-buffer behavior, and another provider's survival.
 
+### Centered document view — `lem-yath/src/centered-view.lisp`
+`SPC y c` toggles a buffer-local `Center` minor mode with configurable
+`*centered-view-width*` (default 100). The pinned
+`patches/lem-centered-content-width.patch` adds a mode-dispatched preferred
+content width and a right-margin component to Lem windows. Redisplay derives
+balanced margins independently from each window's current width, keeps an
+existing left gutter inside the available margin, and feeds the reduced body
+width to wrapping, horizontal scrolling, cursor geometry, and screen-line
+motions. The mode enables visual wrapping just like the Emacs source and leaves
+that choice intact when disabled. `scripts/centered-view-test.sh` drives the
+real leader chord and verifies rendered first/continuation columns, live width
+customization, resize, narrow and split windows, reload, horizontal clipping,
+and restoration.
+
 ### Long-line display — `src/window/window.lisp`, `src/commands/window.lisp`
 The `line-wrap` editor variable defaults to true upstream, and
 `M-x toggle-line-wrap` changes it for the current buffer. Lem-yath changes the
