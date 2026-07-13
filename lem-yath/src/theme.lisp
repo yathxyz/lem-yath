@@ -67,6 +67,12 @@
    :foreground "#ffffff" :background "#4a4f69" :bold t)
   (lem/show-paren:showparen-attribute
    :foreground "#ffffff" :background "#4f7f9f")
+  (lem-yath-indent-guide-1-attribute :foreground "#6f7390")
+  (lem-yath-indent-guide-2-attribute :foreground "#657f86")
+  (lem-yath-indent-guide-3-attribute :foreground "#7f7185")
+  (lem-yath-indent-guide-4-attribute :foreground "#777b68")
+  (lem-yath-indent-guide-5-attribute :foreground "#68778c")
+  (lem-yath-indent-guide-6-attribute :foreground "#7f6e73")
   (lem/isearch:isearch-highlight-attribute
    :foreground "#ffffff" :background "#2266ae")
   (lem/isearch:isearch-highlight-active-attribute

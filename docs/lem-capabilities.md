@@ -1528,6 +1528,28 @@ buffers and not in Markdown, AsciiDoc, XML/HTML, patch, fundamental, or utility
 buffers. `nix run .#ui-parity-test` checks the actual synthesized mode class,
 relative distance, unsaved-buffer behavior, and another provider's survival.
 
+### Indentation guides — `lem-yath/src/indent-guides.lisp`
+
+The active Emacs profile enables `indent-bars-mode` for programming buffers and
+disables its tree-sitter specialization. Lem-yath now applies the same scope at
+display time: `patches/lem-display-line-transformer.patch` supplies one narrow
+logical-line transform point, and the configuration replaces indentation cells
+with depth-colored `│` glyphs before ncurses drawing. It uses the buffer's
+language/EditorConfig indentation size, expands leading tabs by visual column,
+inherits the maximum adjacent context across blank lines, and limits guides
+inside multiline strings to one level beyond the string opener. The transform
+does not edit buffer text, create undo records, dirty files, or change source
+cursor coordinates; virtual blank-line cells explicitly retain an end-of-line
+cursor at its real column.
+
+`M-x lem-yath-toggle-indent-guides` changes the setting buffer-locally. The
+focused real-TUI gate, `nix run .#indent-guides-test`, checks nested levels,
+blank context, tabs, multiline strings, prose exclusion, clean source bytes,
+toggle/reload behavior, cursor anchoring, and the actual terminal glyph. This
+remains a visual approximation: terminal characters and six native theme
+colors replace Emacs' pixel stipple, arbitrary face blending, and GUI-specific
+rendering.
+
 ### Centered document view — `lem-yath/src/centered-view.lisp`
 `SPC y c` toggles a buffer-local `Center` minor mode with configurable
 `*centered-view-width*` (default 100). The pinned

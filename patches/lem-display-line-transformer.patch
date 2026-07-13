@@ -1,0 +1,38 @@
+diff --git a/src/display/base.lisp b/src/display/base.lisp
+index d8a04f5d..0518c68d 100644
+--- a/src/display/base.lisp
++++ b/src/display/base.lisp
+@@ -3,2 +3,7 @@
+ (define-editor-variable wrap-line-character #\\)
+ (define-editor-variable wrap-line-attribute nil)
++(define-editor-variable display-line-transform-function nil
++  "Optional function called with BUFFER, the source POINT, and a freshly
++constructed LOGICAL-LINE before it is converted to drawing objects.  The
++function may replace display strings and attributes but must not modify the
++buffer or change the number of cells corresponding to existing text.")
+diff --git a/src/display/logical-line.lisp b/src/display/logical-line.lisp
+index b2cae3ca..c3f18a70 100644
+--- a/src/display/logical-line.lisp
++++ b/src/display/logical-line.lisp
+@@ -127,12 +127,18 @@
+           (when (< 0 charpos)
+             (psetf string (subseq string charpos)
+                    attributes (lem/buffer/line:subseq-elements attributes charpos (length string)))))
+-        (make-logical-line :string string
+-                           :attributes attributes
+-                           :left-content left-content
+-                           :extend-to-end extend-to-end-attribute
+-                           :end-of-line-cursor-attribute end-of-line-cursor-attribute
+-                           :line-end-overlay line-end-overlay)))))
++        (let ((logical-line
++                (make-logical-line :string string
++                                   :attributes attributes
++                                   :left-content left-content
++                                   :extend-to-end extend-to-end-attribute
++                                   :end-of-line-cursor-attribute end-of-line-cursor-attribute
++                                   :line-end-overlay line-end-overlay)))
++          (alexandria:when-let
++              ((function (variable-value 'display-line-transform-function
++                                         :default (point-buffer point))))
++            (funcall function (point-buffer point) point logical-line))
++          logical-line)))))

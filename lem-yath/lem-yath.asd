@@ -48,6 +48,7 @@
                (:file "find-name")
                (:file "tools")
                (:file "llm")
+               (:file "indent-guides")
                (:file "theme")
                (:file "centered-view")
                (:file "ui")

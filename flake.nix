@@ -51,6 +51,7 @@
               ./patches/lem-legit-status-sections.patch
               ./patches/lem-hidden-lines.patch
               ./patches/lem-buffer-write-function.patch
+              ./patches/lem-display-line-transformer.patch
             ];
           };
           lemNcurses = lem.packages.${system}.lem-ncurses.overrideLispAttrs (
@@ -399,6 +400,7 @@
             bookmark-test = mkTestApp "lem-yath-bookmark-test" "bookmark-test.sh";
             electric-editing-test = mkTestApp "lem-yath-electric-editing-test" "electric-editing-test.sh";
             ui-parity-test = mkTestAppWithLem lemYath "lem-yath-ui-parity-test" "ui-parity-test.sh";
+            indent-guides-test = mkTestAppWithLem lemYath "lem-yath-indent-guides-test" "indent-guides-test.sh";
             centered-view-test = mkTestAppWithLem lemYath "lem-yath-centered-view-test" "centered-view-test.sh";
             help-test = mkTestApp "lem-yath-help-test" "help-test.sh";
             sops-test = mkTestApp "lem-yath-sops-test" "sops-test.sh";
@@ -443,6 +445,7 @@
             bookmarks = mkCheck "bookmarks" "bookmark-test.sh";
             electric-editing = mkCheck "electric-editing" "electric-editing-test.sh";
             ui-parity = mkCheckWithLem lemYath "ui-parity" "ui-parity-test.sh";
+            indent-guides = mkCheckWithLem lemYath "indent-guides" "indent-guides-test.sh";
             centered-view = mkCheckWithLem lemYath "centered-view" "centered-view-test.sh";
             help = mkCheck "help" "help-test.sh";
             sops = mkCheck "sops" "sops-test.sh";
