@@ -149,6 +149,10 @@ git -c protocol.file.allow=always \
   -C "$LEM_YATH_PROJECT_NAVIGATION_ALPHA" \
   submodule add -q "$submodule_child" vendor/child
 
+chmod 640 "$LEM_YATH_PROJECT_NAVIGATION_ALPHA/src/tracked-target.txt"
+touch -d '2020-01-02 03:04:05 UTC' \
+  "$LEM_YATH_PROJECT_NAVIGATION_ALPHA/src/tracked-target.txt"
+
 source "$here/scripts/tui-driver.sh"
 
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-60}"
@@ -406,6 +410,17 @@ if lem_wait_for "$verify_session" 'Project buffer( \(current\))?:' "$WAIT_TIMEOU
     fail spc-space-candidates 'SPC SPC rendered the wrong project buffers' \
       "$verify_session"
   fi
+  if grep -Eq 'alpha-main\.txt.*---.*19.*Fundamental.*alpha-main\.txt' \
+       <<<"$buffer_screen" &&
+     grep -Eq '\*alpha-build\*.*\*\*-.*26.*Fundamental' \
+       <<<"$buffer_screen"; then
+    pass project-buffer-annotations \
+      'SPC SPC showed state, size, mode, and file metadata'
+  else
+    fail project-buffer-annotations \
+      'project buffer metadata was incomplete or changed candidate labels' \
+      "$verify_session"
+  fi
   tmux_cmd send-keys -t "$verify_session" -l 'alpha-build'
   sleep 0.4
   submit_completion_prompt "$verify_session" 'Project buffer( \(current\))?:'
@@ -447,6 +462,15 @@ if lem_wait_for "$verify_session" 'Project file( \(current\))?:' "$WAIT_TIMEOUT"
       'SPC p f exposed tracked and untracked Git candidates only'
   else
     fail spc-p-f-candidates 'SPC p f exposed an ignored or internal path' \
+      "$verify_session"
+  fi
+  if grep -Eq 'src/tracked-target\.txt.*-rw-r-----.*41.*2020 Jan 02' \
+       <<<"$file_screen"; then
+    pass project-file-annotations \
+      'SPC p f retained relative labels and added resolved file metadata'
+  else
+    fail project-file-annotations \
+      'project file metadata was missing or used the wrong root' \
       "$verify_session"
   fi
   tmux_cmd send-keys -t "$verify_session" -l 'untracked-target'

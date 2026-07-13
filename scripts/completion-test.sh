@@ -85,6 +85,36 @@ capture_prompt_state() {
 
 s1="lem-yath-completion-a-$id"
 if start_session "$s1"; then
+  if open_query "$s1" lem-yath-test-marginalia-command; then
+    screen=$(lem_capture "$s1")
+    if grep -Fq '(F6)' <<<"$screen" &&
+       grep -Fq 'Zyzzyva-annotation-only-token proves command documentation' \
+         <<<"$screen"; then
+      pass command-annotations \
+        'M-x retained the active binding and added the command doc line'
+    else
+      fail command-annotations \
+        'M-x did not render binding plus command documentation' "$s1"
+    fi
+  else
+    fail command-annotations 'could not open the annotated M-x candidate' "$s1"
+  fi
+  close_prompt "$s1"
+
+  if open_query "$s1" zyzzyva-annotation-only-token; then
+    screen=$(lem_capture "$s1")
+    if ! grep -Fq 'lem-yath-test-marginalia-command' <<<"$screen"; then
+      pass annotation-display-only \
+        'documentation text did not participate in candidate matching'
+    else
+      fail annotation-display-only \
+        'M-x matched a command through display-only documentation' "$s1"
+    fi
+  else
+    fail annotation-display-only 'could not run the annotation-only query' "$s1"
+  fi
+  close_prompt "$s1"
+
   if open_query "$s1" lem-yath-test-vertico-shared-prefix-prompt; then
     lem_keys "$s1" Enter
     if lem_wait_for "$s1" 'Shared prefix:' 10 >/dev/null &&

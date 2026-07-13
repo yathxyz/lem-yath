@@ -350,7 +350,7 @@ sleep 0.5
 populate_session="lem-yath-daily-populate-$id"
 if start_fixture_session "$populate_session" populate; then
   mru_populate=$(grep '^MRU phase=populate ' "$LEM_YATH_DAILY_WORKFLOWS_REPORT" | tail -1)
-  if [ "$mru_populate" = 'MRU phase=populate limit=300 count=300 first=recent-042.txt target-count=1 oldest-present=no' ]; then
+  if [ "$mru_populate" = 'MRU phase=populate limit=300 count=300 first=recent-042.txt target-count=1 late-index=299 oldest-present=no' ]; then
     pass recent-mru-populate "305 opens capped at 300 and a reopen moved one entry to front"
   else
     fail recent-mru-populate "unexpected in-process MRU: $mru_populate" "$populate_session"
@@ -361,11 +361,15 @@ fi
 lem_stop "$populate_session"
 sleep 0.5
 
+chmod 640 "$LEM_YATH_DAILY_WORKFLOWS_ROOT/recent/recent-042.txt"
+touch -d '2020-01-02 03:04:05 UTC' \
+  "$LEM_YATH_DAILY_WORKFLOWS_ROOT/recent/recent-042.txt"
+
 recent_session="lem-yath-daily-recent-$id"
 if start_fixture_session "$recent_session" verify &&
    lem_wait_for "$recent_session" 'NORMAL|Dashboard' "$BOOT_TIMEOUT" >/dev/null; then
   mru_verify=$(grep '^MRU phase=verify ' "$LEM_YATH_DAILY_WORKFLOWS_REPORT" | tail -1)
-  if [ "$mru_verify" = 'MRU phase=verify limit=300 count=300 first=recent-042.txt target-count=1 oldest-present=no' ] &&
+  if [ "$mru_verify" = 'MRU phase=verify limit=300 count=300 first=recent-042.txt target-count=1 late-index=299 oldest-present=no' ] &&
      [ -s "$LEM_HOME/history/files" ]; then
     pass recent-mru-persistence "a fresh Lem process loaded the same deduplicated 300-entry MRU"
   else
@@ -376,6 +380,16 @@ if start_fixture_session "$recent_session" verify &&
   if lem_wait_for "$recent_session" 'File:' "$WAIT_TIMEOUT" >/dev/null &&
      lem_wait_for "$recent_session" 'recent-042\.txt' "$WAIT_TIMEOUT" >/dev/null; then
     pass recent-binding "M-g r opened the recent-file completion prompt"
+    screen=$(lem_capture "$recent_session")
+    if grep -Eq 'recent-042\.txt.*-rw-r-----.*18.*2020 Jan 02' \
+         <<<"$screen"; then
+      pass recent-annotations \
+        'M-g r showed permissions, size, and deterministic mtime'
+    else
+      fail recent-annotations \
+        'the recent-file candidate metadata was missing or misresolved' \
+        "$recent_session"
+    fi
     lem_keys "$recent_session" Enter
     if lem_wait_for "$recent_session" 'RECENT TARGET 042' "$WAIT_TIMEOUT" >/dev/null; then
       current_before=$(report_count '^CURRENT ')
@@ -388,6 +402,78 @@ if start_fixture_session "$recent_session" verify &&
       fi
     else
       fail recent-open "the focused recent candidate did not open" "$recent_session"
+    fi
+
+    # The provider is globally capped at 100 prepared items, but it must filter
+    # the complete 300-entry MRU before that cap on every query. Entry 299 is
+    # therefore absent initially and must remain selectable after narrowing.
+    send_chord "$recent_session" M-g r
+    if lem_wait_for "$recent_session" 'File:' "$WAIT_TIMEOUT" >/dev/null; then
+      initial_recent_screen=$(lem_capture "$recent_session")
+      tmux_cmd send-keys -t "$recent_session" -l 'recent-005'
+      if ! grep -q 'recent-005\.txt' <<<"$initial_recent_screen" &&
+         lem_wait_for "$recent_session" 'recent-005\.txt' "$WAIT_TIMEOUT" >/dev/null; then
+        lem_keys "$recent_session" Enter
+        if lem_wait_for "$recent_session" 'recent fixture 005' "$WAIT_TIMEOUT" >/dev/null; then
+          current_before=$(report_count '^CURRENT ')
+          lem_keys "$recent_session" F10
+          if wait_report_count '^CURRENT ' "$((current_before + 1))" &&
+             grep -q '^CURRENT .*file=recent-005\.txt text=recent fixture 005\\n$' \
+               "$LEM_YATH_DAILY_WORKFLOWS_REPORT"; then
+            pass recent-beyond-cap \
+              'narrowing selected the MRU entry at unfiltered index 299'
+          else
+            fail recent-beyond-cap \
+              'the narrowed late candidate opened the wrong file' "$recent_session"
+          fi
+        else
+          fail recent-beyond-cap \
+            'Return did not open the narrowed late candidate' "$recent_session"
+        fi
+      else
+        fail recent-beyond-cap \
+          'the complete MRU was not filtered before the 100-item cap' \
+          "$recent_session"
+        lem_keys "$recent_session" Escape
+      fi
+    else
+      fail recent-beyond-cap 'the second recent-file prompt did not open' \
+        "$recent_session"
+    fi
+
+    if invoke_test_command "$recent_session" lem-yath-test-add-control-recent \
+         '^CONTROL-RECENT READY '; then
+      if lem_wait_for "$recent_session" 'File:' "$WAIT_TIMEOUT" >/dev/null; then
+        tmux_cmd send-keys -t "$recent_session" -l 'control'
+      fi
+      if lem_wait_for "$recent_session" 'control\\nname\.txt' \
+           "$WAIT_TIMEOUT" >/dev/null; then
+        control_screen=$(lem_capture "$recent_session")
+        if grep -Fq 'control\nname.txt' <<<"$control_screen"; then
+          lem_keys "$recent_session" Enter
+          if lem_wait_for "$recent_session" 'CONTROL RECENT TARGET' \
+               "$WAIT_TIMEOUT" >/dev/null; then
+            pass recent-control-path \
+              'escaped one-row label opened the untouched newline pathname'
+          else
+            fail recent-control-path \
+              'escaped label did not map back to the raw pathname' \
+              "$recent_session"
+          fi
+        else
+          fail recent-control-path \
+            'control pathname was not rendered as an escaped one-row label' \
+            "$recent_session"
+        fi
+      else
+        fail recent-control-path \
+          'newline-containing recent path corrupted or vanished from the prompt' \
+          "$recent_session"
+        lem_keys "$recent_session" Escape
+      fi
+    else
+      fail recent-control-path \
+        'could not add the newline-containing recent path' "$recent_session"
     fi
   else
     fail recent-binding "M-g r did not expose the recent-file prompt and target" "$recent_session"

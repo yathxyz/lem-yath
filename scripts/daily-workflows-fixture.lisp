@@ -93,15 +93,20 @@
 (defun daily-workflows-fixture-record-mru (phase)
   (let* ((recent (lem-core/commands/file:recent-files))
          (target (namestring (daily-workflows-fixture-recent-path 42)))
+         (late (namestring (daily-workflows-fixture-recent-path 5)))
          (oldest (namestring (daily-workflows-fixture-recent-path 0)))
          (first (first recent)))
     (daily-workflows-fixture-log
-     "MRU phase=~a limit=~s count=~d first=~a target-count=~d oldest-present=~a"
+     (concatenate
+      'string
+      "MRU phase=~a limit=~s count=~d first=~a target-count=~d "
+      "late-index=~s oldest-present=~a")
      phase
      lem-core/commands/file:*file-history-limit*
      (length recent)
      (if first (file-namestring first) "none")
      (count target recent :test #'string=)
+     (position late recent :test #'string=)
      (if (member oldest recent :test #'string=) "yes" "no"))))
 
 (defun daily-workflows-fixture-record-preseeded-mru (phase)
@@ -264,6 +269,24 @@
      "BUFFER-LIST READY alpha=~a beta=~a"
      (buffer-name alpha-buffer)
      (buffer-name beta-buffer))))
+
+(define-command lem-yath-test-add-control-recent () ()
+  "Put a newline-containing pathname at the head of the recent-file MRU."
+  (let* ((path
+           (daily-workflows-fixture-write
+            (format nil "recent/control~%name.txt")
+            (format nil "CONTROL RECENT TARGET~%")))
+         (buffer (find-file-buffer path)))
+    (delete-buffer buffer)
+    (lem/common/history:add-history
+     (lem-core/commands/file:file-history)
+     (namestring path)
+     :allow-duplicates nil
+     :move-to-top t)
+    (daily-workflows-fixture-log
+     "CONTROL-RECENT READY label=~a"
+     (completion-path-display-string (namestring path)))
+    (lem-yath-find-recent-file)))
 
 (dolist (keymap (list *global-keymap*
                       lem-vi-mode:*normal-keymap*

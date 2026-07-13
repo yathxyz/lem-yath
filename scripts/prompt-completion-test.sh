@@ -72,6 +72,68 @@ else
   pass boot "configured Lem opened both file-backed fixture buffers"
 fi
 
+chmod 640 "$LEM_YATH_PROMPT_COMPLETION_ROOT/files/nested/alpha-report.txt"
+touch -d '2020-01-02 03:04:05 UTC' \
+  "$LEM_YATH_PROMPT_COMPLETION_ROOT/files/nested/alpha-report.txt"
+
+# Buffer metadata remains display-only and reports state, size, mode, and path.
+if invoke_prompt_command lem-yath-test-buffer-prompt 'Fixture buffer:'; then
+  tmux_cmd send-keys -t "$session" -l annotation-dirty
+  sleep 0.8
+  screen=$(lem_capture "$session")
+  if grep -Eq 'annotation-dirty\.py.*\*\*-.*7.*Python.*buffers/annotation-dirty\.py' \
+       <<<"$screen"; then
+    pass buffer-state-annotations \
+      'modified Python buffer showed status, size, mode, and path'
+  else
+    fail buffer-state-annotations \
+      'modified buffer metadata was incomplete or reordered' "$session"
+  fi
+  lem_keys "$session" Escape
+  sleep 0.2
+  lem_keys "$session" Escape
+else
+  fail buffer-state-annotations 'configured buffer prompt did not open' "$session"
+fi
+
+if invoke_prompt_command lem-yath-test-buffer-prompt 'Fixture buffer:'; then
+  tmux_cmd send-keys -t "$session" -l annotation-readonly
+  sleep 0.8
+  screen=$(lem_capture "$session")
+  if grep -Eq 'annotation-readonly\.txt.*%%-.*9.*Fundamental.*buffers/annotation-readonly\.txt' \
+       <<<"$screen"; then
+    pass buffer-read-only-annotation \
+      'read-only buffer showed its distinct status and metadata'
+  else
+    fail buffer-read-only-annotation \
+      'read-only buffer metadata was incomplete' "$session"
+  fi
+  lem_keys "$session" Escape
+  sleep 0.2
+  lem_keys "$session" Escape
+else
+  fail buffer-read-only-annotation 'configured buffer prompt did not open' "$session"
+fi
+
+if invoke_prompt_command lem-yath-test-buffer-prompt 'Fixture buffer:'; then
+  tmux_cmd send-keys -t "$session" -l annotation-readonly-modified
+  sleep 0.8
+  screen=$(lem_capture "$session")
+  if grep -Eq 'annotation-readonly-modified\.txt.*%\*-.*6.*Fundamental' \
+       <<<"$screen"; then
+    pass buffer-combined-state \
+      'read-only modified buffer preserved both Marginalia status flags'
+  else
+    fail buffer-combined-state \
+      'combined read-only and modified state collapsed one flag' "$session"
+  fi
+  lem_keys "$session" Escape
+  sleep 0.2
+  lem_keys "$session" Escape
+else
+  fail buffer-combined-state 'configured buffer prompt did not open' "$session"
+fi
+
 # Delimiter input belongs to the prompt query. It must refresh the candidate
 # list rather than invoking ordinary-buffer pairing and closing completion.
 if invoke_prompt_command lem-yath-test-buffer-prompt 'Fixture buffer:'; then
@@ -183,6 +245,16 @@ if invoke_prompt_command lem-yath-test-file-prompt 'Fixture file:' &&
       pass partial-components "al-r matched both nested hyphen components"
     else
       fail partial-components "nested partial-component completion failed" "$session"
+    fi
+
+    screen=$(lem_capture "$session")
+    if grep -Eq 'alpha-report\.txt.*-rw-r-----.*6.*2020 Jan 02' \
+         <<<"$screen"; then
+      pass file-annotations \
+        'file candidate showed permissions, size, and deterministic mtime'
+    else
+      fail file-annotations \
+        'file metadata was missing or participated in the wrong column' "$session"
     fi
 
     lem_keys "$session" C-n

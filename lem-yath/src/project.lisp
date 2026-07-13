@@ -347,18 +347,7 @@ provided, cancellation and process ownership are atomic and request-local."
 
 (defun project-display-string (string)
   "Escape control characters in STRING so it occupies one prompt row."
-  (with-output-to-string (stream)
-    (loop :for character :across string
-          :for code := (char-code character)
-          :do (case character
-                (#\\ (write-string "\\\\" stream))
-                (#\Newline (write-string "\\n" stream))
-                (#\Return (write-string "\\r" stream))
-                (#\Tab (write-string "\\t" stream))
-                (otherwise
-                 (if (or (< code 32) (= code 127))
-                     (format stream "\\x~2,'0X;" code)
-                     (write-char character stream)))))))
+  (completion-path-display-string string))
 
 (defun project-root-choices (&optional current-root)
   "Return prompt display/root pairs for known projects and directory choice."
@@ -602,7 +591,14 @@ provided, cancellation and process ownership are atomic and request-local."
             (prompt-for-string
              (if initial "Project file (current): " "Project file: ")
              :completion-function
-             (lambda (input) (prescient-filter input labels))
+             (lambda (input)
+               (completion-annotated-prompt-choices
+                (prescient-filter input choices
+                                  :key #'car
+                                  :category :project-file)
+                (lambda (file)
+                  (completion-file-detail
+                   (project-absolute-path root file)))))
              :test-function
              (lambda (input)
                (or (and initial (zerop (length input)))
@@ -1018,7 +1014,11 @@ an escaped (), {}, or | becomes special and an unescaped one becomes literal."
 (defun project-buffer-at-root (root)
   "Prompt for and return a buffer belonging to ROOT."
   (let* ((buffers (project-buffers-at-root root))
-         (names (sort (mapcar #'buffer-name buffers) #'string<))
+         (buffers (sort buffers #'string< :key #'buffer-name))
+         (choices (mapcar (lambda (buffer)
+                            (cons (buffer-name buffer) buffer))
+                          buffers))
+         (names (mapcar #'car choices))
          (current (buffer-name (current-buffer))))
     (unless names
       (editor-error "No buffers in project ~a" root))
@@ -1028,7 +1028,17 @@ an escaped (), {}, or | becomes special and an unescaped one becomes literal."
                  "Project buffer (current): "
                  "Project buffer: ")
              :completion-function
-             (lambda (input) (prescient-filter input names))
+             (lambda (input)
+               (completion-annotated-prompt-choices
+                (prescient-filter input choices
+                                  :key #'car
+                                  :category :project-buffer)
+                (lambda (buffer)
+                  (let ((filename (buffer-filename buffer)))
+                    (completion-buffer-detail
+                     buffer
+                     (and filename
+                          (enough-namestring filename root)))))))
              :test-function
              (lambda (input)
                (or (and (member current names :test #'string=)
@@ -1037,7 +1047,7 @@ an escaped (), {}, or | becomes special and an unescaped one becomes literal."
       (when (and (zerop (length choice))
                  (member current names :test #'string=))
         (setf choice current))
-      (get-buffer choice))))
+      (cdr (assoc choice choices :test #'string=)))))
 
 (define-command lem-yath-project-buffers () ()
   "Switch among file and non-file buffers belonging to the current project."

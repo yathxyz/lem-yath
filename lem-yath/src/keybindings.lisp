@@ -190,7 +190,7 @@
 (define-key *global-keymap* "M-o" 'next-window)        ; other-window
 (define-key *global-keymap* "M-j" 'lem-yath-duplicate-dwim) ; duplicate-dwim
 (define-key *global-keymap* "M-g r"
-  'lem-core/commands/file:find-recent-file)             ; recentf
+  'lem-yath-find-recent-file)                           ; recentf + Marginalia
 (define-key *global-keymap* "M-s f" 'lem-yath-find-name) ; find-name-dired
 (define-key *global-keymap* "M-s g" 'lem/grep:grep)    ; M-s g grep
 

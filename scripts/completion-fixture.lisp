@@ -20,6 +20,12 @@
 (pushnew 'lem-yath-test-report-prompt-focus
          *auto-completion-continue-commands*)
 
+(define-command lem-yath-test-marginalia-command () ()
+  "Zyzzyva-annotation-only-token proves command documentation is display-only."
+  (message "Marginalia command fixture invoked"))
+
+(define-key *global-keymap* "F6" 'lem-yath-test-marginalia-command)
+
 (define-command lem-yath-test-vertico-shared-prefix-prompt () ()
   "Open a prompt whose initial candidates share a nonempty prefix."
   (prompt-for-string

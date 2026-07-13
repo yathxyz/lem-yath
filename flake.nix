@@ -30,6 +30,7 @@
             src = lem.outPath;
             patches = [
               ./patches/lem-completion-lifecycle.patch
+              ./patches/lem-completion-detail-accessor.patch
               ./patches/lem-transient-delay-race.patch
               ./patches/lem-transient-bottom-restore.patch
               ./patches/lem-project-lsp-workspaces.patch

@@ -310,7 +310,25 @@ synchronous singleton. `Tab` inserts the focused candidate and refreshes
 completion without closing the prompt; one `Return` accepts it and submits the
 prompt. `M-p` and `M-n` traverse prompt history and reopen completion.
 
-Lem-yath carries `patches/lem-completion-lifecycle.patch` and
+`lem-yath/src/annotations.lisp` supplies a bounded Marginalia-style layer for
+the daily prompt categories. Commands show active bindings and their first
+documentation line; ordinary and project buffers show modified/read-only state,
+size, mode, and path; ordinary, recent, and project files show local Unix modes,
+human size, age or date, and a non-default owner when relevant. Annotations are
+computed after filtering for at most the 100 visible candidates, metadata
+failure degrades to a blank detail, and tests prove annotation text cannot become
+filter input. For upstream command, buffer, and file providers, the layer changes
+only each existing item's display detail, leaving its label, filter text,
+replacement range, insertion text, rank, and acceptance identity intact. Custom
+project and recent-file providers instead create correctly ranged items after
+ranking and preserve the selected raw value through an injective display-label
+mapping. The ncurses gates cover common local regular files and buffer states;
+special file modes, conditional foreign ownership, and metadata-failure fallback
+remain source-inspected. Marginalia's less common category annotators, dynamic
+alignment, and remote-file fields remain outside this approximation.
+
+Lem-yath carries `patches/lem-completion-lifecycle.patch`,
+`patches/lem-completion-detail-accessor.patch`, and
 `patches/lem-completion-observer-change-group.patch` plus
 `patches/lem-completion-presentation-focus.patch` against the pinned Lem
 revision. They separate display, filter, and insertion text, add a final-accept
@@ -680,10 +698,11 @@ through the ncurses editor.
 - Buffer switch: `select-buffer` (`C-x b`), `list-buffers` (`C-x C-b`,
   `src/ext/list-buffers.lisp`). The configured TUI verifies Buffer/File columns,
   fuzzy narrowing, and Return-to-open; Emacs' saved Ibuffer groups remain absent.
-- Recent files: `M-g r` opens Lem's persistent MRU after lem-yath sets the loaded
+- Recent files: `M-g r` opens an annotated Lem persistent-MRU prompt after
+  lem-yath sets the loaded
   history's 300-entry limit and normalizes oversized persisted histories to their
   newest 300 entries. Fresh-process TUI tests verify trimming, capping,
-  deduplication, move-to-front, persistence, and opening.
+  deduplication, move-to-front, persistence, file metadata, and opening.
 
 ### Configured persistence and safe external changes (verified)
 
@@ -822,8 +841,10 @@ approximations of Emacs `project-eshell` and `project-any-command`. `SPC SPC`
 uses each buffer's directory, so compilation, terminal,
 and REPL-style buffers participate without sibling-prefix leakage. The
 two-process ncurses gate is `scripts/project-navigation-test.sh`; it also forces
-overlapping cancellation and hostile submodule fixtures. Consult's
-prompt preview and rich candidate metadata remain unavailable.
+overlapping cancellation and hostile submodule fixtures. File and buffer
+candidates now carry the bounded metadata described above. Consult's
+preview-on-move and `SPC SPC` multi-category Project Buffer/File/Root grouping
+remain unavailable.
 
 ### Completion UI config
 `*prompt-buffer-completion-function*`, `*prompt-file-completion-function*`,
