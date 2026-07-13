@@ -43,7 +43,7 @@ Status legend:
 | (python via pyright) | ported/partial | Packaged **pyright-langserver --stdio** is handshake-tested. Lem auto-starts it at a Python metadata root; the current Emacs config merely selects Pyright after manual Eglot startup because no Python Eglot hook is configured. |
 | terraform-mode | lem-builtin+partial | Packaged **terraform-ls** is handshake-tested through upstream Lem's TCP spec with `.git` fallback; Emacs uses boosted stdio at its project.el root. |
 | clojure-ts-mode / cider | lem-builtin | `lem-clojure-mode` + clojure-lsp + nREPL repl |
-| eglot-java | gap | no jdtls spec (jdt launcher out of scope); `lem-java-mode` syntax only |
+| eglot-java | gap | pinned nixpkgs provides `jdtls`, but it is not packaged or configured; `lem-java-mode` syntax and a dormant `google-java-format` backend exist, while the formatter binary is also absent |
 | gdscript-mode | gap | no Godot mode/LSP in Lem |
 | nasm-mode | lem-builtin | `lem-asm-mode` |
 | just-mode / meson-mode / nginx-mode / nushell-ts-mode / typst-ts-mode | gap | open as fundamental (no Lem modes) |

@@ -269,7 +269,7 @@ Diagnostics policy (`yath/eglot-managed-diagnostics`): when an Eglot-managed buf
 | **Go** | `go-mode` / `go-ts-mode` (eglot via hook) | **`gopls`** | `gofmt`/`goimports` (apheleia; `goimports` on PATH) | Flymake (eglot) | `dlv`/`dlv-dap` (delve) | `go-mode` declared, no explicit use-package |
 | **Python** | python-ts/python-mode | **`pyright`** (`pyright-langserver`) when Eglot is started manually; no Python Eglot hook is configured | `ruff`/`black` (apheleia) | `ruff`, `mypy` | `debugpy` | `emacsDevPython` bundles debugpy+pytest |
 | **Markdown** | `markdown-ts-mode` (`.md`), also `markdown-mode` | **`harper-ls --stdio`** (grammar/prose) | — | harper | — | `yath/eglot-ensure` on `markdown-mode` |
-| **Java** | `java-mode`/`java-ts-mode` | **Eclipse JDT** via `eglot-java` (cache `~/.cache/eglot-java-eclipse-jdt-cache`) | Google Java style XML (remote URL) | Flymake | — | `eglot-java-mode` |
+| **Java** | `java-mode`/`java-ts-mode` | **Eclipse JDT** via manually invoked `eglot-java-mode` (cache `~/.cache/eglot-java-eclipse-jdt-cache`); no Java Eglot hook is configured | Google Java style XML (remote URL) | Flymake | — | `eglot-java-mode` |
 | **C# / .NET** | `csharp-mode`/`csharp-ts-mode` | eglot-ensure (server not pinned in elisp; relies on eglot default e.g. omnisharp/csharp-ls if present) | — | Flymake | — | hooked only |
 | **GDScript** | `gdscript-mode` | eglot-ensure; `gdscript-eglot-version 3` (Godot's built-in LSP on TCP) | — | — | — | |
 | **Terraform** | `terraform-mode` | eglot-ensure (terraform-ls if present) | — | Flymake | — | |
