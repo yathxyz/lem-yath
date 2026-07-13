@@ -110,6 +110,7 @@
               findutils
               gitMinimal
               go
+              google-java-format
               gnugrep
               gnused
               nixfmt-rfc-style
@@ -122,6 +123,7 @@
           lspRuntimeInputs = with pkgs; [
             gopls
             harper
+            jdt-language-server
             nixd
             pyright
             rust-analyzer
@@ -248,6 +250,8 @@
             export LEM_YATH_REAL_LSP_NIXPKGS_SOURCE=${nixpkgs}
             export LEM_YATH_REAL_LSP_GOPLS=${lib.getExe pkgs.gopls}
             export LEM_YATH_REAL_LSP_TERRAFORM_LS=${lib.getExe pkgs.terraform-ls}
+            export LEM_YATH_REAL_LSP_JDTLS=${lib.getExe pkgs.jdt-language-server}
+            export LEM_YATH_REAL_LSP_GOOGLE_JAVA_FORMAT=${lib.getExe pkgs.google-java-format}
             export LEM_YATH_REAL_LSP_CARGO=${lib.getExe pkgs.cargo}
             export LEM_YATH_REAL_LSP_RUSTC=${lib.getExe' pkgs.rustc "rustc"}
             export LEM_YATH_REAL_LSP_CARGO_CLIPPY=${lib.getExe' pkgs.clippy "cargo-clippy"}

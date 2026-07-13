@@ -4,6 +4,7 @@
 ;;;; so we (re)register specs to match the Emacs setup:
 ;;;;   rust -> rust-analyzer, nix -> nixd (+ flake-aware settings),
 ;;;;   python -> pyright, markdown -> harper-ls (prose linting).
+;;;; Java remains explicit, matching eglot-java-mode in the Emacs config.
 
 (in-package :lem-yath)
 
@@ -85,6 +86,94 @@
                    (when options
                      (list "options" (apply #'lem-lsp-base/type:make-lsp-map
                                             options)))))))
+
+;;; --- Java / eglot-java ---------------------------------------------------
+
+(defparameter *java-google-style-url*
+  "https://raw.githubusercontent.com/google/styleguide/gh-pages/eclipse-java-google-style.xml")
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defclass lem-yath-java-spec (lem-lsp-mode/spec::spec) ()
+    (:default-initargs
+     :language-id "java"
+     :root-uri-patterns '("pom.xml"
+                          "build.gradle"
+                          "build.gradle.kts"
+                          "settings.gradle"
+                          "settings.gradle.kts"
+                          ".git")
+     :command '("jdtls")
+     :install-command "nix profile install nixpkgs#jdt-language-server"
+     :readme-url "https://github.com/eclipse-jdtls/eclipse.jdt.ls"
+     :connection-mode :stdio
+     :mode 'lem-java-mode:java-mode))
+  (lem-lsp-mode/spec:register-language-spec
+   'lem-java-mode:java-mode
+   (make-instance 'lem-yath-java-spec)))
+
+(defmethod lem-lsp-mode:spec-initialization-options
+    ((spec lem-yath-java-spec))
+  (declare (ignore spec))
+  (lem-lsp-base/type:make-lsp-map
+   "settings"
+   (lem-lsp-base/type:make-lsp-map
+    "java"
+    (lem-lsp-base/type:make-lsp-map
+     "format"
+     (lem-lsp-base/type:make-lsp-map
+      "settings"
+      (lem-lsp-base/type:make-lsp-map "url" *java-google-style-url*)
+      "enabled" t)))))
+
+(defun java-project-cache-key (root)
+  (let* ((canonical
+           (namestring
+            (truename (uiop:ensure-directory-pathname root))))
+         (digest
+           (with-input-from-string (input canonical)
+             (uiop:run-program '("sha256sum")
+                               :input input
+                               :output '(:string :stripped t)
+                               :error-output :output))))
+    (subseq digest 0 (position #\Space digest))))
+
+(defun java-jdtls-data-directory (root)
+  "Return JDTLS's isolated data directory for canonical project ROOT."
+  (unless root
+    (error "JDTLS requires a project root directory."))
+  (let* ((cache-root
+           (uiop:ensure-directory-pathname
+            (or (uiop:getenv "XDG_CACHE_HOME")
+                (merge-pathnames ".cache/" (user-homedir-pathname)))))
+         (directory
+           (merge-pathnames
+            (format nil "lem-yath/jdtls/~a/" (java-project-cache-key root))
+            cache-root)))
+    (ensure-directories-exist directory)
+    directory))
+
+(defmethod lem-lsp-mode::run-server
+    ((spec lem-yath-java-spec) &key directory)
+  ;; The nixpkgs launcher otherwise derives its data directory from only the
+  ;; current directory basename.  Supply a canonical-root key so unrelated
+  ;; projects cannot share JDTLS indexes.
+  (let* ((data-directory (java-jdtls-data-directory directory))
+         (launch-spec
+           (make-instance 'lem-yath-java-spec
+                          :command (list "jdtls"
+                                         "-data"
+                                         (namestring data-directory)))))
+    (lem-lsp-mode::run-server-using-mode
+     :stdio launch-spec :directory directory)))
+
+(define-command lem-yath-java-lsp () ()
+  "Enable JDTLS explicitly in the current Java buffer."
+  (let ((buffer (current-buffer)))
+    (unless (eq 'lem-java-mode:java-mode (buffer-major-mode buffer))
+      (editor-error "JDTLS can only be enabled in a Java buffer."))
+    (if (mode-active-p buffer 'lem-lsp-mode::lsp-mode)
+        (message "JDTLS is already enabled for this buffer.")
+        (lem-lsp-mode::lsp-mode t))))
 
 ;;; --- workspace symbols (consult-eglot-symbols / SPC p s) ------------------
 

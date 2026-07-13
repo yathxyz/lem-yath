@@ -127,13 +127,15 @@ ON-EXIT, if given, is called on the editor thread with the exit code."
       (dolist (entry '(("rust-spec" lem-rust-mode:rust-mode)
                        ("nix-spec" lem-nix-mode:nix-mode)
                        ("python-spec" lem-python-mode:python-mode)
-                       ("markdown-spec" lem-markdown-mode:markdown-mode)))
+                       ("markdown-spec" lem-markdown-mode:markdown-mode)
+                       ("java-spec" lem-java-mode:java-mode)))
         (destructuring-bind (label mode) entry
           (let ((spec (lem-lsp-mode/spec:get-language-spec mode)))
             (format s "~a: ~a~%" label
                     (and spec (lem-lsp-mode/spec:get-spec-command spec))))))
       (format s "commands: ~{~a~^ ~}~%"
               (loop :for name :in '("LEM-YATH-VCS-STATUS" "LEM-YATH-ROAM-FIND" "LEM-YATH-LLM-SEND"
-                                    "LEM-YATH-COMPILE" "LEM-YATH-CAPTURE" "LEM-YATH-FORMAT-BUFFER")
+                                    "LEM-YATH-COMPILE" "LEM-YATH-CAPTURE" "LEM-YATH-FORMAT-BUFFER"
+                                    "LEM-YATH-JAVA-LSP")
                     :collect (if (find-symbol name :lem-yath) "t" name)))))
   path)
