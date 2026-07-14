@@ -1472,6 +1472,7 @@ keymaps and therefore execute the non-jumping repeat motions directly."
   seed-start
   seed-end
   ranges
+  string-ranges
   inner-range)
 
 (defstruct expand-region-session
@@ -1599,11 +1600,12 @@ keymaps and therefore execute the non-jumping repeat motions directly."
 
 (defun expand-region-ts-node-ranges
     (node selection-start selection-end &optional root-p)
-  "Collect useful named NODE ranges which contain the selected byte range."
+  "Collect syntax and string-content ranges containing the selection."
   (unwind-protect
        (let ((start (tree-sitter:node-start-byte node))
              (end (tree-sitter:node-end-byte node))
-             (ranges nil))
+             (ranges nil)
+             (string-ranges nil))
          (when (and (<= start selection-start)
                     (<= selection-end end))
            (when (and (not root-p)
@@ -1612,16 +1614,22 @@ keymaps and therefore execute the non-jumping repeat motions directly."
                       (or (< start selection-start)
                           (< selection-end end)))
              (push (cons start end) ranges))
+           (when (and (string= (tree-sitter:node-type node)
+                               "string_content")
+                      (< start end))
+             (push (cons start end) string-ranges))
            ;; Named children contain every useful grammar node while avoiding
            ;; one-character punctuation leaves which Expreg also filters.
            (dotimes (index (tree-sitter:node-named-child-count node))
              (alexandria:when-let
                  ((child (tree-sitter:node-named-child node index)))
-               (setf ranges
-                     (nconc (expand-region-ts-node-ranges
-                             child selection-start selection-end)
-                            ranges)))))
-         ranges)
+               (multiple-value-bind (child-ranges child-string-ranges)
+                   (expand-region-ts-node-ranges
+                    child selection-start selection-end)
+                 (setf ranges (nconc child-ranges ranges)
+                       string-ranges
+                       (nconc child-string-ranges string-ranges))))))
+         (values ranges string-ranges))
     ;; tree-sitter-cl allocates node structs outside the Lisp heap.
     (cffi:foreign-free (tree-sitter/types:ts-node-buffer node))))
 
@@ -1632,12 +1640,12 @@ keymaps and therefore execute the non-jumping repeat motions directly."
 
 (defun expand-region-tree-sitter-byte-ranges
     (buffer language selection-start selection-end)
-  "Return containing syntax ranges and whether LANGUAGE parsed successfully."
+  "Return syntax ranges, string-content ranges, and parse success."
   (handler-case
       (progn
         (unless (tree-sitter:tree-sitter-available-p)
           (return-from expand-region-tree-sitter-byte-ranges
-            (values nil nil)))
+            (values nil nil nil)))
         (let ((grammar (or (tree-sitter:get-language language)
                            (tree-sitter:load-language-from-system language))))
           (tree-sitter:with-parser (parser grammar)
@@ -1645,16 +1653,16 @@ keymaps and therefore execute the non-jumping repeat motions directly."
                          parser (buffer-text buffer))))
               (unless tree
                 (return-from expand-region-tree-sitter-byte-ranges
-                  (values nil nil)))
+                  (values nil nil nil)))
               (unwind-protect
                    (let ((root (tree-sitter:tree-root-node tree)))
-                     (values
-                      (expand-region-ts-node-ranges
-                       root selection-start selection-end
-                       (not (string= language "json")))
-                      t))
+                     (multiple-value-bind (ranges string-ranges)
+                         (expand-region-ts-node-ranges
+                          root selection-start selection-end
+                          (not (string= language "json")))
+                       (values ranges string-ranges t)))
                 (expand-region-delete-tree tree))))))
-    (error () (values nil nil))))
+    (error () (values nil nil nil))))
 
 (defun expand-region-byte-range-contains-p
     (range selection-start selection-end)
@@ -1694,6 +1702,93 @@ keymaps and therefore execute the non-jumping repeat motions directly."
         (expand-region-delete-point-range inside)))
     best))
 
+(defun expand-region-whitespace-position-p (buffer position)
+  (with-point ((point (buffer-start-point buffer)))
+    (and (move-to-position point position)
+         (alexandria:when-let ((character (character-at point)))
+           (member character '(#\Space #\Tab #\Newline #\Return))))))
+
+(defun expand-region-string-list-candidate
+    (buffer string-ranges start end)
+  "Return Expreg's next balanced-list tier inside a parsed string."
+  (let* ((selection-start (position-at-point start))
+         (selection-end (position-at-point end))
+         (content-range
+           (first
+            (sort
+             (remove-if-not
+              (lambda (range)
+                (and (<= (car range) (point-bytes start))
+                     (<= (point-bytes end) (cdr range))))
+              (copy-list string-ranges))
+             #'< :key (lambda (range) (- (cdr range) (car range)))))))
+    (unless content-range
+      (return-from expand-region-string-list-candidate nil))
+    (let* ((content-points
+             (expand-region-byte-range-to-points buffer content-range))
+           (content-end (position-at-point (second content-points)))
+           (stack nil)
+           (candidates nil))
+      (unwind-protect
+           (with-point ((scan (first content-points)))
+             (loop :while (< (position-at-point scan) content-end)
+                   :for character := (character-at scan)
+                   :for position := (position-at-point scan)
+                   :for escaped-p := (syntax-escape-point-p scan 0)
+                   :do (cond
+                         ((and (not escaped-p)
+                               (member character '(#\( #\[ #\{)))
+                          (push (cons character position) stack))
+                         ((and (not escaped-p)
+                               (member character '(#\) #\] #\})))
+                          (let* ((pair (assoc character
+                                              '((#\) . #\()
+                                                (#\] . #\[)
+                                                (#\} . #\{))))
+                                 (open (first stack)))
+                            (cond
+                              ((and open (eql (car open) (cdr pair)))
+                               (pop stack)
+                               (let* ((outside-start (cdr open))
+                                      (outside-end (1+ position))
+                                      (inside-start (1+ outside-start))
+                                      (inside-end position)
+                                      (trimmed-start inside-start)
+                                      (trimmed-end inside-end))
+                                 (loop :while (and (< trimmed-start trimmed-end)
+                                                   (expand-region-whitespace-position-p
+                                                    buffer trimmed-start))
+                                       :do (incf trimmed-start))
+                                 (loop :while (and (< trimmed-start trimmed-end)
+                                                   (expand-region-whitespace-position-p
+                                                    buffer (1- trimmed-end)))
+                                       :do (decf trimmed-end))
+                                 (dolist (candidate
+                                          (list (cons trimmed-start trimmed-end)
+                                                (cons inside-start inside-end)
+                                                (cons outside-start outside-end)))
+                                   (when (and (<= (car candidate)
+                                                   selection-start)
+                                              (<= selection-end
+                                                  (cdr candidate))
+                                              (or (< (car candidate)
+                                                     selection-start)
+                                                  (< selection-end
+                                                     (cdr candidate))))
+                                     (push candidate candidates)))))
+                              (open
+                               ;; A mismatched closer makes every currently
+                               ;; open path ambiguous; fail closed for it.
+                               (setf stack nil))))))
+                   :do (character-offset scan 1)))
+        (expand-region-delete-point-range content-points))
+      (alexandria:when-let
+          ((candidate
+             (first (sort candidates #'<
+                          :key (lambda (range)
+                                 (- (cdr range) (car range)))))))
+        (expand-region-position-range-to-points buffer candidate)))))
+
 (defun expand-region-tree-sitter-candidate (start end)
   "Return the smallest parser-backed range containing START..END.
 
@@ -1709,7 +1804,7 @@ through strings or malformed syntax in a parsed buffer."
     (let ((cache (buffer-value buffer 'lem-yath-expand-region-parser-cache)))
       (unless (expand-region-parser-cache-valid-p
                cache buffer language selection-start selection-end)
-        (multiple-value-bind (byte-ranges parsed-p)
+        (multiple-value-bind (byte-ranges string-ranges parsed-p)
             (expand-region-tree-sitter-byte-ranges
              buffer language selection-start selection-end)
           (setf cache
@@ -1720,6 +1815,7 @@ through strings or malformed syntax in a parsed buffer."
                    :seed-start selection-start
                    :seed-end selection-end
                    :ranges byte-ranges
+                   :string-ranges string-ranges
                    :inner-range
                    (expand-region-smallest-inner-byte-range
                     buffer byte-ranges start end)))
@@ -1728,6 +1824,8 @@ through strings or malformed syntax in a parsed buffer."
       (unless cache
         (return-from expand-region-tree-sitter-candidate (values nil nil)))
       (let ((byte-ranges (expand-region-parser-cache-ranges cache))
+            (string-ranges
+              (expand-region-parser-cache-string-ranges cache))
             (inner-range (expand-region-parser-cache-inner-range cache))
             (parsed-p t))
       (let ((best nil))
@@ -1743,6 +1841,11 @@ through strings or malformed syntax in a parsed buffer."
                       (setf best candidate))
                      (t
                       (expand-region-delete-point-range candidate)))))
+          (alexandria:when-let
+              ((string-list
+                 (expand-region-string-list-candidate
+                  buffer string-ranges start end)))
+            (consider string-list))
           (dolist (byte-range byte-ranges)
             (let* ((outside
                      (expand-region-byte-range-to-points buffer byte-range))

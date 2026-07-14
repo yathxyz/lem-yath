@@ -49,12 +49,24 @@
   (expreg-test-open "LEM_YATH_EXPREG_PYTHON_DECOY"
                     "python-decoy" "delimiter"))
 
+(define-command lem-yath-test-expreg-open-python-escaped-list () ()
+  (expreg-test-open "LEM_YATH_EXPREG_PYTHON_DECOY"
+                    "python-escaped-list" "escaped_token"))
+
+(define-command lem-yath-test-expreg-open-python-block-string () ()
+  (expreg-test-open "LEM_YATH_EXPREG_PYTHON_DECOY"
+                    "python-block-string" "block_item"))
+
 (define-command lem-yath-test-expreg-open-python-malformed () ()
   (expreg-test-open "LEM_YATH_EXPREG_PYTHON_MALFORMED"
                     "python-malformed" "beta"))
 
 (define-command lem-yath-test-expreg-open-json () ()
   (expreg-test-open "LEM_YATH_EXPREG_JSON" "json" "café"))
+
+(define-command lem-yath-test-expreg-open-json-string-list () ()
+  (expreg-test-open "LEM_YATH_EXPREG_JSON_STRING"
+                    "json-string-list" "item"))
 
 (define-command lem-yath-test-expreg-open-fallback () ()
   (expreg-test-open "LEM_YATH_EXPREG_FALLBACK" "fallback" "alpha"))

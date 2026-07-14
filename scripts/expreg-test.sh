@@ -136,18 +136,24 @@ export LEM_YATH_EXPREG_PYTHON_EXPRESSION="$root/expression.py"
 export LEM_YATH_EXPREG_PYTHON_DECOY="$root/decoy.py"
 export LEM_YATH_EXPREG_PYTHON_MALFORMED="$root/malformed.py"
 export LEM_YATH_EXPREG_JSON="$root/data.json"
+export LEM_YATH_EXPREG_JSON_STRING="$root/string.json"
 export LEM_YATH_EXPREG_FALLBACK="$root/fallback.txt"
 
 printf '%s\n' \
   'result = outer(prefix, inner("(", café_value + 1), wrap(foo + bar))' \
   >"$LEM_YATH_EXPREG_PYTHON_EXPRESSION"
-printf '%s\n' 'message = render("fake ( delimiter", café_value)' \
+printf '%s\n%s\n%s\n' \
+  'message = render("fake ( delimiter ) tail", café_value)' \
+  'escaped = render("fake \( escaped_token ) tail", value)' \
+  'block = """fake { block_item } tail"""' \
   >"$LEM_YATH_EXPREG_PYTHON_DECOY"
 printf '%s\n%s\n' 'result = fn(' '    alpha + beta' \
   >"$LEM_YATH_EXPREG_PYTHON_MALFORMED"
 printf '%s\n' \
   '{"outer": {"items": ["(", {"café": 42}, true]}, "tail": 0}' \
   >"$LEM_YATH_EXPREG_JSON"
+printf '%s\n' '{"text": "fake [ item ] tail"}' \
+  >"$LEM_YATH_EXPREG_JSON_STRING"
 printf '%s\n\n%s\n' 'one < ((alpha beta)) > three' 'next' \
   >"$LEM_YATH_EXPREG_FALLBACK"
 
@@ -235,26 +241,73 @@ if open_case lem-yath-test-expreg-open-python-decoy python-decoy; then
   expand_once
   assert_selection python-string-word python-decoy 'delimiter'
   expand_once
-  assert_selection python-string-content python-decoy 'fake ( delimiter'
+  assert_selection python-string-list-inner python-decoy ' delimiter '
   expand_once
-  assert_selection python-string-quoted python-decoy '"fake ( delimiter"'
+  assert_selection python-string-list-outer python-decoy '( delimiter )'
+  contract_once
+  assert_selection python-string-list-contract python-decoy ' delimiter '
+  expand_once
+  assert_selection python-string-list-reexpand python-decoy '( delimiter )'
+  expand_once
+  assert_selection python-string-content python-decoy \
+    'fake ( delimiter ) tail'
+  expand_once
+  assert_selection python-string-quoted python-decoy \
+    '"fake ( delimiter ) tail"'
   expand_once
   assert_selection python-string-arguments python-decoy \
-    '"fake ( delimiter", café_value'
+    '"fake ( delimiter ) tail", café_value'
   expand_once
   assert_selection python-string-arguments-outer python-decoy \
-    '("fake ( delimiter", café_value)'
+    '("fake ( delimiter ) tail", café_value)'
   expand_once
   assert_selection python-string-call python-decoy \
-    'render("fake ( delimiter", café_value)'
+    'render("fake ( delimiter ) tail", café_value)'
   expand_once
   assert_selection python-string-assignment python-decoy \
-    'message = render("fake ( delimiter", café_value)'
+    'message = render("fake ( delimiter ) tail", café_value)'
   expand_once
   assert_selection python-string-exhaustion python-decoy \
-    'message = render("fake ( delimiter", café_value)'
+    'message = render("fake ( delimiter ) tail", café_value)'
 else
   fail python-decoy-open 'Python string-decoy fixture did not open'
+fi
+
+if open_case lem-yath-test-expreg-open-python-escaped-list \
+             python-escaped-list; then
+  expand_once
+  assert_selection python-escaped-list-word python-escaped-list 'escaped'
+  expand_once
+  assert_selection python-escaped-list-symbol python-escaped-list \
+    'escaped_token'
+  expand_once
+  assert_selection python-escaped-list-content python-escaped-list \
+    'fake \( escaped_token ) tail'
+  expand_once
+  assert_selection python-escaped-list-quoted python-escaped-list \
+    '"fake \( escaped_token ) tail"'
+else
+  fail python-escaped-list-open 'Python escaped-list fixture did not open'
+fi
+
+if open_case lem-yath-test-expreg-open-python-block-string \
+             python-block-string; then
+  expand_once
+  assert_selection python-block-string-word python-block-string 'block'
+  expand_once
+  assert_selection python-block-string-symbol python-block-string 'block_item'
+  expand_once
+  assert_selection python-block-string-inner python-block-string ' block_item '
+  expand_once
+  assert_selection python-block-string-outer python-block-string '{ block_item }'
+  expand_once
+  assert_selection python-block-string-content python-block-string \
+    'fake { block_item } tail'
+  expand_once
+  assert_selection python-block-string-quoted python-block-string \
+    '"""fake { block_item } tail"""'
+else
+  fail python-block-string-open 'Python block-string fixture did not open'
 fi
 
 if open_case lem-yath-test-expreg-open-json json; then
@@ -288,6 +341,23 @@ if open_case lem-yath-test-expreg-open-json json; then
     $'{"outer": {"items": ["(", {"café": 42}, true]}, "tail": 0}\n'
 else
   fail json-open 'JSON fixture did not open'
+fi
+
+if open_case lem-yath-test-expreg-open-json-string-list json-string-list; then
+  expand_once
+  assert_selection json-string-list-word json-string-list 'item'
+  expand_once
+  assert_selection json-string-list-inner json-string-list ' item '
+  expand_once
+  assert_selection json-string-list-outer json-string-list '[ item ]'
+  expand_once
+  assert_selection json-string-list-content json-string-list \
+    'fake [ item ] tail'
+  expand_once
+  assert_selection json-string-list-quoted json-string-list \
+    '"fake [ item ] tail"'
+else
+  fail json-string-list-open 'JSON string-list fixture did not open'
 fi
 
 if open_case lem-yath-test-expreg-open-python-malformed python-malformed; then
