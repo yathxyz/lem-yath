@@ -36,6 +36,7 @@
                (:file "git")
                (:file "project")
                (:file "lint")
+               (:file "dap")
                (:file "project-picker")
                (:file "workspace-symbol")
                (:file "project-outline")

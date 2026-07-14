@@ -184,6 +184,12 @@ of writing `.fasl` files into the source tree.
   pyright, harper-ls, csharp-ls,
   flake-aware nixd, gopls, terraform-ls, and JDTLS, plus the Rust toolchain
   required by rust-analyzer
+- a Dape-compatible DAP client on the stock `C-x C-a` prefix, with global
+  source, conditional, hit-count, log, and function breakpoints; threads,
+  stacks, scopes, variables, watches, evaluation and REPL buffers; stepping,
+  restart, run-to-cursor, memory and disassembly requests; and interactive
+  `runInTerminal` input. The installed debugpy, Delve, LLDB, and GDB presets
+  are exercised against real Python, Go, C, C++, and Rust programs
 - Legit (Magit approximation) plus packaged `jj` smart dispatch on `SPC g g`;
   the Jujutsu side is a read-only status/log view, while programming buffers get
   buffer-local Git markers, Git status includes navigable tracked-file
@@ -215,6 +221,21 @@ of writing `.fasl` files into the source tree.
 - app ports under `lem-yath/src/apps/`: agenda, citar, devdocs, elfeed
   (Miniflux fever), notmuch, pg, salta, timemachine, llm-cli
 
+### DAP quick start
+
+Open a saved source file, put point on an executable line, press `C-x C-a b`
+to toggle a breakpoint, then `C-x C-a d` to choose and start an adapter.
+`debugpy` launches the current Python file and `dlv` launches the nearest
+jj/Git root (or the source directory outside version control). For Rust, C,
+or C++, build a debuggable file named `a.out` at that same resolved root before
+choosing `lldb-dap` or `gdb`.
+
+The main runtime keys retain Dape's defaults: `n` steps over, `s` steps in,
+`o` steps out, `c` continues, `p` pauses, `i` opens the session view, `x`
+evaluates an expression, `R` opens the REPL, `r` restarts, and `q` terminates
+the foreground session. Every key follows the `C-x C-a` prefix. A Lem instance
+already running when this source changes must be restarted to load the update.
+
 See `docs/port-map.md` for the per-package disposition and known divergences.
 Use `docs/parity-ledger.tsv` for behavior-level planning: its dispositions are
 `exact`, `approximation`, `gap`, `n-a`, and `unassessed`. The validator accepts
@@ -225,7 +246,8 @@ Use `docs/parity-ledger.tsv` for behavior-level planning: its dispositions are
 `nix flake check` runs the package, compile, boot, prompt and in-buffer
 completion, completion-lifecycle, automatic-completion, Embark-style actions,
 editing, formatting, Orderless completion, snippets, LSP snippets, real installed
-language-server handshakes, daily-workflows, Direnv environment switching,
+language-server handshakes, tree-sitter highlighting, real DAP adapter
+workflows, daily-workflows, Direnv environment switching,
 electric-editing, grouped-buffer-list, UI parity, project navigation and outline, VCS,
 persistence, bookmarks,
 retained undo/Vundo, project-scoped LSP lifecycle, LLM key dispatch,
@@ -254,6 +276,8 @@ nix run .#snippet-test
 nix run .#lsp-snippet-test
 nix run .#lsp-project-test
 nix run .#real-lsp-test
+nix run .#tree-sitter-test
+nix run .#dap-test
 nix run .#project-navigation-test
 nix run .#project-outline-test
 nix run .#persistence-test
@@ -288,7 +312,7 @@ worktree to the dedicated cache directory on `ex44` and run the full gate there:
 Pass `check`, `compile`, `boot`, `completion`, `prompt-completion`,
 `completion-lifecycle`, `auto-completion`, `actions`, `editing`,
 `daily-workflows`, `direnv`, `llm-keybinding`, `orderless-completion`, `snippets`, `lsp-snippets`,
-`lsp-project`, `real-lsp`, `project-navigation`, `project-outline`, `persistence`, `bookmarks`,
+`lsp-project`, `real-lsp`, `tree-sitter`, `dap`, `project-navigation`, `project-outline`, `persistence`, `bookmarks`,
 `vundo`, `electric-editing`, `ui-parity`, `cursor-state`, `snipe`, `avy`,
 `interactive`, `structural`, `roam`, or
 `notes` to run only that gate.

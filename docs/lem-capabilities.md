@@ -1410,6 +1410,61 @@ highlighting.
 
 ---
 
+## 5A. DAP debugging  (`lem-yath/src/dap.lisp`)
+
+Upstream Lem does not ship a DAP client. Lem-yath implements the bounded Dape
+workflow used by the active Emacs configuration and installs Dape's stock
+`C-x C-a` prefix map. It supports one foreground session over stdio or
+loopback TCP and launches adapters with direct argument vectors rather than a
+shell.
+
+The built-in presets are:
+
+- `debugpy`: launches the saved Python buffer through `python -m
+  debugpy.adapter`, rooted at the nearest jj/Git project or the file directory.
+- `dlv`: launches the nearest jj/Git root through `dlv dap`, falling back to
+  the source directory outside version control.
+- `lldb-dap`: launches project-root `a.out` for Rust, C, or C++.
+- `gdb`: launches project-root `a.out` through `gdb --interpreter=dap`.
+
+Source, conditional, hit-count, log, and function breakpoints are global to
+the editor process and survive closing their source buffer. Pending and
+verified breakpoints, plus the current stopped line, are rendered in the
+gutter. Session inspection covers threads, stack frames, scopes, variables,
+source references, watches and expression evaluation. Continue, pause,
+step-over/in/out, restart, restart-frame, run-to-cursor, memory reads, and
+disassembly requests are available when the adapter supports them.
+
+The exact stock prefix contract is:
+
+| Keys after `C-x C-a` | Commands |
+|---|---|
+| `d p c n s o` | start, pause, continue, next, step in, step out |
+| `r f u` | restart, restart frame, run to cursor |
+| `i R x w` | info, REPL, evaluate, watch |
+| `b B l e h F` | toggle/remove-all/log/conditional/hit/function breakpoints |
+| `t T S < >` | thread, session, stack, newer frame, older frame |
+| `m M` | memory, disassembly |
+| `D K q` | disconnect and keep debuggee, terminate, quit |
+
+Adapter `runInTerminal` requests create an interactive Lem shell buffer, so a
+program can read input as well as display output. Arguments remain literal;
+requests asking for shell interpretation are rejected because reproducing
+shell parsing safely is outside this client. Protocol parsing uses UTF-8 byte
+lengths and bounded headers/messages, request timeouts are cleaned up, and
+late events cannot revive a terminated session.
+
+The deliberate boundaries are one foreground session, no nested
+`startDebugging`, no general adapter-configuration editor, and no on-disk
+breakpoint persistence. The latter matches the effective Emacs setup, which
+enables Dape's global breakpoint mode but not its persistence hooks. The
+installed-runtime gate is `scripts/dap-test.sh`: it covers a fragmented
+Unicode mock adapter and real debugpy, Delve, LLDB, and GDB sessions across
+Python, Go, C, C++, and Rust, including interactive terminal input and clean
+termination.
+
+---
+
 ## 6. Tree-sitter  (`extensions/tree-sitter/`, package `lem-tree-sitter`)
 
 Depends on `tree-sitter-cl` (FFI bindings). **Both `tree-sitter-cl` and

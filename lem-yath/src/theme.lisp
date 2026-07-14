@@ -73,6 +73,12 @@
    :foreground "#ffffff" :background "#4a4f69" :bold t)
   (lem/show-paren:showparen-attribute
    :foreground "#ffffff" :background "#4f7f9f")
+  (dap-breakpoint-attribute :foreground "#ff5f59" :bold t)
+  (dap-breakpoint-pending-attribute :foreground "#fec43f" :bold t)
+  (dap-stopped-gutter-attribute :foreground "#44bc44" :bold t)
+  (dap-stopped-line-attribute :background "#1d3b2a")
+  (dap-info-heading-attribute :foreground "#2fafff" :bold t)
+  (dap-info-error-attribute :foreground "#ff5f59" :bold t)
   (lem-yath-indent-guide-1-attribute :foreground "#6f7390")
   (lem-yath-indent-guide-2-attribute :foreground "#657f86")
   (lem-yath-indent-guide-3-attribute :foreground "#7f7185")

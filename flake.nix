@@ -214,6 +214,10 @@
             ]) treeSitterSpecs
           );
 
+          devPython = pkgs.python3.withPackages (pythonPackages: [
+            pythonPackages.debugpy
+          ]);
+
           coreRuntimeInputs =
             with pkgs;
             [
@@ -235,7 +239,6 @@
               gnused
               nixfmt-rfc-style
               mypy
-              python3
               ripgrep
               ruff
               rustfmt
@@ -243,6 +246,13 @@
               which
             ]
             ++ lib.optionals pkgs.stdenv.isLinux [ xdg-utils ];
+
+          dapRuntimeInputs = with pkgs; [
+            delve
+            gdb
+            lldb_19
+            devPython
+          ];
 
           lspRuntimeInputs = with pkgs; [
             csharp-ls
@@ -264,7 +274,7 @@
           vcsRuntimeInputs = with pkgs; [ jujutsu ];
 
           defaultRuntimeInputs =
-            coreRuntimeInputs ++ lspRuntimeInputs ++ rustRuntimeInputs ++ vcsRuntimeInputs;
+            coreRuntimeInputs ++ dapRuntimeInputs ++ lspRuntimeInputs ++ rustRuntimeInputs ++ vcsRuntimeInputs;
 
           extendedRuntimeInputs =
             with pkgs;
@@ -520,14 +530,18 @@
             buffer-list-test = mkTestAppWithLem lemYath "lem-yath-buffer-list-test" "buffer-list-test.sh";
             direnv-test = mkTestApp "lem-yath-direnv-test" "direnv-test.sh";
             project-navigation-test = mkTestApp "lem-yath-project-navigation-test" "project-navigation-test.sh";
-            project-outline-test = mkTestAppWithLem lemYath "lem-yath-project-outline-test" "project-outline-test.sh";
+            project-outline-test =
+              mkTestAppWithLem lemYath "lem-yath-project-outline-test"
+                "project-outline-test.sh";
             persistence-test = mkTestApp "lem-yath-persistence-test" "persistence-test.sh";
             bookmark-test = mkTestApp "lem-yath-bookmark-test" "bookmark-test.sh";
             electric-editing-test = mkTestApp "lem-yath-electric-editing-test" "electric-editing-test.sh";
             ui-parity-test = mkTestAppWithLem lemYath "lem-yath-ui-parity-test" "ui-parity-test.sh";
             indent-guides-test = mkTestAppWithLem lemYath "lem-yath-indent-guides-test" "indent-guides-test.sh";
             centered-view-test = mkTestAppWithLem lemYath "lem-yath-centered-view-test" "centered-view-test.sh";
-            window-history-test = mkTestAppWithLem lemYath "lem-yath-window-history-test" "window-history-test.sh";
+            window-history-test =
+              mkTestAppWithLem lemYath "lem-yath-window-history-test"
+                "window-history-test.sh";
             help-test = mkTestApp "lem-yath-help-test" "help-test.sh";
             sops-test = mkTestApp "lem-yath-sops-test" "sops-test.sh";
             vcs-test = mkTestAppWithLemAndInputs lemYath vcsRuntimeInputs "lem-yath-vcs-test" "vcs-test.sh";
@@ -541,6 +555,9 @@
             real-lsp-test = mkRealLspTestApp "lem-yath-real-lsp-test" "real-lsp-test.sh";
             lint-test = mkTestAppWithLemAndInputs lemYath rustRuntimeInputs "lem-yath-lint-test" "lint-test.sh";
             tree-sitter-test = mkTestAppWithLem lemYath "lem-yath-tree-sitter-test" "tree-sitter-test.sh";
+            dap-test = mkTestAppWithLemAndInputs lemYath (
+              dapRuntimeInputs ++ rustRuntimeInputs
+            ) "lem-yath-dap-test" "dap-test.sh";
           };
 
           checks = {
@@ -593,6 +610,7 @@
             real-lsp = mkRealLspCheck "real-lsp" "real-lsp-test.sh";
             lint = mkCheckWithLemAndInputs lemYath rustRuntimeInputs "lint" "lint-test.sh";
             tree-sitter = mkCheckWithLem lemYath "tree-sitter" "tree-sitter-test.sh";
+            dap = mkCheckWithLemAndInputs lemYath (dapRuntimeInputs ++ rustRuntimeInputs) "dap" "dap-test.sh";
             parity-ledger =
               pkgs.runCommand "lem-yath-parity-ledger-check" { nativeBuildInputs = [ pkgs.python3 ]; }
                 ''

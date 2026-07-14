@@ -69,6 +69,12 @@ case "$test_name" in
   real-lsp)
     remote_command='nix run path:$PWD#real-lsp-test'
     ;;
+  tree-sitter)
+    remote_command='nix run path:$PWD#tree-sitter-test --option max-jobs 2'
+    ;;
+  dap)
+    remote_command='nix run path:$PWD#dap-test --option max-jobs 2'
+    ;;
   project-navigation)
     remote_command='nix run path:$PWD#project-navigation-test'
     ;;
@@ -127,7 +133,7 @@ case "$test_name" in
     remote_command='nix run path:$PWD#avy-test --option max-jobs 2'
     ;;
   *)
-    echo "Usage: $0 [all|check|compile|boot|completion|completion-lifecycle|auto-completion|actions|llm-keybinding|orderless-completion|snippets|lsp-snippets|lsp-project|real-lsp|project-navigation|project-outline|prompt-completion|daily-workflows|direnv|electric-editing|ui-parity|cursor-state|snipe|avy|interactive|structural|notes|roam|org|agenda|editing]" >&2
+    echo "Usage: $0 [all|check|compile|boot|completion|completion-lifecycle|auto-completion|actions|llm-keybinding|orderless-completion|snippets|lsp-snippets|lsp-project|real-lsp|tree-sitter|dap|project-navigation|project-outline|prompt-completion|daily-workflows|direnv|electric-editing|ui-parity|cursor-state|snipe|avy|interactive|structural|notes|roam|org|agenda|editing]" >&2
     exit 2
     ;;
 esac
