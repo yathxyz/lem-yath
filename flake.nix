@@ -334,7 +334,7 @@
               sqlite
             ]);
 
-          extendedRuntimeInputs = with pkgs; defaultRuntimeInputs ++ mailRuntimeInputs ++ [ postgresql ];
+          extendedRuntimeInputs = defaultRuntimeInputs ++ mailRuntimeInputs;
 
           testInputs =
             with pkgs;
@@ -659,6 +659,7 @@
                 "forge-test.sh";
             citar-test = mkTestAppWithLem lemYath "lem-yath-citar-test" "citar-test.sh";
             devdocs-test = mkTestAppWithLem lemYath "lem-yath-devdocs-test" "devdocs-test.sh";
+            pg-test = mkTestAppWithLemAndInputs lemYath [ pkgs.postgresql ] "lem-yath-pg-test" "pg-test.sh";
             elfeed-test = mkTestAppWithLem lemYath "lem-yath-elfeed-test" "elfeed-test.sh";
             notmuch-test =
               mkTestAppWithLemAndInputs lemYath mailRuntimeInputs "lem-yath-notmuch-test"
@@ -740,6 +741,7 @@
             forge = mkCheckWithLemAndInputs lemYath vcsRuntimeInputs "forge" "forge-test.sh";
             citar = mkCheckWithLem lemYath "citar" "citar-test.sh";
             devdocs = mkCheckWithLem lemYath "devdocs" "devdocs-test.sh";
+            pg = mkCheckWithLemAndInputs lemYath [ pkgs.postgresql ] "pg" "pg-test.sh";
             elfeed = mkCheckWithLem lemYath "elfeed" "elfeed-test.sh";
             notmuch = mkCheckWithLemAndInputs lemYath mailRuntimeInputs "notmuch" "notmuch-test.sh";
             salta = mkCheckWithLem lemYath "salta" "salta-test.sh";

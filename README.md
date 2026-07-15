@@ -345,6 +345,9 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
 - app ports under `lem-yath/src/apps/`: agenda, citar, devdocs, elfeed
   (Miniflux fever), notmuch, pg, salta, timemachine, llm-cli, llm-presets,
   claude-code
+- `M-x pgmacs` prompts for a password-free libpq connection string, lists
+  PostgreSQL tables, and opens bounded psql-backed query results; `g` refreshes
+  and `q` returns to the source buffer, while `.pgpass` supplies credentials
 
 Saved LLM presets live in `$XDG_CONFIG_HOME/lem-yath/llm-presets.json` (or
 `~/.config/lem-yath/llm-presets.json`) with private directory and file modes.
@@ -439,6 +442,7 @@ nix run .#jj-porcelain-test
 nix run .#forge-test
 nix run .#citar-test
 nix run .#devdocs-test
+nix run .#pg-test
 nix run .#elfeed-test
 nix run .#notmuch-test
 nix run .#salta-test
