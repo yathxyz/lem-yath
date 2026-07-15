@@ -265,6 +265,13 @@
     (setf (buffer-directory) directory))
   (auto-test-report "SETUP cape-order directory=~a" (buffer-directory)))
 
+(define-command lem-yath-test-auto-cape-case-setup () ()
+  (auto-test-reset-current-buffer)
+  (auto-test-fill-buffer "*auto-completion-source*"
+                         'lem-yath-auto-test-mode
+                         (format nil "alphaDabbrev~%élanValue~%"))
+  (auto-test-report "SETUP cape-case"))
+
 (defun auto-test-async-provider (point then)
   (multiple-value-bind (start end query)
       (auto-completion-symbol-bounds point)
@@ -1084,6 +1091,14 @@
       (check (= 3 *auto-completion-prefix-length*) "prefix-three")
       (check (= 200 *auto-completion-delay-ms*) "delay-200ms")
       (check (= 10 *auto-completion-max-display-items*) "ten-rows")
+      (check (string= "AlphaDabbrev"
+                      (auto-completion-dabbrev-case-replace
+                       "A" "alphaDabbrev"))
+             "cape-single-uppercase-capitalizes")
+      (check (string= "ÉlanValue"
+                      (auto-completion-dabbrev-case-replace
+                       "Él" "élanValue"))
+             "cape-unicode-initial-case")
       (check (fboundp 'buffer-prepare-change-group)
              "change-group-api")
       (check (auto-test-change-group-cancel-p)
@@ -1219,6 +1234,8 @@
   "C-c z f" 'lem-yath-test-auto-file-setup)
 (define-key lem-vi-mode:*normal-keymap*
   "C-c z q" 'lem-yath-test-auto-cape-order-setup)
+(define-key lem-vi-mode:*normal-keymap*
+  "C-c z k" 'lem-yath-test-auto-cape-case-setup)
 (define-key lem-vi-mode:*normal-keymap*
   "C-c z x" 'lem-yath-test-auto-cancel-setup)
 (define-key lem-vi-mode:*normal-keymap*

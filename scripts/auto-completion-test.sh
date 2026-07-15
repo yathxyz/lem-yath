@@ -80,6 +80,7 @@ run_fixture_command() {
     lem-yath-test-auto-primary-setup) key=p ;;
     lem-yath-test-auto-file-setup) key=f ;;
     lem-yath-test-auto-cape-order-setup) key=q ;;
+    lem-yath-test-auto-cape-case-setup) key=k ;;
     lem-yath-test-auto-cancel-setup) key=x ;;
     *) return 1 ;;
   esac
@@ -880,6 +881,44 @@ if run_fixture_command lem-yath-test-auto-cape-order-setup &&
   fi
 else
   fail cape-prefix-setup "could not prepare the Cape prefix scenario"
+fi
+
+if run_fixture_command lem-yath-test-auto-cape-case-setup &&
+   wait_report '^SETUP cape-case$' 10 && enter_insert; then
+  tmux_cmd send-keys -t "$session" -l Alp
+  if lem_wait_for "$session" 'AlphaDabbrev' 10 >/dev/null; then
+    lem_keys "$session" Enter
+    sleep 0.3
+    lem_keys "$session" F7
+    if wait_report '^STATE none buffer=AlphaDabbrev timer=NIL$' 5; then
+      pass cape-initial-case "Cape Dabbrev preserved an initial-cap input"
+    else
+      fail cape-initial-case "initial-cap acceptance inserted the wrong case"
+    fi
+  else
+    fail cape-initial-case "initial-cap Dabbrev candidate did not appear"
+  fi
+else
+  fail cape-initial-case-setup "could not prepare initial-cap completion"
+fi
+
+if run_fixture_command lem-yath-test-auto-cape-case-setup &&
+   wait_report '^SETUP cape-case$' 10 && enter_insert; then
+  tmux_cmd send-keys -t "$session" -l ALP
+  if lem_wait_for "$session" 'ALPHADABBREV' 10 >/dev/null; then
+    lem_keys "$session" Enter
+    sleep 0.3
+    lem_keys "$session" F7
+    if wait_report '^STATE none buffer=ALPHADABBREV timer=NIL$' 5; then
+      pass cape-upper-case "Cape Dabbrev promoted an all-caps input"
+    else
+      fail cape-upper-case "all-caps acceptance inserted the wrong case"
+    fi
+  else
+    fail cape-upper-case "all-caps Dabbrev candidate did not appear"
+  fi
+else
+  fail cape-upper-case-setup "could not prepare all-caps completion"
 fi
 
 if run_fixture_command lem-yath-test-auto-cancel-setup &&

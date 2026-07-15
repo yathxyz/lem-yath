@@ -602,7 +602,10 @@ in the live Emacs setup. Where there is no mode provider, same-major-mode
 dynamic abbreviations supply the ordinary-buffer candidate pool, while recognized
 path contexts use file-at-point completion. File completion requires either
 `file:` or a slash with an existing parent directory and may open before three
-identifier characters, matching Cape's explicit file trigger.
+identifier characters, matching Cape's explicit file trigger. Dabbrev also
+matches the pinned Cape case policy: an initial-cap prefix capitalizes the
+candidate, an all-caps prefix uppercases it, and a single uppercase character
+does not accidentally uppercase the whole expansion.
 
 `lem-yath/src/orderless.lisp` filters ordinary in-buffer candidates with the
 configured portable Orderless behavior: escaped-space components, whole-query

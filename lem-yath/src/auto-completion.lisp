@@ -192,6 +192,26 @@ directory already exists."
       words)
      :test #'string-equal)))
 
+(defun auto-completion-dabbrev-case-replace (prefix word)
+  "Apply the configured Cape/Dabbrev case replacement to WORD."
+  (if (and (plusp (length prefix))
+           (upper-case-p (char prefix 0))
+           (alexandria:starts-with-subseq
+            prefix word :test #'char-equal))
+      (let ((case-source
+              ;; Cape prevents a single uppercase character from making the
+              ;; whole expansion uppercase by borrowing the candidate's next
+              ;; character before classifying the input's case.
+              (if (and (= 1 (length prefix)) (> (length word) 1))
+                  (concatenate 'string prefix (subseq word 1 2))
+                  prefix)))
+        (if (find-if #'lower-case-p case-source)
+            (concatenate 'string
+                         (string-upcase (subseq word 0 1))
+                         (subseq word 1))
+            (string-upcase word)))
+      word))
+
 (defun auto-completion-dabbrev-items (point)
   (multiple-value-bind (start end prefix)
       (auto-completion-dabbrev-bounds point)
@@ -199,13 +219,15 @@ directory already exists."
       (stable-sort
        (mapcar
         (lambda (word)
-          (lem/completion-mode:make-completion-item
-           :label word
-           :filter-text word
-           :insert-text word
-           :detail "Dabbrev"
-           :start start
-           :end end))
+          (let ((replacement
+                  (auto-completion-dabbrev-case-replace prefix word)))
+            (lem/completion-mode:make-completion-item
+             :label replacement
+             :filter-text replacement
+             :insert-text replacement
+             :detail "Dabbrev"
+             :start start
+             :end end)))
         (auto-completion-dabbrev-words point prefix))
        #'auto-completion-corfu-item-before-p))))
 
