@@ -635,6 +635,9 @@
             help-test = mkTestApp "lem-yath-help-test" "help-test.sh";
             sops-test = mkTestApp "lem-yath-sops-test" "sops-test.sh";
             vcs-test = mkTestAppWithLemAndInputs lemYath vcsRuntimeInputs "lem-yath-vcs-test" "vcs-test.sh";
+            jj-porcelain-test =
+              mkTestAppWithLemAndInputs lemYath vcsRuntimeInputs "lem-yath-jj-porcelain-test"
+                "jj-porcelain-test.sh";
             vundo-test = mkTestApp "lem-yath-vundo-test" "vundo-test.sh";
             actions-test = mkTestApp "lem-yath-actions-test" "actions-test.sh";
             llm-keybinding-test = mkTestApp "lem-yath-llm-keybinding-test" "llm-keybinding-test.sh";
@@ -704,6 +707,9 @@
             help = mkCheck "help" "help-test.sh";
             sops = mkCheck "sops" "sops-test.sh";
             vcs = mkCheckWithLemAndInputs lemYath vcsRuntimeInputs "vcs" "vcs-test.sh";
+            jj-porcelain =
+              mkCheckWithLemAndInputs lemYath vcsRuntimeInputs "jj-porcelain"
+                "jj-porcelain-test.sh";
             vundo = mkCheck "vundo" "vundo-test.sh";
             actions = mkCheck "actions" "actions-test.sh";
             llm-keybinding = mkCheck "llm-keybinding" "llm-keybinding-test.sh";

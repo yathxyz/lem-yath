@@ -1725,9 +1725,20 @@ the visited filename and prefers Jujutsu in a colocated workspace; otherwise it
 opens Legit at the Git root. `SPC g G` forces Git and `SPC g J` forces
 Jujutsu. `.git` files are accepted throughout the patched root detection, so
 Legit, project dispatch, the gutter, and time travel work from linked
-worktrees. The Jujutsu UI is deliberately a repository-specific, read-only
-`jj status` plus bounded `jj log` view, refreshed with `g r` and closed with
-`q`; it is not a Majutsu-style staging or history-mutation porcelain.
+worktrees. The repository-specific Jujutsu porcelain renders `jj status` plus
+30 row-aware history entries. Its Evil-compatible core uses `C-j`/`C-k` or
+`g j`/`g k` for revisions, `c` to describe, `o` to create a child, `e` to edit,
+`u`/`C-r` to undo/redo operations, confirmed `x` to abandon, `d` or Return to
+browse `jj show`, `g r` to refresh, `?` for help, and `q` to unwind first to
+history and then the exact source buffer. Every subprocess uses direct argv;
+the history is bounded and refresh preserves the selected change ID when that
+change still exists. `scripts/jj-porcelain-test.sh` drives the complete loop
+through the installed ncurses editor and real `jj` in a metacharacter-bearing
+repository path. The in-editor description prompt is intentionally single-line
+and refuses an existing multiline description rather than truncating it.
+Majutsu's transient menus, multiline description buffer, bookmarks,
+split/squash/rebase, conflict handling, operation log, workspaces, sparse
+checkout, and partial patch selection remain outside this focused approximation.
 
 Git status also appends navigable TODO/FIXME rows from tracked, nonbinary
 files. Moving onto a row previews the exact source line and visiting it opens

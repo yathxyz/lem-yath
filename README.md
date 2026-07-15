@@ -251,8 +251,10 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   `runInTerminal` input. The installed debugpy, Delve, LLDB, and GDB presets
   are exercised against real Python, Go, C, C++, and Rust programs
 - Legit (Magit approximation) plus packaged `jj` smart dispatch on `SPC g g`;
-  the Jujutsu side is a read-only status/log view, while programming buffers get
-  buffer-local Git markers, Git status includes navigable tracked-file
+  the Jujutsu side is a row-aware porcelain with Majutsu-compatible describe,
+  new, edit, undo/redo, confirmed abandon, diff, refresh, and navigation keys,
+  while programming buffers get buffer-local Git markers and Git status includes
+  navigable tracked-file
   TODO/FIXME rows, and `SPC g t` supplies the audited git-timemachine
   revision-navigation workflow. Legit's Vi-normal file/hunk staging, commit,
   push/pull, branch, and stash workflows are driven end-to-end against isolated
@@ -426,6 +428,7 @@ nix run .#direnv-test
 nix run .#electric-editing-test
 nix run .#ui-parity-test
 nix run .#vcs-test
+nix run .#jj-porcelain-test
 nix run .#notes-test
 nix run .#roam-test
 nix run .#roam-backlink-test

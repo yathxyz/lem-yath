@@ -1,9 +1,11 @@
-;;;; Git/VCS: Magit -> Legit, Majutsu -> a read-only jj status/log view, and
+;;;; Git/VCS: Magit -> Legit, Majutsu -> a focused jj porcelain, and
 ;;;; prog-mode-local git-gutter behavior.
 
 (in-package :lem-yath)
 
 (defvar *lem-yath-jj-root-key* 'lem-yath-jj-root)
+(defvar *lem-yath-jj-view-kind-key* 'lem-yath-jj-view-kind)
+(defvar *lem-yath-jj-revision-key* 'lem-yath-jj-revision)
 (defvar *lem-yath-git-gutter-synced-mode-key*
   'lem-yath-git-gutter-synced-mode)
 
@@ -272,12 +274,82 @@
       (error (condition)
         (editor-error "Could not run jj: ~a" condition)))))
 
-(defun jj-status-text (root)
-  "Return a bounded status and log report for Jujutsu workspace ROOT."
-  (let ((status (run-jj root '("status")))
-        (log (run-jj root '("log" "-n" "30"))))
-    (format nil "Jujutsu: ~a~%~%Status~%~a~%Log (30 revisions)~%~a"
-            (namestring root) status log)))
+(defparameter *jj-log-limit* 30)
+
+(defparameter *jj-log-template*
+  (concatenate
+   'string
+   "change_id.shortest(12) ++ \"\\0\" ++ "
+   "commit_id.shortest(12) ++ \"\\0\" ++ "
+   "if(current_working_copy, \"@\", \" \") ++ \"\\0\" ++ "
+   "description.first_line() ++ \"\\0\""))
+
+(defstruct jj-log-entry
+  change-id
+  commit-id
+  marker
+  description)
+
+(defun jj-split-null-fields (text)
+  "Split TEXT at NUL characters without interpreting its contents."
+  (let ((start 0)
+        (length (length text))
+        (fields '()))
+    (loop :while (< start length)
+          :for end := (or (position #\Null text :start start) length)
+          :do (push (subseq text start end) fields)
+          :do (setf start (if (< end length) (1+ end) length)))
+    (nreverse fields)))
+
+(defun parse-jj-log-entries (output)
+  "Parse the NUL-delimited log OUTPUT produced by `*jj-log-template*'."
+  (let ((fields (jj-split-null-fields output)))
+    (loop :while (>= (length fields) 4)
+          :collect (make-jj-log-entry
+                    :change-id (pop fields)
+                    :commit-id (pop fields)
+                    :marker (pop fields)
+                    :description (pop fields)))))
+
+(defun jj-log-entries (root)
+  (parse-jj-log-entries
+   (run-jj root
+           (list "log" "--no-graph" "-n" (princ-to-string *jj-log-limit*)
+                 "--template" *jj-log-template*))))
+
+(defun jj-row-revision (&optional (point (current-point)))
+  "Return the Jujutsu change ID attached to POINT's rendered row."
+  (with-point ((line point))
+    (line-start line)
+    (text-property-at line *lem-yath-jj-revision-key*)))
+
+(defun jj-insert-history (buffer entries)
+  (let ((point (buffer-end-point buffer)))
+    (insert-string point
+                   (format nil "History (~d revisions)~%" *jj-log-limit*))
+    (dolist (entry entries)
+      (with-point ((start point))
+        (insert-string
+         point
+         (format nil "~a ~12a ~12a  ~a~%"
+                 (jj-log-entry-marker entry)
+                 (jj-log-entry-change-id entry)
+                 (jj-log-entry-commit-id entry)
+                 (if (str:blankp (jj-log-entry-description entry))
+                     "(no description)"
+                     (jj-log-entry-description entry))))
+        (put-text-property start point *lem-yath-jj-revision-key*
+                           (jj-log-entry-change-id entry))))))
+
+(defun jj-restore-revision-point (buffer revision)
+  (when revision
+    (with-point ((point (buffer-start-point buffer)))
+      (loop
+        (when (string= revision (or (jj-row-revision point) ""))
+          (move-point (buffer-point buffer) point)
+          (return t))
+        (unless (line-offset point 1)
+          (return nil))))))
 
 (defun jj-buffer-name (root)
   "Return a repository-specific buffer name for Jujutsu workspace ROOT."
@@ -287,11 +359,35 @@
 (define-minor-mode lem-yath-jj-view-mode
     (:name "Jujutsu"
      :keymap *lem-yath-jj-view-keymap*)
-  "Navigation keys for the read-only Jujutsu status/log buffer.")
+  "Majutsu-like navigation and mutation keys for Jujutsu buffers.")
 
 (defun render-jj-buffer (buffer root)
-  "Refresh BUFFER with Jujutsu data from ROOT."
-  (let ((text (jj-status-text root)))
+  "Refresh BUFFER with row-aware Jujutsu data from ROOT."
+  (let ((revision
+          (save-excursion
+            (setf (current-buffer) buffer)
+            (jj-row-revision)))
+        (status (run-jj root '("status")))
+        (entries (jj-log-entries root)))
+    (with-buffer-read-only buffer nil
+      (erase-buffer buffer)
+      (insert-string
+       (buffer-start-point buffer)
+       (format nil "Jujutsu: ~a~%~%Status~%~a~%"
+               (namestring root) status))
+      (jj-insert-history buffer entries))
+    (buffer-unmark buffer)
+    (setf (buffer-directory buffer) root
+          (buffer-value buffer *lem-yath-jj-root-key*) root
+          (buffer-value buffer *lem-yath-jj-view-kind-key*) :log
+          (buffer-read-only-p buffer) t)
+    (unless (jj-restore-revision-point buffer revision)
+      (buffer-start (buffer-point buffer)))
+    buffer))
+
+(defun render-jj-show-buffer (buffer root revision)
+  "Render a read-only `jj show' view for REVISION."
+  (let ((text (run-jj root (list "show" revision))))
     (with-buffer-read-only buffer nil
       (erase-buffer buffer)
       (insert-string (buffer-start-point buffer) text)
@@ -299,6 +395,8 @@
     (buffer-unmark buffer)
     (setf (buffer-directory buffer) root
           (buffer-value buffer *lem-yath-jj-root-key*) root
+          (buffer-value buffer *lem-yath-jj-view-kind-key*) :show
+          (buffer-value buffer *lem-yath-jj-revision-key*) revision
           (buffer-read-only-p buffer) t)
     buffer))
 
@@ -318,17 +416,143 @@
       (switch-to-buffer buffer))))
 
 (define-command lem-yath-jj-log () ()
-  "Show Jujutsu status and a bounded log in a read-only buffer."
+  "Show the Jujutsu status and row-aware bounded history porcelain."
   (lem-yath-jj-log-at (vcs-directory)))
 
 (define-command lem-yath-jj-refresh () ()
-  "Refresh the current Jujutsu status/log buffer."
+  "Refresh the current Jujutsu log or change view."
   (alexandria:if-let ((root (buffer-value (current-buffer)
                                           *lem-yath-jj-root-key*)))
     (progn
-      (render-jj-buffer (current-buffer) root)
-      (message "Jujutsu status refreshed"))
-    (message "This is not a Jujutsu status buffer")))
+      (if (eq :show (buffer-value (current-buffer)
+                                  *lem-yath-jj-view-kind-key*))
+          (render-jj-show-buffer
+           (current-buffer) root
+           (buffer-value (current-buffer) *lem-yath-jj-revision-key*))
+          (render-jj-buffer (current-buffer) root))
+      (message "Jujutsu view refreshed"))
+    (message "This is not a Jujutsu view")))
+
+(defun jj-current-root ()
+  (or (buffer-value (current-buffer) *lem-yath-jj-root-key*)
+      (editor-error "This is not a Jujutsu view")))
+
+(defun jj-selected-revision ()
+  "Return the revision at point, defaulting to the working copy."
+  (or (jj-row-revision) "@"))
+
+(defun jj-refresh-after-mutation (root arguments success-message)
+  "Run a mutating jj command and refresh the current porcelain."
+  (run-jj root arguments)
+  (render-jj-buffer (current-buffer) root)
+  (message success-message))
+
+(defun jj-description (root revision)
+  (string-right-trim
+   '(#\Newline #\Return)
+   (run-jj root
+           (list "log" "--no-graph" "-r" revision
+                 "--template" "description"))))
+
+(define-command lem-yath-jj-describe () ()
+  "Set the selected change's description, like Majutsu `c'."
+  (let* ((root (jj-current-root))
+         (revision (jj-selected-revision))
+         (existing (jj-description root revision))
+         (description
+           (progn
+             (when (or (find #\Newline existing) (find #\Return existing))
+               (editor-error
+                "This change has a multiline description; use jj describe to preserve it"))
+             (prompt-for-string
+              "Description: "
+              :initial-value existing
+              :history-symbol 'lem-yath-jj-description))))
+    (jj-refresh-after-mutation
+     root (list "describe" revision "--message" description)
+     "Jujutsu description updated")))
+
+(define-command lem-yath-jj-new () ()
+  "Create a new change after the selected revision, like Majutsu `o'."
+  (let* ((root (jj-current-root))
+         (revision (jj-selected-revision))
+         (description
+           (prompt-for-string
+            "New change description (optional): "
+            :history-symbol 'lem-yath-jj-description))
+         (arguments (list "new" revision)))
+    (unless (str:blankp description)
+      (setf arguments (append arguments (list "--message" description))))
+    (jj-refresh-after-mutation root arguments "Jujutsu change created")))
+
+(define-command lem-yath-jj-edit () ()
+  "Edit the selected change in the working copy, like Majutsu `e'."
+  (let ((root (jj-current-root))
+        (revision (jj-selected-revision)))
+    (jj-refresh-after-mutation
+     root (list "edit" revision) "Jujutsu working copy changed")))
+
+(define-command lem-yath-jj-undo () ()
+  "Undo the last Jujutsu operation, like Majutsu `u'."
+  (let ((root (jj-current-root)))
+    (jj-refresh-after-mutation root '("undo") "Jujutsu operation undone")))
+
+(define-command lem-yath-jj-redo () ()
+  "Redo the last undone Jujutsu operation, like Majutsu `C-r'."
+  (let ((root (jj-current-root)))
+    (jj-refresh-after-mutation root '("redo") "Jujutsu operation redone")))
+
+(define-command lem-yath-jj-abandon () ()
+  "Confirm and abandon the selected change, like Majutsu `x'."
+  (let ((root (jj-current-root))
+        (revision (jj-selected-revision)))
+    (if (prompt-for-y-or-n-p
+         (format nil "Abandon Jujutsu revision ~a?" revision))
+        (jj-refresh-after-mutation
+         root (list "abandon" revision) "Jujutsu change abandoned")
+        (message "Jujutsu abandon cancelled"))))
+
+(defun jj-show-buffer-name (root revision)
+  (format nil "*lem-yath-jj-show: ~a:~a*"
+          (namestring (or (ignore-errors (truename root)) root)) revision))
+
+(define-command lem-yath-jj-show () ()
+  "Show the selected revision's patch in a read-only buffer."
+  (let* ((root (jj-current-root))
+         (revision (jj-selected-revision))
+         (buffer
+           (make-buffer (jj-show-buffer-name root revision) :directory root)))
+    (change-buffer-mode buffer 'lem/buffer/fundamental-mode:fundamental-mode)
+    (save-excursion
+      (setf (current-buffer) buffer)
+      (enable-minor-mode 'lem-yath-jj-view-mode))
+    (render-jj-show-buffer buffer root revision)
+    (switch-to-buffer buffer)))
+
+(defun jj-move-to-revision-row (direction)
+  (unless (eq :log (buffer-value (current-buffer)
+                                 *lem-yath-jj-view-kind-key*))
+    (editor-error "Revision navigation requires a Jujutsu log view"))
+  (with-point ((point (current-point)))
+    (loop
+      (unless (line-offset point direction)
+        (editor-error "No more Jujutsu revisions"))
+      (when (jj-row-revision point)
+        (move-point (current-point) point)
+        (return)))))
+
+(define-command lem-yath-jj-next-revision () ()
+  "Move to the next rendered Jujutsu revision."
+  (jj-move-to-revision-row 1))
+
+(define-command lem-yath-jj-previous-revision () ()
+  "Move to the previous rendered Jujutsu revision."
+  (jj-move-to-revision-row -1))
+
+(define-command lem-yath-jj-help () ()
+  "Show the focused Majutsu-compatible Jujutsu command surface."
+  (message
+   "Jujutsu: c describe (one line), o new, e edit, u undo, C-r redo, x abandon, d/RET show, C-j/C-k rows, g r refresh, q quit"))
 
 (define-command lem-yath-jj-quit () ()
   "Quit the current Jujutsu status/log window."
@@ -354,8 +578,23 @@
   (make-keymap :description '*lem-yath-jj-g-keymap*
                :base (jj-normal-g-keymap)))
 (define-key *lem-yath-jj-g-keymap* "r" 'lem-yath-jj-refresh)
+(define-key *lem-yath-jj-g-keymap* "j" 'lem-yath-jj-next-revision)
+(define-key *lem-yath-jj-g-keymap* "k" 'lem-yath-jj-previous-revision)
 (define-key *lem-yath-jj-view-keymap* "g" *lem-yath-jj-g-keymap*)
 (define-key *lem-yath-jj-view-keymap* "q" 'lem-yath-jj-quit)
+(define-key *lem-yath-jj-view-keymap* "c" 'lem-yath-jj-describe)
+(define-key *lem-yath-jj-view-keymap* "o" 'lem-yath-jj-new)
+(define-key *lem-yath-jj-view-keymap* "e" 'lem-yath-jj-edit)
+(define-key *lem-yath-jj-view-keymap* "u" 'lem-yath-jj-undo)
+(define-key *lem-yath-jj-view-keymap* "C-r" 'lem-yath-jj-redo)
+(define-key *lem-yath-jj-view-keymap* "x" 'lem-yath-jj-abandon)
+(define-key *lem-yath-jj-view-keymap* "d" 'lem-yath-jj-show)
+(define-key *lem-yath-jj-view-keymap* "Return" 'lem-yath-jj-show)
+(define-key *lem-yath-jj-view-keymap* "C-j" 'lem-yath-jj-next-revision)
+(define-key *lem-yath-jj-view-keymap* "C-k" 'lem-yath-jj-previous-revision)
+(define-key *lem-yath-jj-view-keymap* "]" 'lem-yath-jj-next-revision)
+(define-key *lem-yath-jj-view-keymap* "[" 'lem-yath-jj-previous-revision)
+(define-key *lem-yath-jj-view-keymap* "?" 'lem-yath-jj-help)
 
 (defun lem-yath-legit-status-at (directory)
   "Open Legit at the Git root enclosing DIRECTORY."
