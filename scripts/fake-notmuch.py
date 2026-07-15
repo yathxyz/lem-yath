@@ -50,6 +50,13 @@ def show_tree(thread_id: str) -> list:
                 "content": [
                     {"content-type": "text/plain", "content": "Primary plain body."},
                     {"content-type": "text/html", "content": "<p>ignored html</p>"},
+                    {
+                        "id": 7,
+                        "content-type": "application/pdf",
+                        "content-disposition": "attachment",
+                        "filename": "quarterly report;safe.pdf",
+                        "content-length": 1024,
+                    },
                 ],
             }
         ],
@@ -105,6 +112,35 @@ def main() -> int:
         )
         return 0
     if args[0] == "show":
+        if any(argument.startswith("--part=") for argument in args):
+            success = [
+                "show",
+                "--format=raw",
+                "--part=7",
+                'id:"payment+safe;touch PWNED@example.invalid"',
+            ]
+            if args == success:
+                sys.stdout.buffer.write(
+                    Path(os.environ["LEM_YATH_NOTMUCH_PDF"]).read_bytes()
+                )
+                return 0
+            if args == [
+                "show", "--format=raw", "--part=8", 'id:"bad@example.invalid"'
+            ]:
+                sys.stdout.buffer.write(b"not a pdf")
+                return 0
+            if args == [
+                "show", "--format=raw", "--part=9", 'id:"slow@example.invalid"'
+            ]:
+                import time
+
+                time.sleep(5)
+                sys.stdout.buffer.write(
+                    Path(os.environ["LEM_YATH_NOTMUCH_PDF"]).read_bytes()
+                )
+                return 0
+            print("unexpected raw-part invocation", file=sys.stderr)
+            return 2
         print(json.dumps(show_tree(args[-1])))
         return 0
     if args == ["new"]:

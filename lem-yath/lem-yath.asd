@@ -76,7 +76,8 @@
                (:file "window-history")
                (:file "ui")
                (:module "apps"
-                :components ((:file "agenda")
+                :components ((:file "documents")
+                             (:file "agenda")
                              (:file "agenda-archive")
                              (:file "agenda-refile")
                              (:file "agenda-clock")

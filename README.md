@@ -355,8 +355,15 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   Claude allowlist excludes direct mutation, arbitrary editor commands, Lisp
   evaluation, and unrestricted `file://` resources
 - app ports under `lem-yath/src/apps/`: agenda, citar, devdocs, elfeed
-  (Miniflux fever), notmuch, pg, salta, timemachine, llm-cli, llm-presets,
-  claude-code
+  (Miniflux fever), notmuch, PDF/EPUB documents, pg, salta, timemachine,
+  llm-cli, llm-presets, claude-code
+- ordinary `.pdf` and `.epub` opens stay inside Lem: PDFs expose bounded
+  Poppler text one page at a time, while EPUBs become bounded Markdown with
+  chapter navigation. Both are read-only, never visit or overwrite the binary
+  source, and retain `o` for the desktop viewer; Notmuch PDF attachment rows
+  use the same ephemeral reader and remove their private extraction on `q`.
+  The terminal path deliberately omits pixel layout, images, CSS, annotations,
+  forms, and other visual-only document semantics
 - `M-x pgmacs` prompts for a password-free libpq connection string, lists
   PostgreSQL tables, and opens bounded psql-backed query results; `g` refreshes
   and `q` returns to the source buffer, while `.pgpass` supplies credentials
@@ -473,6 +480,7 @@ nix run .#ui-parity-test
 nix run .#vcs-test
 nix run .#jj-porcelain-test
 nix run .#forge-test
+nix run .#documents-test
 nix run .#citar-test
 nix run .#devdocs-test
 nix run .#pg-test
@@ -508,7 +516,7 @@ Pass `check`, `compile`, `compilation`, `terminal`, `server`, `boot`, `completio
 `daily-workflows`, `direnv`, `llm-keybinding`, `llm-backend`, `llm-workflow`, `llm-tools`, `claude-code`, `lisp-eval`, `orderless-completion`, `snippets`, `lsp-snippets`,
 `lsp-project`, `real-lsp`, `tree-sitter`, `dap`, `project-navigation`, `project-outline`, `persistence`, `bookmarks`,
 `vundo`, `electric-editing`, `ui-parity`, `cursor-state`, `snipe`, `avy`,
-`interactive`, `structural`, `roam`, `roam-backlinks`, or
+`documents`, `notmuch`, `interactive`, `structural`, `roam`, `roam-backlinks`, or
 `notes` to run only that gate.
 `LEM_YATH_TEST_HOST` and `LEM_YATH_REMOTE_ROOT` override the SSH host and remote
 cache directory.

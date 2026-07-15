@@ -162,8 +162,14 @@ case "$test_name" in
   avy)
     remote_command='nix run path:$PWD#avy-test --option max-jobs 2'
     ;;
+  documents)
+    remote_command='nix run path:$PWD#documents-test --option max-jobs 2'
+    ;;
+  notmuch)
+    remote_command='nix run path:$PWD#notmuch-test --option max-jobs 2'
+    ;;
   *)
-    echo "Usage: $0 [all|check|compile|compilation|terminal|server|boot|completion|completion-lifecycle|auto-completion|actions|llm-keybinding|llm-backend|llm-workflow|llm-tools|llm-mcp|claude-code|lisp-eval|orderless-completion|snippets|lsp-snippets|lsp-project|real-lsp|tree-sitter|dap|project-navigation|project-outline|prompt-completion|daily-workflows|direnv|electric-editing|ui-parity|cursor-state|snipe|avy|interactive|structural|notes|roam|roam-backlinks|org|agenda|editing]" >&2
+    echo "Usage: $0 [all|check|compile|compilation|terminal|server|boot|completion|completion-lifecycle|auto-completion|actions|llm-keybinding|llm-backend|llm-workflow|llm-tools|llm-mcp|claude-code|lisp-eval|orderless-completion|snippets|lsp-snippets|lsp-project|real-lsp|tree-sitter|dap|project-navigation|project-outline|prompt-completion|daily-workflows|direnv|electric-editing|ui-parity|cursor-state|snipe|avy|documents|notmuch|interactive|structural|notes|roam|roam-backlinks|org|agenda|editing]" >&2
     exit 2
     ;;
 esac

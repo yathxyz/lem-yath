@@ -2472,6 +2472,34 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
 - **Encodings**: `extensions/encodings/` (`lem-encodings`): utf-8/16, cp932, euc-jp,
   gb2312, iso-8859-1, 8bit. `prompt-for-encodings`, `*default-external-format*`
   (`:detect-encoding` default).
+- **PDF and EPUB readers**: `lem-yath/src/apps/documents.lisp` intercepts
+  ordinary `.pdf` and `.epub` file opens before Lem attempts to decode their
+  binary sources. PDF mode runs bounded `pdfinfo` and page-scoped `pdftotext`
+  argv and provides `n`/`p`, `PageDown`/`PageUp`, `g`, `G`, `r`, `o`, and `q`.
+  EPUB mode runs bounded sandboxed Pandoc conversion to Markdown, indexes the
+  resulting headings, and provides chapter `n`/`p`, `PageDown`/`PageUp`, `g`,
+  `r`, `o`, and `q`. Reader buffers are read-only and intentionally have no
+  `buffer-filename`, preventing Lem's force-save path from replacing the
+  binary source with converted text; the canonical source path is retained
+  separately for refresh, reuse, direct-argv external viewing, and the normal
+  recent-file history. Inputs must
+  be finite regular files no larger than 512 MiB, subprocesses and outputs are
+  bounded, converter controls are stripped, and metacharacter paths never pass
+  through a shell.
+
+  Notmuch show buffers mark PDF MIME leaf rows. Return extracts the selected
+  decoded part with bounded direct `notmuch show --format=raw --part=N` argv
+  into a newly created owner-private directory and mode-0600 file, validates
+  `%PDF-` before opening the shared ephemeral reader, restores the exact show
+  pane on `q`, and removes the file and directory on every success or refusal
+  path. `scripts/documents-test.sh` proves dispatch, real Poppler/Pandoc argv,
+  navigation, reuse, external fallback, non-file/size/output/timeout refusal,
+  source preservation, and shell inertness through real ncurses;
+  `scripts/notmuch-test.sh` additionally proves MIME discovery, private modes,
+  binary extraction, cleanup, refusal, and list/show restoration. This is a
+  deliberate terminal approximation: PDF pixel layout, images, links,
+  annotations, and forms, plus EPUB HTML/CSS layout and images, remain in the
+  external viewer selected with `o`.
 - **which-key / transient menus**: `extensions/transient/` (`lem/transient`,
   `define-transient`) provides magit-style popup menus with columns and descriptions
   (`transient/transient.lisp`). Lem-yath's global `which-key-mode`

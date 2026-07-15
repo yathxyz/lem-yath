@@ -333,6 +333,7 @@
               docker-client
               uv
               pandoc
+              poppler-utils
               postgresql
               sqlite
             ]);
@@ -736,6 +737,10 @@
             forge-test =
               mkTestAppWithLemAndInputs lemYath vcsRuntimeInputs "lem-yath-forge-test"
                 "forge-test.sh";
+            documents-test = mkTestAppWithLemAndInputs lemYath [
+              pkgs.pandoc
+              pkgs.poppler-utils
+            ] "lem-yath-documents-test" "documents-test.sh";
             citar-test = mkTestAppWithLem lemYath "lem-yath-citar-test" "citar-test.sh";
             devdocs-test = mkTestAppWithLem lemYath "lem-yath-devdocs-test" "devdocs-test.sh";
             pg-test = mkTestAppWithLemAndInputs lemYath [ pkgs.postgresql ] "lem-yath-pg-test" "pg-test.sh";
@@ -821,6 +826,10 @@
               mkCheckWithLemAndInputs lemYath vcsRuntimeInputs "jj-porcelain"
                 "jj-porcelain-test.sh";
             forge = mkCheckWithLemAndInputs lemYath vcsRuntimeInputs "forge" "forge-test.sh";
+            documents = mkCheckWithLemAndInputs lemYath [
+              pkgs.pandoc
+              pkgs.poppler-utils
+            ] "documents" "documents-test.sh";
             citar = mkCheckWithLem lemYath "citar" "citar-test.sh";
             devdocs = mkCheckWithLem lemYath "devdocs" "devdocs-test.sh";
             pg = mkCheckWithLemAndInputs lemYath [ pkgs.postgresql ] "pg" "pg-test.sh";

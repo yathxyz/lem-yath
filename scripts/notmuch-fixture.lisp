@@ -9,8 +9,16 @@
 (defvar *notmuch-test-source-text* (buffer-text (current-buffer)))
 (defvar *notmuch-test-query*
   "tag:inbox and subject:\"safe;touch PWNED\"")
+(defvar *notmuch-test-pdf-buffer* nil)
+(defvar *notmuch-test-pdf-path* nil)
+(defvar *notmuch-test-pdf-directory* nil)
 
 (defun notmuch-test-yes-no (value) (if value "yes" "no"))
+
+(defun notmuch-test-source-exact-p ()
+  (and (not (deleted-buffer-p *notmuch-test-source-buffer*))
+       (string= *notmuch-test-source-text*
+                (buffer-text *notmuch-test-source-buffer*))))
 
 (defun notmuch-test-key-command (map keys)
   (alexandria:when-let
@@ -27,6 +35,8 @@
        'quit-active-window)
    (eq (notmuch-test-key-command *notmuch-show-mode-keymap* "g")
        'lem-yath-notmuch-show-refresh)
+   (eq (notmuch-test-key-command *notmuch-show-mode-keymap* "Return")
+       'lem-yath-notmuch-open-part)
    (eq (notmuch-test-key-command *notmuch-show-mode-keymap* "C-c s e")
        'lem-yath-salta-open-payment-email-from-notmuch)
    (eq (notmuch-test-key-command *notmuch-show-mode-keymap* "q")
@@ -67,6 +77,103 @@
            (string= *notmuch-test-source-text*
                     (buffer-text *notmuch-test-source-buffer*)))))))
 
+(define-command lem-yath-notmuch-test-pdf-report () ()
+  (let* ((buffer (current-buffer))
+         (path (buffer-value buffer 'notmuch-temp-attachment))
+         (directory (buffer-value buffer 'notmuch-temp-directory))
+         (file-stat (and path (ignore-errors
+                                (sb-posix:lstat
+                                 (uiop:native-namestring path)))))
+         (directory-stat (and directory (ignore-errors
+                                          (sb-posix:lstat
+                                           (uiop:native-namestring directory))))))
+    (setf *notmuch-test-pdf-buffer* buffer
+          *notmuch-test-pdf-path* path
+          *notmuch-test-pdf-directory* directory)
+    (notmuch-test-log
+     "PDF mode=~a page=~a temporary=~a file-private=~a dir-private=~a source=~a"
+     (notmuch-test-yes-no (eq (buffer-major-mode buffer) 'document-pdf-mode))
+     (or (buffer-value buffer 'document-page) "none")
+     (notmuch-test-yes-no
+      (and (buffer-temporary-p buffer)
+           (buffer-value buffer 'document-ephemeral-p)))
+     (notmuch-test-yes-no
+      (and file-stat
+           (= (logand (sb-posix:stat-mode file-stat) sb-posix:s-ifmt)
+              sb-posix:s-ifreg)
+           (zerop (logand (sb-posix:stat-mode file-stat) #o077))))
+     (notmuch-test-yes-no
+      (and directory-stat
+           (= (logand (sb-posix:stat-mode directory-stat) sb-posix:s-ifmt)
+              sb-posix:s-ifdir)
+           (zerop (logand (sb-posix:stat-mode directory-stat) #o077))))
+     (notmuch-test-yes-no (notmuch-test-source-exact-p)))))
+
+(define-command lem-yath-notmuch-test-cleanup-report () ()
+  (notmuch-test-log
+   "CLEAN buffer=~a file=~a directory=~a source=~a"
+   (notmuch-test-yes-no
+    (and *notmuch-test-pdf-buffer*
+         (deleted-buffer-p *notmuch-test-pdf-buffer*)))
+   (notmuch-test-yes-no
+    (and *notmuch-test-pdf-path*
+         (not (uiop:file-exists-p *notmuch-test-pdf-path*))))
+   (notmuch-test-yes-no
+    (and *notmuch-test-pdf-directory*
+         (not (uiop:directory-exists-p *notmuch-test-pdf-directory*))))
+   (notmuch-test-yes-no (notmuch-test-source-exact-p))))
+
+(defun notmuch-test-extraction-refusal
+    (attachment &key output-limit timeout)
+  (let* ((directory (notmuch-private-temp-directory))
+         (pathname (merge-pathnames "attachment.pdf" directory))
+         (refused-p nil))
+    (unwind-protect
+         (handler-case
+             (let ((*notmuch-attachment-output-limit*
+                     (or output-limit *notmuch-attachment-output-limit*))
+                   (*notmuch-process-timeout*
+                     (or timeout *notmuch-process-timeout*)))
+               (notmuch-extract-raw-part attachment pathname))
+           (error () (setf refused-p t)))
+      (notmuch-remove-temp-attachment pathname directory))
+    (values refused-p
+            (and (not (uiop:file-exists-p pathname))
+                 (not (uiop:directory-exists-p directory))))))
+
+(define-command lem-yath-notmuch-test-refusals () ()
+  (multiple-value-bind (output output-clean)
+      (notmuch-test-extraction-refusal
+       (make-notmuch-attachment
+        :message-id "payment+safe;touch PWNED@example.invalid"
+        :part-id 7 :filename "large.pdf")
+       :output-limit 32)
+    (multiple-value-bind (nonpdf nonpdf-clean)
+        (notmuch-test-extraction-refusal
+         (make-notmuch-attachment
+          :message-id "bad@example.invalid"
+          :part-id 8 :filename "bad.pdf"))
+      (multiple-value-bind (timeout timeout-clean)
+          (notmuch-test-extraction-refusal
+           (make-notmuch-attachment
+            :message-id "slow@example.invalid"
+            :part-id 9 :filename "slow.pdf")
+           :timeout 1)
+        (multiple-value-bind (invalid invalid-clean)
+            (notmuch-test-extraction-refusal
+             (make-notmuch-attachment
+              :message-id (format nil "invalid~%id@example.invalid")
+              :part-id 7 :filename "invalid.pdf"))
+          (notmuch-test-log
+           "REFUSAL output=~a nonpdf=~a timeout=~a invalid=~a clean=~a source=~a"
+           (notmuch-test-yes-no output)
+           (notmuch-test-yes-no nonpdf)
+           (notmuch-test-yes-no timeout)
+           (notmuch-test-yes-no invalid)
+           (notmuch-test-yes-no
+            (and output-clean nonpdf-clean timeout-clean invalid-clean))
+           (notmuch-test-yes-no (notmuch-test-source-exact-p))))))))
+
 (define-command lem-yath-notmuch-test-open () ()
   (notmuch-search *notmuch-test-query*))
 
@@ -74,9 +181,12 @@
   (notmuch-search "tag:empty"))
 
 (define-key *global-keymap* "F1" 'lem-yath-notmuch-test-report)
+(define-key *global-keymap* "F2" 'lem-yath-notmuch-test-pdf-report)
 (define-key *global-keymap* "F3" 'lem-yath-notmuch-test-open)
 (define-key *global-keymap* "F4" 'lem-yath-notmuch-test-empty)
 (define-key *global-keymap* "F5" 'lem-yath-fetchmail)
+(define-key *global-keymap* "F8" 'lem-yath-notmuch-test-cleanup-report)
+(define-key *global-keymap* "F9" 'lem-yath-notmuch-test-refusals)
 
 (notmuch-test-log "EXEC notmuch=~a xdg-open=~a"
                   (executable-find "notmuch")

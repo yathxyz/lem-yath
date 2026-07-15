@@ -27,6 +27,7 @@ export LEM_YATH_NOTMUCH_LOG="$root/notmuch-argv.jsonl"
 export LEM_YATH_NOTMUCH_STATE="$root/state.json"
 export LEM_YATH_MBSYNC_LOG="$root/mbsync-argv"
 export LEM_YATH_NOTMUCH_OPEN_LOG="$root/xdg-open.jsonl"
+export LEM_YATH_NOTMUCH_PDF="$root/notmuch attachment;safe.pdf"
 fakebin="$root/fake bin;safe"
 export LEM_YATH_NOTMUCH_FAKE_BIN="$fakebin"
 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$fakebin"
@@ -47,6 +48,38 @@ export PATH="$fakebin:$PATH"
 
 source_file="$root/source file;safe.txt"
 printf 'Notmuch source remains exact\n' >"$source_file"
+python3 - "$LEM_YATH_NOTMUCH_PDF" <<'PY'
+import sys
+
+path = sys.argv[1]
+stream = b"BT /F1 18 Tf 72 720 Td (Notmuch Attachment Page) Tj ET\n"
+objects = [
+    b"<< /Type /Catalog /Pages 2 0 R >>",
+    b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+    b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"endstream",
+]
+pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+offsets = [0]
+for number, body in enumerate(objects, 1):
+    offsets.append(len(pdf))
+    pdf.extend(f"{number} 0 obj\n".encode())
+    pdf.extend(body)
+    pdf.extend(b"\nendobj\n")
+xref = len(pdf)
+pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode())
+pdf.extend(b"0000000000 65535 f \n")
+for offset in offsets[1:]:
+    pdf.extend(f"{offset:010d} 00000 n \n".encode())
+pdf.extend(
+    f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+    f"startxref\n{xref}\n%%EOF\n".encode()
+)
+with open(path, "wb") as output:
+    output.write(pdf)
+PY
 
 failed=0
 pass() { printf 'PASS  %-24s %s\n' "$1" "$2"; }
@@ -115,6 +148,44 @@ else
   fail read 'thread navigation, nested message parsing, or show focus failed'
 fi
 
+lem_keys "$session" /
+sleep 0.3
+tmux_cmd send-keys -t "$session" -l -- 'quarterly report;safe.pdf'
+lem_keys "$session" Enter Enter
+if lem_wait_for "$session" 'Notmuch Attachment Page' 20 >/dev/null; then
+  before_pdf=$(report_count PDF)
+  lem_keys "$session" F2
+else
+  before_pdf=-1
+fi
+if [ "$before_pdf" -ge 0 ] && wait_report PDF "$before_pdf" &&
+   [[ $(latest PDF) == 'PDF mode=yes page=1 temporary=yes file-private=yes dir-private=yes source=yes' ]]; then
+  pass pdf-attachment 'Return extracted and previewed the selected PDF in a private ephemeral reader'
+else
+  fail pdf-attachment 'attachment discovery, raw extraction, PDF preview, or private modes diverged'
+fi
+
+before_clean=$(report_count CLEAN)
+lem_keys "$session" q
+if lem_wait_for "$session" 'Primary plain body' 20 >/dev/null; then
+  lem_keys "$session" F8
+fi
+if wait_report CLEAN "$before_clean" &&
+   [[ $(latest CLEAN) == 'CLEAN buffer=yes file=yes directory=yes source=yes' ]]; then
+  pass pdf-cleanup 'q killed the ephemeral reader and removed its owned file and directory'
+else
+  fail pdf-cleanup 'the ephemeral attachment buffer or private files survived q'
+fi
+
+before_refusal=$(report_count REFUSAL)
+lem_keys "$session" F9
+if wait_report REFUSAL "$before_refusal" &&
+   [[ $(latest REFUSAL) == 'REFUSAL output=yes nonpdf=yes timeout=yes invalid=yes clean=yes source=yes' ]]; then
+  pass pdf-refusal 'oversize, non-PDF, timeout, and invalid-ID extraction failed cleanly'
+else
+  fail pdf-refusal 'an attachment extraction refusal leaked or disturbed the mail view'
+fi
+
 lem_keys "$session" C-c s e
 if wait_log_count "$LEM_YATH_NOTMUCH_OPEN_LOG" 1; then
   lem_keys "$session" G
@@ -178,6 +249,14 @@ if wait_log_count "$LEM_YATH_MBSYNC_LOG" 1 &&
 import json, sys
 calls = [json.loads(line) for line in open(sys.argv[1])]
 assert ["new"] in calls
+assert [
+    "show",
+    "--format=raw",
+    "--part=7",
+    'id:"payment+safe;touch PWNED@example.invalid"',
+] in calls
+assert ["show", "--format=raw", "--part=8", 'id:"bad@example.invalid"'] in calls
+assert ["show", "--format=raw", "--part=9", 'id:"slow@example.invalid"'] in calls
 queries = [call[-1] for call in calls if call and call[0] == "search"]
 assert 'tag:inbox and subject:"safe;touch PWNED"' in queries
 assert all(isinstance(call, list) and all(isinstance(arg, str) for arg in call) for call in calls)
