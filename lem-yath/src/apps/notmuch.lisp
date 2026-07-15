@@ -17,8 +17,13 @@
 (defparameter *notmuch-search-limit* 100
   "Maximum number of threads requested from `notmuch search'.")
 
+(defparameter *notmuch-process-timeout* 20)
+(defparameter *notmuch-output-limit* (* 4 1024 1024))
+
 (defparameter *notmuch-list-buffer-name* "*lem-yath-mail*")
 (defparameter *notmuch-fetch-buffer-name* "*lem-yath-fetchmail*")
+
+(declaim (special *project-process-timeout*))
 
 ;;; --- helpers ---------------------------------------------------------------
 
@@ -28,18 +33,23 @@
 
 (defun notmuch-run-json (args)
   "Run notmuch with ARGS (a list of strings), parse stdout as JSON.
-Returns the parsed value, or NIL on any process/parse failure."
+Returns the parsed value and true on success, or NIL/NIL on failure.  The
+second value distinguishes a valid empty JSON array from a failed command."
   (handler-case
-      (multiple-value-bind (out err code)
-          (uiop:run-program (cons "notmuch" args)
-                            :output :string
-                            :error-output :string
-                            :ignore-error-status t)
-        (declare (ignore err))
-        (if (and (eql code 0) (plusp (length out)))
-            (yason:parse out)
-            nil))
-    (error () nil)))
+      (let ((program (executable-find "notmuch"))
+            (*project-process-timeout* *notmuch-process-timeout*))
+        (unless program (return-from notmuch-run-json (values nil nil)))
+        (multiple-value-bind (out err code)
+            (run-project-program
+             (cons (uiop:native-namestring program) args)
+             :directory (or (ignore-errors (buffer-directory (current-buffer)))
+                            (uiop:getcwd))
+             :output-limit *notmuch-output-limit*)
+          (declare (ignore err))
+          (if (and (eql code 0) (plusp (length out)))
+              (values (yason:parse out) t)
+              (values nil nil))))
+    (error () (values nil nil))))
 
 (defun notmuch-string (value)
   "Coerce a JSON-derived VALUE to a display string (NIL -> \"\")."
@@ -55,7 +65,10 @@ Returns the parsed value, or NIL on any process/parse failure."
 
 ;;; --- thread list buffer ----------------------------------------------------
 
-(defvar *notmuch-search-mode-keymap* (make-keymap :description '*notmuch-search-mode-keymap*))
+(defvar *notmuch-search-mode-keymap*
+  (make-keymap :description '*notmuch-search-mode-keymap*))
+(defvar *notmuch-show-mode-keymap*
+  (make-keymap :description '*notmuch-show-mode-keymap*))
 
 (define-major-mode notmuch-search-mode nil
     (:name "Notmuch"
@@ -63,18 +76,32 @@ Returns the parsed value, or NIL on any process/parse failure."
   ;; Nothing extra; the buffer is filled and made read-only by the caller.
   )
 
+(define-major-mode notmuch-show-mode nil
+    (:name "Notmuch-Show"
+     :keymap *notmuch-show-mode-keymap*)
+  (setf (buffer-read-only-p (current-buffer)) t))
+
+(defmethod lem-vi-mode/core:mode-specific-keymaps ((mode notmuch-search-mode))
+  (list *notmuch-search-mode-keymap*))
+
+(defmethod lem-vi-mode/core:mode-specific-keymaps ((mode notmuch-show-mode))
+  (list *notmuch-show-mode-keymap*))
+
 (define-key *notmuch-search-mode-keymap* "Return" 'lem-yath-notmuch-open-thread)
 (define-key *notmuch-search-mode-keymap* "q" 'quit-active-window)
 (define-key *notmuch-search-mode-keymap* "g" 'lem-yath-notmuch-refresh)
+(define-key *notmuch-show-mode-keymap* "q" 'quit-active-window)
+(define-key *notmuch-show-mode-keymap* "g" 'lem-yath-notmuch-show-refresh)
 
-(defun notmuch-render-search (buffer threads query)
+(defun notmuch-render-search (buffer threads query &optional selected-id)
   "Fill BUFFER with one line per thread in THREADS (parsed search JSON).
 Stores QUERY and a line-number->thread-id map as buffer-local values, then
 makes the buffer read-only and switches it to `notmuch-search-mode'."
   (with-buffer-read-only buffer nil
     (erase-buffer buffer)
     (let ((point (buffer-point buffer))
-          (line->id (make-hash-table :test 'eql)))
+          (line->id (make-hash-table :test 'eql))
+          (selected-line nil))
       (if (null threads)
           (insert-string point (format nil "No threads for query: ~a~%" query))
           (loop :for thread :in threads
@@ -85,36 +112,40 @@ makes the buffer read-only and switches it to `notmuch-search-mode'."
                           (subject (notmuch-string (gethash "subject" thread)))
                           (tags (notmuch-tags-string (gethash "tags" thread))))
                       (setf (gethash line line->id) id)
+                      (when (and selected-id (string= selected-id id))
+                        (setf selected-line line))
                       (insert-string
                        point
                        (format nil "~13a  ~25a  ~a ~a~%"
                                date authors subject tags)))))
       (setf (buffer-value buffer 'notmuch-line->id) line->id)
       (setf (buffer-value buffer 'notmuch-query) query)
-      (buffer-start point)))
+      (buffer-start point)
+      (when selected-line (move-to-line point selected-line))))
   (change-buffer-mode buffer 'notmuch-search-mode)
   (setf (buffer-read-only-p buffer) t)
   buffer)
 
-(defun notmuch-search (query)
+(defun notmuch-search (query &optional selected-id)
   "Run a newest-first `notmuch search' for QUERY and render the result list.
 Degrades to a message when notmuch is missing or the query fails."
   (unless (notmuch-available-p)
     (message "notmuch not found on PATH")
     (return-from notmuch-search))
-  (let ((result (notmuch-run-json
-                 (list "search" "--format=json"
-                       (format nil "--limit=~d" *notmuch-search-limit*)
-                       "--sort=newest-first" query))))
+  (multiple-value-bind (result success-p)
+      (notmuch-run-json
+       (list "search" "--format=json"
+             (format nil "--limit=~d" *notmuch-search-limit*)
+             "--sort=newest-first" query))
     (cond
-      ((null result)
-       (message "notmuch search failed or returned nothing for: ~a" query))
+      ((not success-p)
+       (message "notmuch search failed for: ~a" query))
       ((not (listp result))
        (message "Unexpected notmuch search output"))
       (t
        (let ((buffer (make-buffer *notmuch-list-buffer-name*)))
-         (notmuch-render-search buffer result query)
-         (pop-to-buffer buffer)
+         (notmuch-render-search buffer result query selected-id)
+         (switch-to-window (pop-to-buffer buffer))
          (message "~d thread~:p" (length result)))))))
 
 (define-command lem-yath-notmuch () ()
@@ -132,9 +163,10 @@ Defaults to \"tag:inbox\"; results are newest-first, one thread per line."
 (define-command lem-yath-notmuch-refresh () ()
   "Re-run the current query in the *lem-yath-mail* list buffer (g)."
   (let ((buffer (current-buffer)))
-    (let ((query (buffer-value buffer 'notmuch-query)))
+    (let ((query (buffer-value buffer 'notmuch-query))
+          (selected-id (notmuch-thread-id-at-point)))
       (if query
-          (notmuch-search query)
+          (notmuch-search query selected-id)
           (message "No notmuch query to refresh")))))
 
 ;;; --- thread show buffer ----------------------------------------------------
@@ -217,9 +249,10 @@ A message is a hash-table carrying a \"headers\" key."
   (unless (notmuch-available-p)
     (message "notmuch not found on PATH")
     (return-from notmuch-show))
-  (let ((tree (notmuch-run-json
-               (list "show" "--format=json" "--include-html=false" thread-id))))
-    (when (null tree)
+  (multiple-value-bind (tree success-p)
+      (notmuch-run-json
+       (list "show" "--format=json" "--include-html=false" thread-id))
+    (unless success-p
       (message "notmuch show failed for ~a" thread-id)
       (return-from notmuch-show))
     (let* ((messages (nreverse (notmuch-collect-messages tree '())))
@@ -231,9 +264,11 @@ A message is a hash-table carrying a \"headers\" key."
               (dolist (message messages)
                 (notmuch-render-message point message))
               (insert-string point (format nil "No messages in thread ~a~%" thread-id)))
+          (setf (buffer-value buffer 'notmuch-thread-id) thread-id)
           (buffer-start point)))
+      (change-buffer-mode buffer 'notmuch-show-mode)
       (setf (buffer-read-only-p buffer) t)
-      (pop-to-buffer buffer))))
+      (switch-to-window (pop-to-buffer buffer)))))
 
 (define-command lem-yath-notmuch-open-thread () ()
   "Open the thread on the current *lem-yath-mail* line in a read-only view (Return)."
@@ -241,6 +276,13 @@ A message is a hash-table carrying a \"headers\" key."
     (if id
         (notmuch-show id)
         (message "No thread on this line"))))
+
+(define-command lem-yath-notmuch-show-refresh () ()
+  "Refresh the currently displayed Notmuch thread (g)."
+  (alexandria:if-let ((thread-id
+                       (buffer-value (current-buffer) 'notmuch-thread-id)))
+    (notmuch-show thread-id)
+    (message "No Notmuch thread to refresh")))
 
 ;;; --- fetch mail ------------------------------------------------------------
 

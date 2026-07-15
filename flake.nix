@@ -317,6 +317,11 @@
             jujutsu
           ];
 
+          mailRuntimeInputs = with pkgs; [
+            isync
+            notmuch
+          ];
+
           defaultRuntimeInputs =
             coreRuntimeInputs
             ++ dapRuntimeInputs
@@ -329,14 +334,7 @@
               sqlite
             ]);
 
-          extendedRuntimeInputs =
-            with pkgs;
-            defaultRuntimeInputs
-            ++ [
-              isync
-              notmuch
-              postgresql
-            ];
+          extendedRuntimeInputs = with pkgs; defaultRuntimeInputs ++ mailRuntimeInputs ++ [ postgresql ];
 
           testInputs =
             with pkgs;
@@ -644,6 +642,9 @@
             forge-test =
               mkTestAppWithLemAndInputs lemYath vcsRuntimeInputs "lem-yath-forge-test"
                 "forge-test.sh";
+            notmuch-test =
+              mkTestAppWithLemAndInputs lemYath mailRuntimeInputs "lem-yath-notmuch-test"
+                "notmuch-test.sh";
             vundo-test = mkTestApp "lem-yath-vundo-test" "vundo-test.sh";
             actions-test = mkTestApp "lem-yath-actions-test" "actions-test.sh";
             llm-keybinding-test = mkTestApp "lem-yath-llm-keybinding-test" "llm-keybinding-test.sh";
@@ -717,6 +718,7 @@
               mkCheckWithLemAndInputs lemYath vcsRuntimeInputs "jj-porcelain"
                 "jj-porcelain-test.sh";
             forge = mkCheckWithLemAndInputs lemYath vcsRuntimeInputs "forge" "forge-test.sh";
+            notmuch = mkCheckWithLemAndInputs lemYath mailRuntimeInputs "notmuch" "notmuch-test.sh";
             vundo = mkCheck "vundo" "vundo-test.sh";
             actions = mkCheck "actions" "actions-test.sh";
             llm-keybinding = mkCheck "llm-keybinding" "llm-keybinding-test.sh";

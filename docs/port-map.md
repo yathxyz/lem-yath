@@ -75,7 +75,7 @@ Status legend:
 | claude-code.el | lem-builtin | `lem-claude-code` extension, `C-c c` |
 | monet | partial | Lem ships an MCP **server** + Claude Code integration natively |
 | mcp.el | partial | `lem-mcp-server` (Lem as server); no generic MCP client hub |
-| notmuch | partial | search/read/refresh daily path exists; composition, sending, attachments/PDF preview, and the Salta bridge do not |
+| notmuch | ported/partial | `M-x lem-yath-notmuch` provides a focused, read-only newest-first list and nested plain-text thread view with Vi-priority `Return`, `j`/`k`, `g`, and `q` interaction. Empty searches, selection-preserving list refresh, in-place thread refresh, bounded direct-argv Notmuch reads, and the host-owned `mbsync -a && notmuch new` fetch path are covered by a network-free installed-wrapper ncurses gate (`src/apps/notmuch.lisp`, `scripts/notmuch-test.sh`). Composition, SMTP, attachment/PDF preview, Outlook integration, and the Salta bridge remain absent. |
 | elfeed + elfeed-protocol | ported | Miniflux Fever API reader (`src/apps/elfeed.lisp`) |
 | devdocs | ported | devdocs.io index lookup + text rendering, `SPC h d` (`src/apps/devdocs.lisp`) |
 | pdf-tools | gap | terminal frontend; PDFs open externally (xdg-open) |
