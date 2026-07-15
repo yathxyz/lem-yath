@@ -186,9 +186,9 @@ Status legend:
   row/cell targeting and alignment, and complete-subtree transforms. It is not
   GNU Org: Evil-Org themes beyond the bounded active text objects and the
   wider operator/endpoint themes,
-  timestamps/scheduling/deadlines, source editing/execution, richer list/table
-  transforms, org-modern glyphs, and an initial Org scratch buffer remain
-  absent.
+  calendar/named-date and consecutive-range timestamp variants, source-block
+  editing, richer list/table transforms, org-modern glyphs, and an initial Org
+  scratch buffer remain absent.
 - **Completion previews**: the grouped project picker and directory-local
   Elisp outline provide reversible Consult-style preview. Generic command,
   file, buffer, and LSP-symbol prompts still do not preview their targets.
