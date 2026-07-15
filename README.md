@@ -433,6 +433,7 @@ nix run .#ui-parity-test
 nix run .#vcs-test
 nix run .#jj-porcelain-test
 nix run .#forge-test
+nix run .#citar-test
 nix run .#devdocs-test
 nix run .#elfeed-test
 nix run .#notmuch-test

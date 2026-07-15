@@ -11,6 +11,8 @@
 
 (in-package :lem-yath)
 
+(declaim (ftype function project-path-in-directory-p))
+
 (defvar *citar-bib-files*
   (list (merge-pathnames "librarium/nodes.bib" (workdir))
         (merge-pathnames "librarium/zotero.bib" (workdir)))
@@ -54,7 +56,8 @@ Returns (values string index-after-closing-quote). Braces inside are kept
 balanced so a quote within {} does not terminate the value."
   (let ((len (length text))
         (out (make-string-output-stream))
-        (depth 0))
+        (depth 0)
+        (escaped-p nil))
     (incf i) ; skip opening quote
     (do ((stop nil))
         ((or stop (>= i len)) (values (get-output-stream-string out) i))
@@ -62,8 +65,10 @@ balanced so a quote within {} does not terminate the value."
         (cond
           ((char= ch #\{) (incf depth) (write-char ch out))
           ((char= ch #\}) (when (plusp depth) (decf depth)) (write-char ch out))
-          ((and (char= ch #\") (zerop depth)) (setf stop t))
-          (t (write-char ch out))))
+          ((and (char= ch #\") (zerop depth) (not escaped-p))
+           (setf stop t))
+          (t (write-char ch out)))
+        (setf escaped-p (and (char= ch #\\) (not escaped-p))))
       (incf i))))
 
 (defun citar-read-bare (text i)
@@ -244,19 +249,33 @@ paths in order."
 
 (defun citar-existing-file (file-field)
   "First plausible existing path from a `file' field, or NIL."
-  (find-if (lambda (p) (uiop:probe-file* p)) (citar-file-paths file-field)))
+  (loop :for raw :in (citar-file-paths file-field)
+        :for path := (if (alexandria:starts-with-subseq "file://" raw)
+                         (subseq raw (length "file://"))
+                         raw)
+        :for expanded := (ignore-errors (expand-file-name path))
+        :for existing := (and expanded (uiop:probe-file* expanded))
+        :when existing :return existing))
 
 (defun citar-open-external (target)
   "Open TARGET (a path or url) in the desktop default app via xdg-open.
 Degrades to a message when xdg-open is unavailable."
-  (if (executable-find "xdg-open")
+  (alexandria:if-let ((opener (executable-find "xdg-open")))
       (handler-case
           (progn
-            (uiop:launch-program (list "xdg-open" (princ-to-string target))
-                                 :output nil :error-output nil)
+            (uiop:launch-program
+             (list (uiop:native-namestring opener)
+                   (princ-to-string target))
+             :output nil :error-output nil)
             (message "Opened externally: ~a" target))
         (error (e) (message "citar: xdg-open failed: ~a" e)))
       (message "xdg-open not found; cannot open ~a" target)))
+
+(defun citar-http-url-p (string)
+  "Whether STRING is an HTTP(S) URL suitable for external opening."
+  (and (stringp string)
+       (or (alexandria:starts-with-subseq "https://" string)
+           (alexandria:starts-with-subseq "http://" string))))
 
 (defun citar-external-extension-p (path)
   "True when PATH should be opened externally (pdf/html) rather than find-file."
@@ -266,25 +285,37 @@ Degrades to a message when xdg-open is unavailable."
 (defun citar-note-path (key)
   "Existing note path for KEY under $WORKDIR/roam/references/, or NIL.
 Checks .org then .md, mirroring citar-notes-paths."
-  (let ((dir (merge-pathnames "roam/references/" (workdir))))
-    (or (uiop:probe-file* (merge-pathnames (format nil "~a.org" key) dir))
-        (uiop:probe-file* (merge-pathnames (format nil "~a.md" key) dir)))))
+  (when (and (stringp key)
+             (plusp (length key))
+             (not (find #\/ key))
+             (not (find #\\ key)))
+    (let ((dir (merge-pathnames "roam/references/" (workdir))))
+      (loop :for type :in '("org" "md")
+            :for candidate := (ignore-errors
+                                (merge-pathnames
+                                 (format nil "~a.~a" key type)
+                                 dir))
+            :for existing := (and candidate
+                                  (ignore-errors (uiop:probe-file* candidate)))
+            :when (and existing (project-path-in-directory-p existing dir))
+              :return existing))))
 
 (defun citar-open-entry (entry)
   "Resolve and open ENTRY's resource, mirroring citar-open's precedence:
 file field -> url -> note. Reports when nothing is available."
   (let ((key (getf entry :key))
         (path (citar-existing-file (getf entry :file)))
-        (url (getf entry :url)))
+        (url (getf entry :url))
+        (note nil))
+    (setf note (citar-note-path key))
     (cond
       (path
        (if (citar-external-extension-p path)
            (citar-open-external path)
            (find-file path)))
-      ((and url (plusp (length url)))
+      ((citar-http-url-p url)
        (citar-open-external url))
-      ((citar-note-path key)
-       (find-file (citar-note-path key)))
+      (note (find-file note))
       (t (message "No file, url or note for ~a" key)))))
 
 ;;; --- commands --------------------------------------------------------------
