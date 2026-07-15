@@ -42,6 +42,26 @@ The wrapper starts Lem without the user's normal init file, loads
 `lem-yath/init.lisp`, and keeps ASDF build outputs under the user cache instead
 of writing `.fasl` files into the source tree.
 
+The installed package also provides `lemclient`. A configured Lem running in
+tmux publishes an owner-only local socket and its pane, so shell and Git edit
+requests can reuse that editor:
+
+```sh
+lemclient file.txt
+lemclient +42:3 file.txt other.txt
+lemclient --no-wait file.txt
+```
+
+A waiting file shows the `Server` minor mode. `ZZ` or `C-c C-c` saves and
+finishes that file, `C-x #` finishes an already clean file, and `ZQ` or
+`C-c C-k` aborts the complete request without discarding unsaved buffer text.
+With no files, `lemclient` attaches to the current editor buffer. From another
+pane in the same tmux server it switches to Lem while the request is active and
+then restores the originating pane. If no reusable pane is available it starts
+a fresh configured Lem instead. The running editor sets `GIT_EDITOR` and fills
+otherwise-unset `VISUAL`/`EDITOR` for its child processes; a parent shell can
+opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
+
 ## What's in the port
 
 - vi-mode with one shared Space leader in normal and visual states; every
@@ -60,6 +80,12 @@ of writing `.fasl` files into the source tree.
   `C-c C-z` toggles whether Escape goes to the child. The Nix build patches the
   native terminal to spawn directly in the literal buffer directory without a
   shell command string and to terminate and reap the child on buffer cleanup
+- an `emacsclient`-style `lemclient` backed by an owner-private local Unix
+  socket: blocking and no-wait file requests, `+LINE:COLUMN`, multi-file
+  progression, clean finish, save-and-finish, recoverable abort, and tmux-pane
+  handoff all reuse the running ncurses editor. It intentionally does not
+  emulate graphical frame creation, arbitrary Lisp evaluation, or a headless
+  editor daemon
 - Winner-style window history on `C-c Left` / `C-c Right`: each tab frame keeps
   a bounded 200-layout route over split topology, proportions, displayed
   buffers, selection, and scroll state while retaining live buffer points;
@@ -289,7 +315,7 @@ Use `docs/parity-ledger.tsv` for behavior-level planning: its dispositions are
 ## Testing
 
 `nix flake check` runs the package, compile, boot, asynchronous compilation,
-integrated terminal,
+integrated terminal, reusable editor server/client,
 prompt and in-buffer completion, completion-lifecycle, automatic-completion,
 Embark-style actions,
 editing, formatting, Orderless completion, snippets, LSP snippets, real installed
@@ -311,6 +337,7 @@ python3 scripts/check-parity-ledger.py
 nix run .#compile-check
 nix run .#compilation-test
 nix run .#terminal-test
+nix run .#server-test
 nix run .#boot-test
 nix run .#completion-test
 nix run .#prompt-completion-test
@@ -364,7 +391,7 @@ worktree to the dedicated cache directory on `ex44` and run the full gate there:
 ./scripts/test-on-ex44.sh
 ```
 
-Pass `check`, `compile`, `compilation`, `terminal`, `boot`, `completion`, `prompt-completion`,
+Pass `check`, `compile`, `compilation`, `terminal`, `server`, `boot`, `completion`, `prompt-completion`,
 `completion-lifecycle`, `auto-completion`, `actions`, `editing`,
 `daily-workflows`, `direnv`, `llm-keybinding`, `llm-backend`, `llm-workflow`, `claude-code`, `lisp-eval`, `orderless-completion`, `snippets`, `lsp-snippets`,
 `lsp-project`, `real-lsp`, `tree-sitter`, `dap`, `project-navigation`, `project-outline`, `persistence`, `bookmarks`,

@@ -91,8 +91,7 @@
             {
               src = lemPatchedSrc;
               nativeLibs = map (
-                dependency:
-                if (dependency.pname or null) == "lem-terminal-so" then terminalSo else dependency
+                dependency: if (dependency.pname or null) == "lem-terminal-so" then terminalSo else dependency
               ) old.nativeLibs;
               lispLibs = map (
                 dependency: if (dependency.pname or null) == "jsonrpc" then patchedJsonrpc else dependency
@@ -334,10 +333,23 @@
             (load #P"${self}/lem-yath/init.lisp")
           '';
 
-          lemYath = pkgs.writeShellApplication {
+          lemClient = pkgs.writeShellApplication {
+            name = "lemclient";
+            runtimeInputs = with pkgs; [
+              coreutils
+              gnugrep
+              socat
+              tmux
+            ];
+            text = builtins.readFile ./scripts/lemclient.sh;
+          };
+
+          lemYathEditor = pkgs.writeShellApplication {
             name = "lem";
             runtimeInputs = defaultRuntimeInputs;
             text = ''
+              export LEM_YATH_CLIENT=${lemClient}/bin/lemclient
+              export LEM_YATH_ALTERNATE_EDITOR="$0"
               export LEM_YATH_RUNTIME_PATH="${lib.makeBinPath defaultRuntimeInputs}"
               export LEM_YATH_GUARDIAN_PYTHON=${lib.getExe' pkgs.python3 "python3"}
               export LEM_YATH_TREE_SITTER_BUNDLE=${treeSitterBundle}
@@ -401,6 +413,14 @@
 
               exec ${lemNcurses}/bin/lem "''${lem_args[@]}"
             '';
+          };
+
+          lemYath = pkgs.symlinkJoin {
+            name = "lem-yath";
+            paths = [
+              lemYathEditor
+              lemClient
+            ];
           };
 
           realLspEnvironment = ''
@@ -529,6 +549,10 @@
             compile-check = mkTestApp "lem-yath-compile-check" "compile-check.sh";
             compilation-test = mkTestAppWithLem lemYath "lem-yath-compilation-test" "compilation-test.sh";
             terminal-test = mkTestAppWithLem lemYath "lem-yath-terminal-test" "terminal-test.sh";
+            server-test = mkTestAppWithLemAndInputs lemYath [
+              pkgs.socat
+              pkgs.util-linux
+            ] "lem-yath-server-test" "server-test.sh";
             boot-test = mkTestApp "lem-yath-boot-test" "boot-test.sh";
             completion-test = mkTestApp "lem-yath-completion-test" "completion-test.sh";
             completion-lifecycle-test = mkTestApp "lem-yath-completion-lifecycle-test" "completion-lifecycle-test.sh";
@@ -594,6 +618,7 @@
             compile = mkCheck "compile" "compile-check.sh";
             compilation = mkCheckWithLem lemYath "compilation" "compilation-test.sh";
             terminal = mkCheckWithLem lemYath "terminal" "terminal-test.sh";
+            server = mkCheckWithLemAndInputs lemYath [ pkgs.socat pkgs.util-linux ] "server" "server-test.sh";
             boot = mkCheck "boot" "boot-test.sh";
             completion = mkCheck "completion" "completion-test.sh";
             completion-lifecycle = mkCheck "completion-lifecycle" "completion-lifecycle-test.sh";
