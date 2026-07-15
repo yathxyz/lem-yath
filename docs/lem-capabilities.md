@@ -433,10 +433,12 @@ symbols, and completion. The client advertises UTF-16, rejects offsets that
 split a surrogate pair, and retains tested UTF-8/UTF-32 conversion helpers.
 Generic edit batches are validated before mutation and applied in descending
 order, so adjacent simultaneous edits cannot consume one another.
-Resolved documentation/detail, CompletionList item defaults, `insertTextMode`,
-completion commands, and rollback of the LSP acceptance path after an arbitrary
-throwing buffer hook remain separate gaps.  The retained-undo change group used
-for Corfu-style input reset is deliberately narrower than that LSP transaction.
+Rollback of the LSP acceptance path after an arbitrary throwing buffer hook
+remains a separate gap. The configured Emacs comparison does not enable Corfu
+Popupinfo, does not advertise CompletionList item defaults or `insertTextMode`,
+and ignores completion commands, so Lem deliberately does not add those as
+parity behavior. The retained-undo change group used for Corfu-style input
+reset is deliberately narrower than that LSP transaction.
 
 ### Embark-style actions — `lem-yath/src/actions.lisp` (verified subset)
 
@@ -755,9 +757,11 @@ are ignored as a unit. Resolve failure likewise leaves the original primary
 completion usable.
 
 This is not full LSP TextMate grammar support. Standard variables, choices,
-variable transforms, strict LSP escaping, `insertTextMode`, resolved
-documentation/detail, CompletionList item defaults, trusted completion commands,
-and rollback after an arbitrary mutation-hook failure remain explicit gaps.
+variable transforms, strict LSP escaping, and rollback after an arbitrary
+mutation-hook failure remain explicit gaps. Focus-resolved documentation,
+CompletionList item defaults, `insertTextMode`, and completion commands are not
+effective in the configured Eglot/Corfu path and are therefore not parity
+requirements.
 Malformed payloads are parsed before mutation; an invalid item does not discard
 valid siblings, and a rejected accepted item leaves the completion prefix
 unchanged.
@@ -1627,8 +1631,8 @@ below but does not automatically wire it into language modes.
 
 The installed wrapper exports a deterministic bundle containing a parser and
 `highlights.scm` query for **Bash, C, C#, Clojure, CSS, Go, HTML, Java,
-JavaScript, JSON, Lua, Markdown, Nix, Python, Rust, TOML, TypeScript, TSX, and
-YAML** (19 grammar/query pairs). Eligible buffers automatically receive a
+JavaScript, JSON, Just, Lua, Markdown, Nix, Nu, Python, Rust, TOML, TypeScript,
+TSX, Typst, and YAML** (22 grammar/query pairs). Eligible buffers automatically receive a
 fresh parser when their existing Lem major mode has a corresponding entry.
 File-backed buffers are eligible regardless of name; fileless buffers whose
 names begin with a space or `*` are excluded, matching the configured Emacs
@@ -1642,6 +1646,12 @@ state. Query predicates needed by the packaged highlight files (`match?`,
 query patterns refine generic captures deterministically. The configuration
 uses highlighting only: mode selection, indentation, LSP, and structural
 editing remain owned by their existing implementations.
+
+`lem-yath/src/language-modes.lisp` supplies the previously absent Just, Meson,
+nginx, Nushell, and Typst modes. It reproduces the pinned filename associations,
+nginx content fallback, Nu shebang, comment syntax, and indentation widths.
+Just, Nu, and Typst participate in this parser bundle and Expreg; Meson and
+nginx retain bounded TextMate fallback highlighting.
 
 This approximates the configured Emacs `treesit-font-lock-level 3`; it does not
 load injection or locals queries. In particular, captures guarded by

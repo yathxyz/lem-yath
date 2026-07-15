@@ -16,7 +16,12 @@ export XDG_CACHE_HOME="$root/cache"
 export WORKDIR="$root/work"
 export LEM_YATH_TREE_SITTER_REPORT="$root/report"
 export LEM_YATH_TREE_SITTER_FILE="$root/main.py"
-mkdir -p "$HOME" "$XDG_CACHE_HOME" "$WORKDIR"
+export LEM_YATH_LANGUAGE_MODE_ROOT="$root/languages"
+mkdir -p \
+  "$HOME" \
+  "$XDG_CACHE_HOME" \
+  "$WORKDIR" \
+  "$LEM_YATH_LANGUAGE_MODE_ROOT/nginx/sites"
 : >"$LEM_YATH_TREE_SITTER_REPORT"
 
 cleanup() {
@@ -39,6 +44,33 @@ printf '%s\n' \
   '    pass' \
   >"$LEM_YATH_TREE_SITTER_FILE"
 
+printf '%s\n' 'build:' '    echo ready' \
+  >"$LEM_YATH_LANGUAGE_MODE_ROOT/.JuStFiLe"
+printf '%s\n' 'test:' '    echo tested' \
+  >"$LEM_YATH_LANGUAGE_MODE_ROOT/jUsTfIlE"
+printf '%s\n' "project('fixture')" 'if true' 'endif' \
+  >"$LEM_YATH_LANGUAGE_MODE_ROOT/meson.build"
+printf '%s\n' "option('feature', type: 'boolean')" \
+  >"$LEM_YATH_LANGUAGE_MODE_ROOT/meson_options.txt"
+printf '%s\n' "option('alternate', type: 'boolean')" \
+  >"$LEM_YATH_LANGUAGE_MODE_ROOT/meson.options"
+printf '%s\n' 'server {' '    listen 80;' '}' \
+  >"$LEM_YATH_LANGUAGE_MODE_ROOT/nginx.conf"
+# The dollar expression is literal nginx source, not shell interpolation.
+# shellcheck disable=SC2016
+printf '%s\n' 'location / {' '    proxy_set_header Host $host;' '}' \
+  >"$LEM_YATH_LANGUAGE_MODE_ROOT/nginx/sites/site.conf"
+printf '%s\n' 'upstream backend {' '    server 127.0.0.1;' '}' \
+  >"$LEM_YATH_LANGUAGE_MODE_ROOT/magic.conf"
+# The dollar expression is literal Nushell source, not shell interpolation.
+# shellcheck disable=SC2016
+printf '%s\n' 'let answer = 42' 'if $answer > 0 { print yes }' \
+  >"$LEM_YATH_LANGUAGE_MODE_ROOT/script.nu"
+printf '%s\n' '#!/usr/bin/env nu' 'let answer = 42' \
+  >"$LEM_YATH_LANGUAGE_MODE_ROOT/nu-script"
+printf '%s\n' '= Heading' '#let answer = 42' \
+  >"$LEM_YATH_LANGUAGE_MODE_ROOT/document.typ"
+
 fixture="$(lem-yath_lisp_string "$here/scripts/tree-sitter-fixture.lisp")"
 lem_start "$session" "$LEM_YATH_TREE_SITTER_FILE" --eval "(load #P$fixture)"
 
@@ -57,5 +89,5 @@ if ! grep -q '^SUMMARY ' "$LEM_YATH_TREE_SITTER_REPORT" 2>/dev/null; then
 fi
 
 sed -n '1,320p' "$LEM_YATH_TREE_SITTER_REPORT"
-grep -q '^SUMMARY PASS failures=0 grammars=19/19$' \
+grep -q '^SUMMARY PASS failures=0 grammars=22/22$' \
   "$LEM_YATH_TREE_SITTER_REPORT"

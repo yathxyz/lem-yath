@@ -183,6 +183,11 @@
               grammar = treeSitterGrammars.tree-sitter-json;
             }
             {
+              name = "just";
+              grammar = treeSitterGrammars.tree-sitter-just;
+              query = "${treeSitterGrammars.tree-sitter-just}/queries/just/highlights.scm";
+            }
+            {
               name = "lua";
               grammar = treeSitterGrammars.tree-sitter-lua;
             }
@@ -193,6 +198,11 @@
             {
               name = "nix";
               grammar = treeSitterGrammars.tree-sitter-nix;
+            }
+            {
+              name = "nu";
+              grammar = treeSitterGrammars.tree-sitter-nu;
+              query = "${treeSitterGrammars.tree-sitter-nu}/queries/nu/highlights.scm";
             }
             {
               name = "python";
@@ -215,6 +225,11 @@
               name = "tsx";
               grammar = treeSitterGrammars.tree-sitter-tsx;
               query = tsxHighlights;
+            }
+            {
+              name = "typst";
+              grammar = treeSitterGrammars.tree-sitter-typst;
+              query = "${treeSitterGrammars.tree-sitter-typst}/queries/typst/highlights.scm";
             }
             {
               name = "yaml";

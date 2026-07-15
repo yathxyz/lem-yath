@@ -20,6 +20,7 @@
 (defparameter *non-programming-language-mode-classes*
   '(("LEM-MARKDOWN-MODE" . "MARKDOWN-MODE")
     ("LEM-ASCIIDOC-MODE" . "ASCIIDOC-MODE")
+    ("LEM-YATH" . "TYPST-MODE")
     ("LEM-XML-MODE" . "XML-MODE")
     ("LEM-PATCH-MODE" . "PATCH-MODE")
     ("LEM-REVIEW-MODE" . "REVIEW-MODE"))

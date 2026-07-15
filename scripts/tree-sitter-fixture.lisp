@@ -6,6 +6,9 @@
   (uiop:getenv "LEM_YATH_TREE_SITTER_REPORT"))
 (defvar *tree-sitter-test-main-file*
   (uiop:getenv "LEM_YATH_TREE_SITTER_FILE"))
+(defvar *tree-sitter-test-language-mode-root*
+  (uiop:ensure-directory-pathname
+   (uiop:getenv "LEM_YATH_LANGUAGE_MODE_ROOT")))
 (defvar *tree-sitter-test-failures* 0)
 (defvar *tree-sitter-test-grammar-successes* 0)
 
@@ -89,7 +92,7 @@
      "deterministic-bundle-is-present"
      root)
     (tree-sitter-test-check
-     (and (= 19 (length *tree-sitter-specs*))
+     (and (= 22 (length *tree-sitter-specs*))
           (every
            (lambda (spec)
              (and (probe-file (tree-sitter-spec-parser-path spec))
@@ -331,6 +334,135 @@
                  :key #'car))
      "kill-hook-is-installed-once")))
 
+(defun tree-sitter-test-language-path (relative)
+  (merge-pathnames relative *tree-sitter-test-language-mode-root*))
+
+(defun tree-sitter-test-open-language-file (relative)
+  (let ((buffer (find-file-buffer (tree-sitter-test-language-path relative))))
+    (tree-sitter-test-disable-lint buffer)
+    buffer))
+
+(defun tree-sitter-test-check-mode-file
+    (relative expected-mode &key grammar width comment programming)
+  (let ((buffer nil))
+    (unwind-protect
+         (handler-case
+             (progn
+               (setf buffer (tree-sitter-test-open-language-file relative))
+               (tree-sitter-test-check
+                (eq expected-mode (buffer-major-mode buffer))
+                (format nil "~a-selects-~a" relative expected-mode)
+                (buffer-major-mode buffer))
+               (with-current-buffer buffer
+                 (tree-sitter-test-check
+                  (= width (variable-value 'tab-width))
+                  (format nil "~a-uses-configured-indent-width" relative))
+                 (tree-sitter-test-check
+                  (string= comment
+                           (variable-value 'lem/language-mode:line-comment))
+                  (format nil "~a-uses-configured-comment" relative))
+                 (tree-sitter-test-check
+                  (eq programming (not (null (programming-buffer-p buffer))))
+                  (format nil "~a-retains-emacs-mode-class" relative)))
+               (when grammar
+                 (tree-sitter-test-check
+                  (and (tree-sitter-test-active-p buffer)
+                       (string=
+                        grammar
+                        (expand-region-tree-sitter-language buffer)))
+                  (format nil "~a-activates-~a-parser" relative grammar))))
+           (error (condition)
+             (tree-sitter-test-check
+              nil (format nil "~a-opens-in-configured-mode" relative)
+              condition)))
+      (tree-sitter-test-delete-buffer buffer))))
+
+(defun tree-sitter-test-check-language-highlighting ()
+  (dolist (entry
+           '((".JuStFiLe" "build" lem:syntax-function-name-attribute)
+             ("meson.build" "if" lem:syntax-keyword-attribute)
+             ("nginx/sites/site.conf" "$host"
+              lem:syntax-variable-attribute)
+             ("script.nu" "let" lem:syntax-keyword-attribute)
+             ("document.typ" "Heading" lem:document-header1-attribute)))
+    (destructuring-bind (relative text expected) entry
+      (let ((buffer nil))
+        (unwind-protect
+             (handler-case
+                 (progn
+                   (setf buffer
+                         (tree-sitter-test-open-language-file relative))
+                   (tree-sitter-test-scan buffer)
+                   (tree-sitter-test-check
+                    (eq expected
+                        (tree-sitter-test-attribute buffer text))
+                    (format nil "~a-highlights-~a" relative text)
+                    (tree-sitter-test-attribute buffer text)))
+               (error (condition)
+                 (tree-sitter-test-check
+                  nil (format nil "~a-highlighting-completes" relative)
+                  condition)))
+          (tree-sitter-test-delete-buffer buffer))))))
+
+(defun tree-sitter-test-indent-result (mode text)
+  (let ((buffer (make-buffer (format nil "*~a-indent*" mode))))
+    (unwind-protect
+         (with-current-buffer buffer
+           (funcall mode)
+           (tree-sitter-test-set-text buffer text)
+           (let ((point (buffer-end-point buffer)))
+             (funcall (variable-value 'calc-indent-function) point)))
+      (tree-sitter-test-delete-buffer buffer))))
+
+(defun tree-sitter-test-check-language-modes ()
+  (tree-sitter-test-check-mode-file
+   ".JuStFiLe" 'just-mode :grammar "just" :width 4 :comment "#"
+   :programming t)
+  (tree-sitter-test-check-mode-file
+   "jUsTfIlE" 'just-mode :grammar "just" :width 4 :comment "#"
+   :programming t)
+  (tree-sitter-test-check-mode-file
+   "meson.build" 'meson-mode :width 2 :comment "#" :programming t)
+  (tree-sitter-test-check-mode-file
+   "meson_options.txt" 'meson-mode :width 2 :comment "#" :programming t)
+  (tree-sitter-test-check-mode-file
+   "meson.options" 'meson-mode :width 2 :comment "#" :programming t)
+  (tree-sitter-test-check-mode-file
+   "nginx.conf" 'nginx-mode :width 4 :comment "#" :programming t)
+  (tree-sitter-test-check-mode-file
+   "nginx/sites/site.conf" 'nginx-mode :width 4 :comment "#" :programming t)
+  (tree-sitter-test-check-mode-file
+   "magic.conf" 'nginx-mode :width 4 :comment "#" :programming t)
+  (tree-sitter-test-check-mode-file
+   "script.nu" 'nushell-mode :grammar "nu" :width 2 :comment "#"
+   :programming t)
+  (tree-sitter-test-check-mode-file
+   "nu-script" 'nushell-mode :grammar "nu" :width 2 :comment "#"
+   :programming t)
+  (tree-sitter-test-check-mode-file
+   "document.typ" 'typst-mode :grammar "typst" :width 4 :comment "//"
+   :programming nil)
+  (tree-sitter-test-check-language-highlighting)
+  (dolist (entry
+           `((just-mode ,(format nil "build:~%") 4)
+             (meson-mode ,(format nil "if true~%") 2)
+             (nginx-mode ,(format nil "server {~%") 4)
+             (nushell-mode ,(format nil "if true {~%") 2)
+             (typst-mode ,(format nil "#let value = (~%") 4)))
+    (destructuring-bind (mode text expected) entry
+      (tree-sitter-test-check
+       (= expected (tree-sitter-test-indent-result mode text))
+       (format nil "~a-indents-after-opener" mode))))
+  (dolist (entry
+           `((meson-mode ,(format nil "if true~%  value = 1~%endif") 0)
+             (nginx-mode ,(format nil "server {~%    listen 80;~%}") 0)
+             (nushell-mode ,(format nil "if true {~%  print yes~%}") 0)
+             (typst-mode ,(format nil "#let value = (~%    1~%)") 0)))
+    (destructuring-bind (mode text expected) entry
+      (tree-sitter-test-check
+       (= expected (tree-sitter-test-indent-result mode text))
+       (format nil "~a-dedents-closing-line" mode)))))
+
 (defun tree-sitter-test-run ()
   (let ((buffer (find-file-buffer *tree-sitter-test-main-file*)))
     (unless buffer
@@ -341,6 +473,7 @@
     (tree-sitter-test-check-current-python buffer)
     (tree-sitter-test-check-grammar-compilation buffer)
     (tree-sitter-test-check-expreg-registry)
+    (tree-sitter-test-check-language-modes)
     (tree-sitter-test-check-eligibility)
     (tree-sitter-test-check-buffer-isolation)
     (tree-sitter-test-check-full-reparse buffer)))

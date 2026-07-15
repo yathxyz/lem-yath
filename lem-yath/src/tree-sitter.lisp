@@ -36,11 +36,15 @@
    (make-tree-sitter-spec
     :mode 'lem-json-mode:json-mode :language "json")
    (make-tree-sitter-spec
+    :mode 'just-mode :language "just")
+   (make-tree-sitter-spec
     :mode 'lem-lua-mode:lua-mode :language "lua")
    (make-tree-sitter-spec
     :mode 'lem-markdown-mode:markdown-mode :language "markdown")
    (make-tree-sitter-spec
     :mode 'lem-nix-mode:nix-mode :language "nix")
+   (make-tree-sitter-spec
+    :mode 'nushell-mode :language "nu")
    (make-tree-sitter-spec
     :mode 'lem-python-mode:python-mode :language "python")
    (make-tree-sitter-spec
@@ -53,6 +57,8 @@
     :extensions '("tsx"))
    (make-tree-sitter-spec
     :mode 'lem-typescript-mode:typescript-mode :language "typescript")
+   (make-tree-sitter-spec
+    :mode 'typst-mode :language "typst")
    (make-tree-sitter-spec
     :mode 'lem-yaml-mode:yaml-mode :language "yaml")))
 
