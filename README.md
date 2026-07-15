@@ -54,6 +54,12 @@ of writing `.fasl` files into the source tree.
 - state-aware terminal cursors and a genuine buffer-local Evil-style Emacs
   state on `C-z`: red-box normal, green-bar insert, cyan-box Emacs, portable
   visual/replace shapes, Emacs mark semantics, and exact prior-state return
+- an Evil-aware in-editor terminal on `M-x vterm` (with `M-x terminal` retained):
+  new sessions start in Insert, Escape enters a live read-only Normal view,
+  `i/I/a/A` return to raw input, Normal `p/P` and Return send to the child, and
+  `C-c C-z` toggles whether Escape goes to the child. The Nix build patches the
+  native terminal to spawn directly in the literal buffer directory without a
+  shell command string and to terminate and reap the child on buffer cleanup
 - Winner-style window history on `C-c Left` / `C-c Right`: each tab frame keeps
   a bounded 200-layout route over split topology, proportions, displayed
   buffers, selection, and scroll state while retaining live buffer points;
@@ -283,6 +289,7 @@ Use `docs/parity-ledger.tsv` for behavior-level planning: its dispositions are
 ## Testing
 
 `nix flake check` runs the package, compile, boot, asynchronous compilation,
+integrated terminal,
 prompt and in-buffer completion, completion-lifecycle, automatic-completion,
 Embark-style actions,
 editing, formatting, Orderless completion, snippets, LSP snippets, real installed
@@ -303,6 +310,7 @@ nix flake check
 python3 scripts/check-parity-ledger.py
 nix run .#compile-check
 nix run .#compilation-test
+nix run .#terminal-test
 nix run .#boot-test
 nix run .#completion-test
 nix run .#prompt-completion-test
@@ -356,7 +364,7 @@ worktree to the dedicated cache directory on `ex44` and run the full gate there:
 ./scripts/test-on-ex44.sh
 ```
 
-Pass `check`, `compile`, `compilation`, `boot`, `completion`, `prompt-completion`,
+Pass `check`, `compile`, `compilation`, `terminal`, `boot`, `completion`, `prompt-completion`,
 `completion-lifecycle`, `auto-completion`, `actions`, `editing`,
 `daily-workflows`, `direnv`, `llm-keybinding`, `llm-backend`, `llm-workflow`, `claude-code`, `lisp-eval`, `orderless-completion`, `snippets`, `lsp-snippets`,
 `lsp-project`, `real-lsp`, `tree-sitter`, `dap`, `project-navigation`, `project-outline`, `persistence`, `bookmarks`,

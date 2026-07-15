@@ -2165,9 +2165,21 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
 ## 10. Apps / extras
 
 - **Terminal**: `extensions/terminal/` (`lem-terminal`, **Unix-only**,
-  `#-os-windows` in `lem.asd:294`). Uses **libvterm via CFFI** (`ffi.lisp`,
-  `terminal.c`). Command `M-x terminal` (`terminal-mode.lisp:84`). A real terminal
-  emulator inside Lem. (In the nix ncurses image, libvterm is linked.)
+  `#-os-windows` in `lem.asd:294`) uses **libvterm via CFFI**. Lem-yath exposes
+  both `M-x vterm` and the upstream `M-x terminal`. `src/terminal.lisp` adds the
+  installed Evil Collection vterm state flow where Lem has a safe equivalent:
+  new buffers start at the live cursor in Insert; Escape and `C-x [` enter a
+  live read-only Normal/copy view; `i/I/a/A` resume raw input; Normal `p/P`
+  sends kill-ring text; Normal Return submits without leaving Normal; and
+  `C-c C-z` toggles whether Escape is sent to the child. The Nix build replaces
+  the matching native helper with `patches/lem-terminal-safe-cwd.patch`, which
+  uses `openpty` plus `posix_spawn` to enter the literal buffer directory
+  without constructing `shell -c` input, then terminates and reaps the child
+  when its terminal is deleted. `scripts/terminal-test.sh` drives these paths
+  through real ncurses, including a directory containing shell metacharacters,
+  live navigation, raw input, process-ID cleanup, and registry cleanup. Lem has
+  no safe prompt/cursor-to-process editing API, so vterm Normal-state
+  delete/change operators are not reproduced.
 - **File manager / filer**: `directory-mode` (Dired-like,
   `src/ext/directory-mode/`) is the ordinary full-buffer directory browser and
   `src/ext/filer.lisp` is a separate tree/column side browser. `find-file` on a

@@ -78,7 +78,7 @@ Status legend:
 | devdocs | ported | devdocs.io index lookup + text rendering, `SPC h d` (`src/apps/devdocs.lisp`) |
 | pdf-tools | gap | terminal frontend; PDFs open externally (xdg-open) |
 | nov (EPUB) | gap | no EPUB rendering |
-| vterm | lem-builtin | `lem-terminal` (libvterm), `M-x terminal` |
+| vterm | lem-builtin+ported/partial | `lem-terminal` (libvterm), exposed as both `M-x vterm` and `M-x terminal`. `src/terminal.lisp` supplies the effective Evil Collection state flow: initial Insert, Escape/C-x `[` to a live Normal/copy view, `i/I/a/A` back to raw input, Normal `p/P` and Return, and `C-c C-z` Escape routing. The Nix-only native patch uses direct literal-directory spawning and reaps the child during buffer cleanup (`patches/lem-terminal-safe-cwd.patch`, `scripts/terminal-test.sh`). Prompt-mutating Normal operators such as delete/change remain absent because Lem has no safe child-prompt edit API. |
 | pgmacs / pg | ported | psql-backed query/table viewer (`src/apps/pg.lisp`) |
 | salta.el | partial | six primary Supabase/PostgREST workflows exist; the notmuch payment-email bridge and some UI semantics remain open |
 | helpful | ported/partial | `SPC h k` selects any fbound Lisp symbol—not merely Lem commands—and shows its callable type, signature, package, and documentation; `SPC h v` does the same for bound variables with bounded Marginalia-compatible secret censoring. `SPC h K` and `SPC h b` retain core key/binding help. Source links, references, callers, and richer cross-reference navigation remain gaps (`src/help.lisp`, `scripts/help-test.sh`). |

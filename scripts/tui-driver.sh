@@ -54,7 +54,7 @@ lem_start() { # lem_start <session> [lem-args...]
     echo "LEM_BIN is not set and no lem executable was found on PATH" >&2
     return 127
   fi
-  tmux_cmd kill-session -t "$s" 2>/dev/null
+  tmux_cmd kill-session -t "$s" 2>/dev/null || true
   local command width="${LEM_TUI_WIDTH:-200}" height="${LEM_TUI_HEIGHT:-50}"
   printf -v command "%q " "$LEM_BIN" "$@"
   tmux_cmd new-session -d -s "$s" -x "$width" -y "$height" "$command"

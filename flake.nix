@@ -55,7 +55,24 @@
               ./patches/lem-display-line-transformer.patch
               ./patches/lem-directory-buffer-clean.patch
               ./patches/lem-completion-validity.patch
+              ./patches/lem-terminal-safe-cwd.patch
             ];
+          };
+          terminalSo = pkgs.stdenv.mkDerivation {
+            pname = "lem-yath-terminal-so";
+            version = "0.1.0";
+            src = "${lemPatchedSrc}/extensions/terminal";
+            buildInputs = [ pkgs.libvterm-neovim ];
+            buildPhase = ''
+              $CC -shared -fPIC -o terminal.so terminal.c \
+                -I${pkgs.libvterm-neovim}/include \
+                -L${pkgs.libvterm-neovim}/lib -lvterm \
+                -lutil
+            '';
+            installPhase = ''
+              mkdir -p $out/lib
+              cp terminal.so $out/lib/
+            '';
           };
           lemNcurses = lem.packages.${system}.lem-ncurses.overrideLispAttrs (
             old:
@@ -73,6 +90,10 @@
             in
             {
               src = lemPatchedSrc;
+              nativeLibs = map (
+                dependency:
+                if (dependency.pname or null) == "lem-terminal-so" then terminalSo else dependency
+              ) old.nativeLibs;
               lispLibs = map (
                 dependency: if (dependency.pname or null) == "jsonrpc" then patchedJsonrpc else dependency
               ) old.lispLibs;
@@ -507,6 +528,7 @@
             lem-upstream = mkApp "${lemNcurses}/bin/lem" "Run upstream Lem ncurses without config";
             compile-check = mkTestApp "lem-yath-compile-check" "compile-check.sh";
             compilation-test = mkTestAppWithLem lemYath "lem-yath-compilation-test" "compilation-test.sh";
+            terminal-test = mkTestAppWithLem lemYath "lem-yath-terminal-test" "terminal-test.sh";
             boot-test = mkTestApp "lem-yath-boot-test" "boot-test.sh";
             completion-test = mkTestApp "lem-yath-completion-test" "completion-test.sh";
             completion-lifecycle-test = mkTestApp "lem-yath-completion-lifecycle-test" "completion-lifecycle-test.sh";
@@ -571,6 +593,7 @@
             package = lemYath;
             compile = mkCheck "compile" "compile-check.sh";
             compilation = mkCheckWithLem lemYath "compilation" "compilation-test.sh";
+            terminal = mkCheckWithLem lemYath "terminal" "terminal-test.sh";
             boot = mkCheck "boot" "boot-test.sh";
             completion = mkCheck "completion" "completion-test.sh";
             completion-lifecycle = mkCheck "completion-lifecycle" "completion-lifecycle-test.sh";
