@@ -158,7 +158,11 @@
     (when name
       (alexandria:when-let
           ((type (ignore-errors (pathname-type (pathname name)))))
-        (string-downcase type)))))
+        ;; SBCL represents wildcard pathname components with an internal
+        ;; pattern object.  Synthetic buffers can legitimately contain `*'
+        ;; in their display names, but such an object is not an extension.
+        (when (stringp type)
+          (string-downcase type))))))
 
 (defun tree-sitter-spec-for-buffer (buffer)
   (let* ((mode (buffer-major-mode buffer))
@@ -506,28 +510,31 @@
   (let ((buffer (current-buffer)))
     (release-buffer-tree-sitter-parser
      buffer :restore-syntax-table t)
-    (let ((spec (tree-sitter-spec-for-buffer buffer)))
-      (when (and spec
-                 (tree-sitter-bundle-root)
-                 (tree-sitter-eligible-buffer-p buffer)
-                 (lem-tree-sitter:tree-sitter-available-p))
-        (handler-case
-            (let* ((parser
-                     (make-lem-yath-tree-sitter-parser buffer spec))
-                   (syntax-table
-                     (lem/buffer/syntax-table::copy-syntax-table
-                      (buffer-syntax-table buffer))))
-              (set-syntax-parser syntax-table parser)
-              (setf (buffer-syntax-table buffer) syntax-table
-                    (buffer-value buffer 'lem-yath-tree-sitter-parser) parser
-                    (buffer-value buffer 'lem-yath-tree-sitter-language)
-                    (tree-sitter-spec-language spec)
-                    (lem-core::buffer-scanned-region buffer) nil)
-              t)
-          (error (condition)
-            (log:warn "Tree-sitter activation failed for ~a: ~a"
-                      (buffer-name buffer) condition)
-            nil))))))
+    ;; Check the activation policy before interpreting a synthetic buffer name
+    ;; as a pathname.  Timemachine and other internal `*...*' buffers inherit
+    ;; programming modes but deliberately retain their fallback highlighter.
+    (when (and (tree-sitter-eligible-buffer-p buffer)
+               (tree-sitter-bundle-root)
+               (lem-tree-sitter:tree-sitter-available-p))
+      (let ((spec (tree-sitter-spec-for-buffer buffer)))
+        (when spec
+          (handler-case
+              (let* ((parser
+                       (make-lem-yath-tree-sitter-parser buffer spec))
+                     (syntax-table
+                       (lem/buffer/syntax-table::copy-syntax-table
+                        (buffer-syntax-table buffer))))
+                (set-syntax-parser syntax-table parser)
+                (setf (buffer-syntax-table buffer) syntax-table
+                      (buffer-value buffer 'lem-yath-tree-sitter-parser) parser
+                      (buffer-value buffer 'lem-yath-tree-sitter-language)
+                      (tree-sitter-spec-language spec)
+                      (lem-core::buffer-scanned-region buffer) nil)
+                t)
+            (error (condition)
+              (log:warn "Tree-sitter activation failed for ~a: ~a"
+                        (buffer-name buffer) condition)
+              nil)))))))
 
 (defun install-tree-sitter-mode-hooks ()
   ;; Hook every existing major mode so changing away from a supported mode
