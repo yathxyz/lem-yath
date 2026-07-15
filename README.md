@@ -73,7 +73,8 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   native Lem transients keep their 500ms opening delay and immediate nesting
 - state-aware terminal cursors and a genuine buffer-local Evil-style Emacs
   state on `C-z`: red-box normal, green-bar insert, cyan-box Emacs, portable
-  visual/replace shapes, Emacs mark semantics, and exact prior-state return
+  visual/replace shapes, Emacs mark semantics, GNU Emacs undo on `C-/`, `C-_`,
+  and `C-x u`, and exact prior-state return
 - an Evil-aware in-editor terminal on `M-x vterm` (with `M-x terminal` retained):
   new sessions start in Insert, Escape enters a live read-only Normal view,
   `i/I/a/A` return to raw input, Normal `p/P` and Return send to the child, and
@@ -261,6 +262,13 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   accepts absolute dates plus signed day/week/month/year offsets, and uses a
   doubled sign relative to the existing field. A universal prefix removes the
   selected field; edits remain unsaved like the current Emacs Org-buffer path
+- ordinary active and inactive Org timestamps on GNU Org's `C-c .` and
+  `C-c !`. They insert or replace ISO/relative dates, optional times and time
+  ranges, preserve repeater/warning suffixes, accept a universal prefix to
+  include the current time, and insert the current timestamp directly with a
+  double universal prefix. `Shift-Left`/`Shift-Right` and the terminal-safe
+  `C-c Left`/`C-c Right` move a timestamp by days or cycle a heading's TODO
+  state according to context
 - configured Org Babel execution on `C-c C-c` for Bash/Shell, Python, C/C++,
   Nix, SQLite, and PostgreSQL SQL blocks. Shell, Python, C, Nix, and SQL ask
   before running; SQLite follows the Emacs configuration's trusted-note
@@ -349,7 +357,8 @@ retained undo/Vundo, project-scoped LSP lifecycle, LLM key dispatch,
 credential-free backend streaming/resume, private preset persistence, web
 handoff, and integrated Claude Code interaction,
 cursor/state parity, evil-snipe and Avy parity, screen-line/Evil parity, notes,
-roam, native Org, agenda, agenda-clock, and parity-ledger checks. The ledger can also be
+roam, native Org, Org planning/timestamps, agenda, agenda-clock, and
+parity-ledger checks. The ledger can also be
 validated directly, and the
 interactive TUI checks are exposed as flake apps:
 
@@ -396,6 +405,8 @@ nix run .#vcs-test
 nix run .#notes-test
 nix run .#roam-test
 nix run .#org-test
+nix run .#org-planning-test
+nix run .#org-timestamp-test
 nix run .#agenda-test
 nix run .#agenda-clock-test
 nix run .#interactive-test

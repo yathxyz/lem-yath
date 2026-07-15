@@ -1934,6 +1934,25 @@ read-only refusal occur before mutation, and each successful command is one
 undo step. `scripts/org-planning-test.sh` drives both physical chords through
 the packaged ncurses editor and proves those boundaries.
 
+The same module supplies GNU Org's ordinary timestamp workflow. `C-c .` and
+`C-c !` insert or replace active `<...>` and inactive `[...]` timestamps at
+point. Their bracketed prompt defaults to today or the timestamp at point and
+accepts exact or relative dates, a start time, or a start/end time range.
+Replacement recomputes the weekday and preserves repeater and warning suffixes;
+one universal prefix supplies the current time when none is entered, and a
+double universal prefix inserts the current active or inactive timestamp
+without prompting. Ordinary-buffer mutations remain unsaved and each is one
+undo step.
+
+At a timestamp, `Shift-Left`/`Shift-Right` and terminal-safe `C-c Left`/
+`C-c Right` move its date while preserving delimiter type, time range, and
+suffix. At a heading the same keys cycle the configured TODO sequence in the
+corresponding direction and retain the profile's immediate-save behavior.
+The focused `scripts/org-timestamp-test.sh` resolves all six production keys
+and drives insertion, replacement, conversion, shifting, prefix behavior,
+cancellation, read-only refusal, undo, persistence boundaries, and TODO
+dispatch through packaged ncurses Lem.
+
 The pinned Evil-Org `<`/`>` range operators are available in Normal and Visual
 states. Heading ranges promote or demote only selected heading lines by one
 level. Safe list-item ranges move by the surrounding list's indentation step
@@ -2015,10 +2034,10 @@ consumers would still require a different backend.
 This is intentionally narrower than GNU Org and Evil-Org. Richer drawer,
 footnote, nested-special, and malformed text-object contexts; structural
 repairs beyond the bounded `d/x/X/< />` behavior; region-aware Meta operations,
-generic Org-element
-movement, shift-control commands, and richer list/table semantics; timestamp,
-time-of-day/named-date/calendar planning input, warning and delay cookies,
-region-wide planning, and wider timestamp workflows; source-block editing,
+generic Org-element movement, unimplemented list/table Shift-control contexts,
+and richer list/table semantics; named-date/calendar prompt input,
+consecutive-command timestamp-range creation, warning and delay cookies,
+region-wide planning, and wider timestamp variants; source-block editing,
 variables/sessions and the rest of Babel's
 backend/header/result matrix; in-editor LaTeX preview, non-HTML export
 backends, and exact `ox-html` output; org-modern

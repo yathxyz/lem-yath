@@ -733,6 +733,41 @@ still use TARGET as their cursor destination."
         (message "TODO state: ~a" (or next "none"))))
     (message "No Org heading at point")))
 
+(defun org-previous-todo-state (state)
+  (if state
+      (let ((position (position state *org-todo-keywords* :test #'string=)))
+        (and position (plusp position)
+             (nth (1- position) *org-todo-keywords*)))
+      (car (last *org-todo-keywords*))))
+
+(defun org-shift-horizontal (forward-p)
+  "Apply GNU Org's useful horizontal Shift contexts."
+  (cond
+    ((org-timestamp-token-at-point)
+     (org-shift-timestamp-at-point (if forward-p 1 -1)))
+    ((org-heading-line-p (current-point))
+     (multiple-value-bind (start end state)
+         (org-heading-todo-bounds (current-point))
+       (declare (ignore start end))
+       (setf state (if forward-p
+                       (org-next-todo-state state)
+                       (org-previous-todo-state state)))
+       (org-clear-folds (current-buffer))
+       (org-set-heading-todo-state (current-point) state)
+       (when (buffer-filename (current-buffer))
+         (save-buffer (current-buffer)))
+       (message "TODO state: ~a" (or state "none"))))
+    (t
+     (message "No shiftable Org timestamp or heading at point"))))
+
+(define-command lem-yath-org-context-shift-right () ()
+  "Move a timestamp later or a heading to its next TODO state."
+  (org-shift-horizontal t))
+
+(define-command lem-yath-org-context-shift-left () ()
+  "Move a timestamp earlier or a heading to its previous TODO state."
+  (org-shift-horizontal nil))
+
 ;;; --- checkboxes and lists -------------------------------------------------
 
 (defvar *org-recursive-block-list-navigation-p* nil
@@ -2463,6 +2498,8 @@ matching the active Emacs terminal profile.")
 (define-key *org-vi-normal-keymap* "C-Return" 'lem-yath-org-insert-heading)
 (define-key *org-vi-normal-keymap* "C-Shift-Return"
   'lem-yath-org-insert-todo-heading)
+(define-key *org-vi-normal-keymap* "Shift-Left" 'lem-yath-org-context-shift-left)
+(define-key *org-vi-normal-keymap* "Shift-Right" 'lem-yath-org-context-shift-right)
 
 (define-key *org-vi-insert-keymap* "Tab" 'lem-yath-org-cycle)
 (define-key *org-vi-insert-keymap* "Shift-Tab" 'lem-yath-org-shift-tab)
@@ -2480,3 +2517,7 @@ matching the active Emacs terminal profile.")
 (define-key *org-mode-keymap* "M-Return" 'lem-yath-org-meta-return)
 (define-key *org-mode-keymap* "C-Return" 'lem-yath-org-insert-heading)
 (define-key *org-mode-keymap* "C-Shift-Return" 'lem-yath-org-insert-todo-heading)
+(define-key *org-mode-keymap* "Shift-Left" 'lem-yath-org-context-shift-left)
+(define-key *org-mode-keymap* "Shift-Right" 'lem-yath-org-context-shift-right)
+(define-key *org-mode-keymap* "C-c Left" 'lem-yath-org-context-shift-left)
+(define-key *org-mode-keymap* "C-c Right" 'lem-yath-org-context-shift-right)

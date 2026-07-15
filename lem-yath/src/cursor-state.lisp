@@ -129,6 +129,12 @@
 (define-key *lem-yath-emacs-state-keymap* "C-z"
   'lem-yath-toggle-emacs-state)
 
+;; Lem's global map uses C-\\ for undo and C-//C-_ for redo.  Shadow that
+;; only in EMACS state with GNU Emacs's ordinary undo chords.
+(define-key *lem-yath-emacs-state-keymap* "C-/" 'undo)
+(define-key *lem-yath-emacs-state-keymap* "C-_" 'undo)
+(define-key *lem-yath-emacs-state-keymap* "C-x u" 'undo)
+
 ;;; Emacs-state marks ---------------------------------------------------------
 
 ;; Vi's stock mark hooks enter VISUAL on mark activation and NORMAL on mark

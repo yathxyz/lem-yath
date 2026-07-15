@@ -12,10 +12,16 @@
   (ppcre:create-scanner "^\\s*(?:SCHEDULED|DEADLINE):")
   "Match the structural planning line immediately below an Org heading.")
 
-(defun org-date-with-weekday (date)
-  "Return DATE as an active Org timestamp with its computed weekday."
-  (unless (valid-iso-date-p date)
-    (error "Invalid Org date: ~s" date))
+(defparameter *org-timestamp-scanner*
+  (ppcre:create-scanner
+   "(<|\\[)([0-9]{4}-[0-9]{2}-[0-9]{2})(?:\\s+[A-Za-z]{3})?(?:\\s+([0-9]{1,2}:[0-9]{2})(?:-([0-9]{1,2}:[0-9]{2}))?)?((?:\\s+[^>\\]\\r\\n]+)?)(>|\\])")
+  "Match one ordinary active or inactive Org timestamp on a single line.")
+
+(defstruct (%org-timestamp-token
+            (:constructor %make-org-timestamp-token))
+  start end active-p date time end-time extra)
+
+(defun org-date-weekday-name (date)
   (multiple-value-bind (year month day) (iso-date-components date)
     (multiple-value-bind (second minute hour decoded-day decoded-month
                           decoded-year weekday)
@@ -24,8 +30,13 @@
          0)
       (declare (ignore second minute hour decoded-day decoded-month
                        decoded-year))
-      (format nil "<~a ~a>" date
-              (aref *org-planning-weekday-names* weekday)))))
+      (aref *org-planning-weekday-names* weekday))))
+
+(defun org-date-with-weekday (date)
+  "Return DATE as an active Org timestamp with its computed weekday."
+  (unless (valid-iso-date-p date)
+    (error "Invalid Org date: ~s" date))
+  (format nil "<~a ~a>" date (org-date-weekday-name date)))
 
 (defun org-planning-today (&optional
                              (now (funcall *org-planning-now-function*)))
@@ -197,5 +208,228 @@ A doubled sign applies the offset to DEFAULT-DATE rather than today."
   "Set this heading's DEADLINE date; a prefix removes it."
   (org-change-planning "DEADLINE" "Deadline" argument))
 
+;;; --- ordinary timestamps ------------------------------------------------
+
+(defun org-timestamp-match-part (line starts ends index)
+  (let ((start (and starts (aref starts index))))
+    (and start (subseq line start (aref ends index)))))
+
+(defun org-normalize-clock-time (text)
+  (multiple-value-bind (start end starts ends)
+      (ppcre:scan "^([0-9]{1,2}):([0-9]{2})$" text)
+    (declare (ignore end))
+    (when start
+      (let ((hour (parse-integer text :start (aref starts 0)
+                                 :end (aref ends 0)))
+            (minute (parse-integer text :start (aref starts 1)
+                                   :end (aref ends 1))))
+        (when (and (<= 0 hour 23) (<= 0 minute 59))
+          (format nil "~2,'0d:~2,'0d" hour minute))))))
+
+(defun org-parse-clock-spec (text)
+  "Return normalized start/end times and true when TEXT is a clock spec."
+  (let* ((separator (position #\- text))
+         (start (org-normalize-clock-time
+                 (if separator (subseq text 0 separator) text)))
+         (end (and separator
+                   (org-normalize-clock-time
+                    (subseq text (1+ separator))))))
+    (values start end (and start (or (null separator) end)))))
+
+(defun org-timestamp-token-at-point (&optional (point (current-point)))
+  "Return the ordinary Org timestamp containing or ending at POINT."
+  (let ((line (line-string point))
+        (column (point-charpos point))
+        (offset 0))
+    (loop
+      (multiple-value-bind (start end starts ends)
+          (ppcre:scan *org-timestamp-scanner* line :start offset)
+        (unless start (return nil))
+        (let* ((opening (org-timestamp-match-part line starts ends 0))
+               (date (org-timestamp-match-part line starts ends 1))
+               (time-text (org-timestamp-match-part line starts ends 2))
+               (end-time-text (org-timestamp-match-part line starts ends 3))
+               (extra (string-trim
+                       '(#\Space #\Tab)
+                       (or (org-timestamp-match-part line starts ends 4) "")))
+               (closing (org-timestamp-match-part line starts ends 5))
+               (active-p (and (string= opening "<")
+                              (string= closing ">")))
+               (inactive-p (and (string= opening "[")
+                                (string= closing "]")))
+               (time (and time-text
+                          (org-normalize-clock-time time-text)))
+               (end-time (and end-time-text
+                              (org-normalize-clock-time end-time-text))))
+          (when (and (or active-p inactive-p)
+                     (valid-iso-date-p date)
+                     (or (null time-text) time)
+                     (or (null end-time-text) end-time)
+                     (<= start column end))
+            (return
+              (%make-org-timestamp-token
+               :start start :end end :active-p active-p :date date
+               :time time :end-time end-time :extra extra))))
+        (setf offset (max (1+ start) end))))))
+
+(defun org-timestamp-text (date active-p &key time end-time extra)
+  (let ((opening (if active-p #\< #\[))
+        (closing (if active-p #\> #\])))
+    (format nil "~c~a ~a~@[ ~a~]~@[-~a~]~@[ ~a~]~c"
+            opening date (org-date-weekday-name date)
+            time end-time
+            (and extra (plusp (length extra)) extra)
+            closing)))
+
+(defun org-timestamp-default-input (token now force-time-p)
+  (let ((date (if token
+                  (%org-timestamp-token-date token)
+                  (org-planning-today now)))
+        (time (and token (%org-timestamp-token-time token)))
+        (end-time (and token (%org-timestamp-token-end-time token))))
+    (when (and force-time-p (null time))
+      (multiple-value-bind (second minute hour)
+          (decode-universal-time now)
+        (declare (ignore second))
+        (setf time (format nil "~2,'0d:~2,'0d" hour minute))))
+    (format nil "~a~@[ ~a~]~@[-~a~]" date time end-time)))
+
+(defun org-parse-timestamp-input (input default-date now)
+  "Return date, start time, end time, and true for bounded timestamp INPUT."
+  (let* ((value (string-trim '(#\Space #\Tab) input))
+         (parts (if (zerop (length value))
+                    nil
+                    (ppcre:split "\\s+" value))))
+    (cond
+      ((null parts) (values default-date nil nil t))
+      ((= (length parts) 1)
+       (multiple-value-bind (time end-time clock-p)
+           (org-parse-clock-spec (first parts))
+         (if clock-p
+             (values default-date time end-time t)
+             (alexandria:if-let
+                 ((date (org-parse-planning-date-input
+                         (first parts) :default-date default-date :now now)))
+               (values date nil nil t)
+               (values nil nil nil nil)))))
+      ((= (length parts) 2)
+       (let ((date (org-parse-planning-date-input
+                    (first parts) :default-date default-date :now now)))
+         (multiple-value-bind (time end-time clock-p)
+             (org-parse-clock-spec (second parts))
+           (if (and date clock-p)
+               (values date time end-time t)
+               (values nil nil nil nil)))))
+      (t (values nil nil nil nil)))))
+
+(defun org-prefix-magnitude (argument)
+  (typecase argument
+    (integer (abs argument))
+    (null 0)
+    (t 4)))
+
+(defun org-read-timestamp-values (token label now force-time-p)
+  (let* ((default-input
+           (org-timestamp-default-input token now force-time-p))
+         (default-date (if token
+                           (%org-timestamp-token-date token)
+                           (org-planning-today now))))
+    (loop
+      :for input :=
+        (string-trim
+         '(#\Space #\Tab)
+         (prompt-for-string
+          (format nil "~a [~a] (date and optional time): "
+                  label default-input)))
+      :do
+         (when (zerop (length input))
+           (setf input default-input))
+         (multiple-value-bind (date time end-time valid-p)
+             (org-parse-timestamp-input input default-date now)
+           (when valid-p
+             (when (and force-time-p (null time))
+               (multiple-value-bind (second minute hour)
+                   (decode-universal-time now)
+                 (declare (ignore second))
+                 (setf time (format nil "~2,'0d:~2,'0d" hour minute))))
+             (return (values date time end-time))))
+         (message
+          "Invalid timestamp; use DATE, DATE HH:MM, or DATE HH:MM-HH:MM"))))
+
+(defun org-replace-timestamp-token (token text)
+  (let* ((point (current-point))
+         (relative (- (point-charpos point)
+                      (%org-timestamp-token-start token))))
+    (line-start point)
+    (character-offset point (%org-timestamp-token-start token))
+    (delete-character point (- (%org-timestamp-token-end token)
+                               (%org-timestamp-token-start token)))
+    (insert-string point text)
+    (line-start point)
+    (character-offset point
+                      (+ (%org-timestamp-token-start token)
+                         (min (max relative 0) (1- (length text))))))
+  text)
+
+(defun org-insert-or-replace-timestamp (inactive-p argument)
+  (when (buffer-read-only-p (current-buffer))
+    (editor-error "Org buffer is read-only"))
+  (let* ((token (org-timestamp-token-at-point))
+         (now (funcall *org-planning-now-function*))
+         (magnitude (org-prefix-magnitude argument))
+         (force-time-p (>= magnitude 4))
+         (immediate-p (>= magnitude 16)))
+    (multiple-value-bind (date time end-time)
+        (if immediate-p
+            (multiple-value-bind (second minute hour)
+                (decode-universal-time now)
+              (declare (ignore second))
+              (values (org-planning-today now)
+                      (format nil "~2,'0d:~2,'0d" hour minute)
+                      nil))
+            (org-read-timestamp-values token
+                                       (if inactive-p
+                                           "Inactive timestamp"
+                                           "Timestamp")
+                                       now force-time-p))
+      (let ((text
+              (org-timestamp-text
+               date (not inactive-p)
+               :time time :end-time end-time
+               :extra (and token (%org-timestamp-token-extra token)))))
+        (if token
+            (org-replace-timestamp-token token text)
+            (insert-string (current-point) text))
+        (message "~:[Inserted~;Updated~] ~a" (not (null token)) text)
+        text))))
+
+(defun org-shift-timestamp-at-point (days)
+  "Shift the timestamp at point by DAYS, preserving its other syntax."
+  (alexandria:when-let ((token (org-timestamp-token-at-point)))
+    (when (buffer-read-only-p (current-buffer))
+      (editor-error "Org buffer is read-only"))
+    (let* ((date (or (iso-date-add-calendar
+                      (%org-timestamp-token-date token) days #\d)
+                     (editor-error "Timestamp leaves the supported date range")))
+           (text
+             (org-timestamp-text
+              date (%org-timestamp-token-active-p token)
+              :time (%org-timestamp-token-time token)
+              :end-time (%org-timestamp-token-end-time token)
+              :extra (%org-timestamp-token-extra token))))
+      (org-replace-timestamp-token token text)
+      (message "~a" text)
+      t)))
+
+(define-command lem-yath-org-timestamp (argument) (:universal-nil)
+  "Insert or update an active Org timestamp."
+  (org-insert-or-replace-timestamp nil argument))
+
+(define-command lem-yath-org-timestamp-inactive (argument) (:universal-nil)
+  "Insert or update an inactive Org timestamp."
+  (org-insert-or-replace-timestamp t argument))
+
 (define-key *org-mode-keymap* "C-c C-s" 'lem-yath-org-schedule)
 (define-key *org-mode-keymap* "C-c C-d" 'lem-yath-org-deadline)
+(define-key *org-mode-keymap* "C-c ." 'lem-yath-org-timestamp)
+(define-key *org-mode-keymap* "C-c !" 'lem-yath-org-timestamp-inactive)
