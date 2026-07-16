@@ -11,6 +11,15 @@
 (define-major-mode buffer-list-test-long-mode ()
     (:name "Long Fixture Mode Name"))
 
+(define-major-mode buffer-list-test-sort-a-mode ()
+    (:name "Zulu Display Mode"))
+
+(define-major-mode buffer-list-test-sort-m-mode ()
+    (:name "Alpha Display Mode"))
+
+(define-major-mode buffer-list-test-sort-z-mode ()
+    (:name "Middle Display Mode"))
+
 (defun buffer-list-test-log (control &rest arguments)
   (with-open-file (stream *buffer-list-test-report*
                           :direction :output
@@ -62,9 +71,10 @@
      groups order subset (buffer-list-test-binding "C-x C-b")
      (length *buffer-list-filter-groups*))
     (destructuring-bind (status name size mode file)
-        (buffer-list-columns nil (make-buffer-list-entry
-                                  "Default"
-                                  (buffer-list-test-buffer 'long)))
+        (buffer-list-primary-columns
+         nil
+         (make-buffer-list-entry
+          "Default" (buffer-list-test-buffer 'long)))
       (let ((wide (buffer-list-fixed-field "12345678901234界尾x" 18)))
         (buffer-list-test-log
          "COLUMNS status=[~a] name=[~a] name-width=~d size=[~a] mode=[~a] mode-width=~d file=[~a] wide=[~a] wide-width=~d"
@@ -95,6 +105,26 @@
        "live" "dead")
    (if (member *buffer-list-test-kill-b* (buffer-list) :test #'eq)
        "live" "dead")))
+
+(define-command lem-yath-test-buffer-list-ui-state () ()
+  (let* ((component (lem/multi-column-list::current-multi-column-list))
+         (names
+           (loop :for item :in (buffer-list-component-all-items component)
+                 :for entry := (buffer-list-item-entry item)
+                 :for name :=
+                   (unless (buffer-list-entry-heading-p entry)
+                     (buffer-name (buffer-list-entry-buffer entry)))
+                 :when (and name
+                            (alexandria:starts-with-subseq
+                             "buffer-list-sort-" name))
+                   :collect name)))
+    (buffer-list-test-log
+     "UI sort=~(~a~) reverse=~a format=~d columns=~{~a~^,~} order=~{~a~^,~}"
+     (buffer-list-component-sort-mode component)
+     (if (buffer-list-component-sort-reversed-p component) "yes" "no")
+     (buffer-list-component-format-index component)
+     (buffer-list-format-columns component)
+     names)))
 
 (define-command lem-yath-test-buffer-list-reload () ()
   (load (merge-pathnames "src/buffer-list.lisp"
@@ -135,6 +165,22 @@
   (insert-string (buffer-end-point buffer) "x")
   (setf (buffer-read-only-p buffer) t))
 
+(flet ((make-sort-buffer (label name mode size filename)
+         (let ((buffer (buffer-list-test-make-buffer label name mode)))
+           (setf (buffer-filename buffer) filename)
+           (insert-string (buffer-end-point buffer)
+                          (make-string size :initial-element #\x))
+           buffer)))
+  (make-sort-buffer
+   'sort-alpha "buffer-list-sort-alpha" 'buffer-list-test-sort-z-mode 30
+   (uiop:getenv "LEM_YATH_BUFFER_LIST_SORT_C"))
+  (make-sort-buffer
+   'sort-middle "buffer-list-sort-middle" 'buffer-list-test-sort-a-mode 20
+   (uiop:getenv "LEM_YATH_BUFFER_LIST_SORT_A"))
+  (make-sort-buffer
+   'sort-zeta "buffer-list-sort-zeta" 'buffer-list-test-sort-m-mode 10
+   (uiop:getenv "LEM_YATH_BUFFER_LIST_SORT_B")))
+
 (define-key lem-vi-mode:*normal-keymap* "F5"
   'lem-yath-test-buffer-list-report)
 (define-key lem-vi-mode:*normal-keymap* "F6"
@@ -143,6 +189,8 @@
   'lem-yath-test-buffer-list-lifecycle)
 (define-key lem/multi-column-list::*multi-column-list-mode-keymap* "F7"
   'lem-yath-test-buffer-list-lifecycle)
+(define-key *buffer-list-picker-mode-keymap* "F8"
+  'lem-yath-test-buffer-list-ui-state)
 (define-key lem-vi-mode:*normal-keymap* "F10"
   'lem-yath-test-buffer-list-reload)
 

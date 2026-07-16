@@ -132,6 +132,11 @@ renders each group as a distinct collapsible heading. Its default row mirrors
 the configured stock format's mark, modified/read-only status, 18-cell elided
 name, 9-cell right-aligned size, 16-cell elided mode, and file fields. Lem has no
 visited-file locking state, so the stock lock field remains a reserved blank.
+The active Emacs defaults sort by recency. Evil-Collection remaps the stock sort
+prefix: `o a/v/s/f/m` select name, recency, size, filename, or major-mode
+sorting, `o i` reverses it, comma cycles the available sorters, and backtick
+rotates to the second stock name/file format; `s` remains its filter prefix.
+The Lem chooser implements those controls within each configured group.
 Live name filtering temporarily presents only matching selectable buffer rows
 (`src/buffer-list.lisp`, `scripts/buffer-list-test.sh`).
 

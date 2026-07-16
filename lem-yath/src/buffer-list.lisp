@@ -119,7 +119,32 @@ Each nonempty group begins with a distinct heading entry."
     :accessor buffer-list-component-all-items)
    (hidden-groups
     :initform nil
-    :accessor buffer-list-component-hidden-groups)))
+    :accessor buffer-list-component-hidden-groups)
+   (sort-mode
+    :initform :recency
+    :accessor buffer-list-component-sort-mode)
+   (sort-reversed-p
+    :initform nil
+    :accessor buffer-list-component-sort-reversed-p)
+   (format-index
+    :initform 0
+    :accessor buffer-list-component-format-index)
+   (recency-ranks
+    :initform (make-hash-table :test #'eq)
+    :reader buffer-list-component-recency-ranks)))
+
+(defparameter *buffer-list-sort-mode-cycle*
+  '(:alphabetic :filename :major-mode :mode-name :recency :size)
+  "The lexical cycle used by pinned Ibuffer's comma command.")
+
+(defun buffer-list-format-columns (component)
+  (ecase (buffer-list-component-format-index component)
+    (0 '("" "Buffer" "Size" "Mode" "File"))
+    (1 '("Buffer" "File"))))
+
+(defmethod lem/multi-column-list::multi-column-list-columns
+    ((component buffer-list-component))
+  (buffer-list-format-columns component))
 
 (define-minor-mode buffer-list-picker-mode
     (:name "buffer-list-picker"
@@ -128,9 +153,18 @@ Each nonempty group begins with a distinct heading entry."
 
 (defmethod initialize-instance :after
     ((component buffer-list-component) &key &allow-other-keys)
-  (setf (buffer-list-component-all-items component)
-        (copy-list
-         (lem/multi-column-list::multi-column-list-items component))))
+  (let ((items
+          (copy-list
+           (lem/multi-column-list::multi-column-list-items component))))
+    (setf (buffer-list-component-all-items component) items)
+    (loop :with rank := 0
+          :for item :in items
+          :for entry := (buffer-list-item-entry item)
+          :unless (buffer-list-entry-heading-p entry)
+            :do (setf (gethash (buffer-list-entry-buffer entry)
+                               (buffer-list-component-recency-ranks component))
+                      rank)
+                (incf rank))))
 
 (defun buffer-list-item-entry (item)
   (lem/multi-column-list::unwrap item))
@@ -168,13 +202,106 @@ Each nonempty group begins with a distinct heading entry."
       (dolist (buffer
                (completion-buffer
                 query (mapcar #'buffer-list-entry-buffer buffer-entries)))
-        (alexandria:when-let ((entry (gethash buffer by-buffer)))
+        (when (gethash buffer by-buffer)
+          (setf (gethash buffer by-buffer) :matching)))
+      ;; Manual Ibuffer sorting remains authoritative while narrowing.  The
+      ;; completion matcher decides membership, but does not reorder matches.
+      (dolist (entry buffer-entries)
+        (when (eq :matching
+                  (gethash (buffer-list-entry-buffer entry) by-buffer))
           (push entry matching))))
     ;; Live filtering is a selection view rather than an Ibuffer group view:
     ;; omit headings so Return keeps selecting the first matching buffer.  A
     ;; collapsed group becomes visible to a direct query and is restored when
     ;; the query is cleared.
     (nreverse matching)))
+
+(defun buffer-list-sort-string (buffer mode)
+  (ecase mode
+    (:alphabetic (buffer-name buffer))
+    (:filename (or (buffer-filename buffer) ""))
+    (:major-mode
+     (string-downcase (symbol-name (buffer-major-mode buffer))))
+    (:mode-name
+     (string-downcase (mode-name (buffer-major-mode buffer))))))
+
+(defun buffer-list-item-less-p (component left right mode)
+  (let ((left-buffer
+          (buffer-list-entry-buffer (buffer-list-item-entry left)))
+        (right-buffer
+          (buffer-list-entry-buffer (buffer-list-item-entry right))))
+    (ecase mode
+      ((:alphabetic :filename :major-mode :mode-name)
+       (string< (buffer-list-sort-string left-buffer mode)
+                (buffer-list-sort-string right-buffer mode)))
+      (:size
+       (< (completion-buffer-size left-buffer)
+          (completion-buffer-size right-buffer)))
+      (:recency
+       (< (gethash left-buffer
+                   (buffer-list-component-recency-ranks component)
+                   most-positive-fixnum)
+          (gethash right-buffer
+                   (buffer-list-component-recency-ranks component)
+                   most-positive-fixnum))))))
+
+(defun buffer-list-sort-all-items (component)
+  "Sort buffers inside each configured group without moving headings."
+  (let ((remaining (copy-list (buffer-list-component-all-items component)))
+        result)
+    (loop :while remaining
+          :for heading := (pop remaining)
+          :for entry := (buffer-list-item-entry heading)
+          :do
+             (unless (buffer-list-entry-heading-p entry)
+               (error "Buffer-list group is missing its heading"))
+             (push heading result)
+             (let (members)
+               (loop :while (and remaining
+                                 (not (buffer-list-entry-heading-p
+                                       (buffer-list-item-entry
+                                        (first remaining)))))
+                     :do (push (pop remaining) members))
+               (setf members
+                     (stable-sort
+                      (nreverse members)
+                      (lambda (left right)
+                        (buffer-list-item-less-p
+                         component left right
+                         (buffer-list-component-sort-mode component)))))
+               (when (buffer-list-component-sort-reversed-p component)
+                 (setf members (nreverse members)))
+               (dolist (member members)
+                 (push member result))))
+    (setf (buffer-list-component-all-items component) (nreverse result))))
+
+(defun buffer-list-refresh (component &key recompute-columns)
+  (buffer-list-reset-visible-items component)
+  (when recompute-columns
+    (setf (lem/multi-column-list::multi-column-list-print-spec component)
+          (make-instance
+           'lem/multi-column-list::print-spec
+           :multi-column-list component
+           :column-width-list
+           (lem/multi-column-list::compute-column-width-list component))))
+  (lem/multi-column-list:update component))
+
+(defun buffer-list-sort-description (mode)
+  (ecase mode
+    (:alphabetic "buffer name")
+    (:filename "file name")
+    (:major-mode "major mode")
+    (:mode-name "major mode name")
+    (:recency "recency")
+    (:size "size")))
+
+(defun buffer-list-set-sort-mode (component mode)
+  (setf (buffer-list-component-sort-mode component) mode)
+  (buffer-list-sort-all-items component)
+  (buffer-list-refresh component)
+  (message "Sorting by ~a~:[~; (reversed)~]"
+           (buffer-list-sort-description mode)
+           (buffer-list-component-sort-reversed-p component)))
 
 (defun buffer-list-attributes (buffer)
   "Return Ibuffer's modified, read-only, and reserved lock status fields."
@@ -204,7 +331,7 @@ Each nonempty group begins with a distinct heading entry."
                       (make-string padding :initial-element #\.)
                       ellipsis))))))
 
-(defun buffer-list-columns (component entry)
+(defun buffer-list-primary-columns (component entry)
   (if (buffer-list-entry-heading-p entry)
       (list ""
             (format nil "[ ~a~a ]"
@@ -226,6 +353,28 @@ Each nonempty group begins with a distinct heading entry."
               (if (buffer-filename buffer)
                   (completion-path-display-string (buffer-filename buffer))
                   "")))))
+
+(defun buffer-list-compact-columns (component entry)
+  (if (buffer-list-entry-heading-p entry)
+      (list
+       (format nil "[ ~a~a ]"
+               (buffer-list-entry-group entry)
+               (if (buffer-list-group-hidden-p
+                    component (buffer-list-entry-group entry))
+                   " ..."
+                   ""))
+       "")
+      (let ((buffer (buffer-list-entry-buffer entry)))
+        (list
+         (completion-path-display-string (buffer-name buffer))
+         (if (buffer-filename buffer)
+             (completion-path-display-string (buffer-filename buffer))
+             "")))))
+
+(defun buffer-list-columns (component entry)
+  (ecase (buffer-list-component-format-index component)
+    (0 (buffer-list-primary-columns component entry))
+    (1 (buffer-list-compact-columns component entry))))
 
 (defun buffer-list-toggle-group (component group)
   (if (buffer-list-group-hidden-p component group)
@@ -329,6 +478,50 @@ Each nonempty group begins with a distinct heading entry."
   (buffer-list-save-action-items
    (lem/multi-column-list::current-multi-column-list)))
 
+(define-command lem-yath-buffer-list-sort-alphabetic () ()
+  (buffer-list-set-sort-mode
+   (lem/multi-column-list::current-multi-column-list) :alphabetic))
+
+(define-command lem-yath-buffer-list-sort-recency () ()
+  (buffer-list-set-sort-mode
+   (lem/multi-column-list::current-multi-column-list) :recency))
+
+(define-command lem-yath-buffer-list-sort-size () ()
+  (buffer-list-set-sort-mode
+   (lem/multi-column-list::current-multi-column-list) :size))
+
+(define-command lem-yath-buffer-list-sort-filename () ()
+  (buffer-list-set-sort-mode
+   (lem/multi-column-list::current-multi-column-list) :filename))
+
+(define-command lem-yath-buffer-list-sort-major-mode () ()
+  (buffer-list-set-sort-mode
+   (lem/multi-column-list::current-multi-column-list) :major-mode))
+
+(define-command lem-yath-buffer-list-invert-sorting () ()
+  (let ((component (lem/multi-column-list::current-multi-column-list)))
+    (setf (buffer-list-component-sort-reversed-p component)
+          (not (buffer-list-component-sort-reversed-p component)))
+    (buffer-list-sort-all-items component)
+    (buffer-list-refresh component)
+    (message "Sorting order ~:[normal~;reversed~]"
+             (buffer-list-component-sort-reversed-p component))))
+
+(define-command lem-yath-buffer-list-cycle-sorting () ()
+  (let* ((component (lem/multi-column-list::current-multi-column-list))
+         (mode (buffer-list-component-sort-mode component))
+         (tail (member mode *buffer-list-sort-mode-cycle*))
+         (next (or (second tail) (first *buffer-list-sort-mode-cycle*))))
+    (buffer-list-set-sort-mode component next)))
+
+(define-command lem-yath-buffer-list-switch-format () ()
+  (let ((component (lem/multi-column-list::current-multi-column-list)))
+    (setf (buffer-list-component-format-index component)
+          (mod (1+ (buffer-list-component-format-index component)) 2))
+    (buffer-list-refresh component :recompute-columns t)
+    (message "Buffer-list format ~d of 2"
+             (1+ (buffer-list-component-format-index component)))))
+
 (defun buffer-list-kill-selected (window)
   (buffer-list-delete-action-items
    (lem/multi-column-list:multi-column-list-of-window window)))
@@ -355,7 +548,7 @@ Each nonempty group begins with a distinct heading entry."
     (setf component
           (make-instance
            'buffer-list-component
-           :columns '("" "Buffer" "Size" "Mode" "File")
+           :columns nil
            :column-function #'buffer-list-columns
            :items (buffer-list-grouped-entries)
            :filter-function
@@ -376,3 +569,19 @@ Each nonempty group begins with a distinct heading entry."
   'lem-yath-buffer-list-delete-items)
 (define-key *buffer-list-picker-mode-keymap* "C-s"
   'lem-yath-buffer-list-save-items)
+(define-key *buffer-list-picker-mode-keymap* "o a"
+  'lem-yath-buffer-list-sort-alphabetic)
+(define-key *buffer-list-picker-mode-keymap* "o v"
+  'lem-yath-buffer-list-sort-recency)
+(define-key *buffer-list-picker-mode-keymap* "o s"
+  'lem-yath-buffer-list-sort-size)
+(define-key *buffer-list-picker-mode-keymap* "o f"
+  'lem-yath-buffer-list-sort-filename)
+(define-key *buffer-list-picker-mode-keymap* "o m"
+  'lem-yath-buffer-list-sort-major-mode)
+(define-key *buffer-list-picker-mode-keymap* "o i"
+  'lem-yath-buffer-list-invert-sorting)
+(define-key *buffer-list-picker-mode-keymap* ","
+  'lem-yath-buffer-list-cycle-sorting)
+(define-key *buffer-list-picker-mode-keymap* "`"
+  'lem-yath-buffer-list-switch-format)

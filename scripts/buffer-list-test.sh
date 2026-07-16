@@ -10,6 +10,9 @@ export XDG_CACHE_HOME="$root/cache"
 export LEM_YATH_BUFFER_LIST_REPORT="$root/report"
 export LEM_YATH_BUFFER_LIST_TARGET="$root/buffer-list-zz-target.txt"
 export LEM_YATH_BUFFER_LIST_SAVE_TARGET="$root/buffer-list-save-target.txt"
+export LEM_YATH_BUFFER_LIST_SORT_A="$root/a-file.txt"
+export LEM_YATH_BUFFER_LIST_SORT_B="$root/b-file.txt"
+export LEM_YATH_BUFFER_LIST_SORT_C="$root/c-file.txt"
 export LEM_TUI_WIDTH=180
 export LEM_TUI_HEIGHT=36
 mkdir -p "$HOME" "$XDG_CACHE_HOME"
@@ -18,6 +21,9 @@ source_file="$root/buffer-list-source.txt"
 printf 'BUFFER LIST SOURCE\n' >"$source_file"
 printf 'BUFFER LIST SELECTED TARGET\n' >"$LEM_YATH_BUFFER_LIST_TARGET"
 printf 'SAVE ORIGINAL\n' >"$LEM_YATH_BUFFER_LIST_SAVE_TARGET"
+: >"$LEM_YATH_BUFFER_LIST_SORT_A"
+: >"$LEM_YATH_BUFFER_LIST_SORT_B"
+: >"$LEM_YATH_BUFFER_LIST_SORT_C"
 : >"$LEM_YATH_BUFFER_LIST_REPORT"
 
 source "$here/scripts/tui-driver.sh"
@@ -58,6 +64,21 @@ report_state() {
 
 latest_state() {
   grep '^STATE ' "$LEM_YATH_BUFFER_LIST_REPORT" | tail -1
+}
+
+report_ui() {
+  local before attempts=0
+  before=$(grep -c '^UI ' "$LEM_YATH_BUFFER_LIST_REPORT" 2>/dev/null || true)
+  lem_keys "$session" F8
+  while ((attempts < 40)); do
+    if (( $(grep -c '^UI ' "$LEM_YATH_BUFFER_LIST_REPORT" 2>/dev/null || true) > before )); then
+      grep '^UI ' "$LEM_YATH_BUFFER_LIST_REPORT" | tail -1
+      return 0
+    fi
+    sleep 0.25
+    attempts=$((attempts + 1))
+  done
+  return 1
 }
 
 fixture="$(lem-yath_lisp_string "$here/scripts/buffer-list-fixture.lisp")"
@@ -194,6 +215,90 @@ if report_state &&
 else
   fail reload "reload changed the effective grouped-buffer contract"
 fi
+
+lem_keys "$session" C-x C-b
+if lem_wait_for "$session" 'Buffer[[:space:]]+Size[[:space:]]+Mode[[:space:]]+File' 15 >/dev/null; then
+  lem_keys "$session" o a
+  ui=$(report_ui || true)
+  if [[ "$ui" == 'UI sort=alphabetic reverse=no format=0 columns=,Buffer,Size,Mode,File order=buffer-list-sort-alpha,buffer-list-sort-middle,buffer-list-sort-zeta' ]]; then
+    pass sort-alphabetic "o a sorts names inside each configured group"
+  else
+    fail sort-alphabetic "unexpected alphabetic state: $ui"
+  fi
+
+  lem_keys "$session" o i
+  ui=$(report_ui || true)
+  if [[ "$ui" == 'UI sort=alphabetic reverse=yes format=0 columns=,Buffer,Size,Mode,File order=buffer-list-sort-zeta,buffer-list-sort-middle,buffer-list-sort-alpha' ]]; then
+    pass sort-invert "o i reverses the current Ibuffer ordering"
+  else
+    fail sort-invert "unexpected reversed state: $ui"
+  fi
+
+  lem_keys "$session" o i
+  lem_keys "$session" o s
+  ui=$(report_ui || true)
+  if [[ "$ui" == 'UI sort=size reverse=no format=0 columns=,Buffer,Size,Mode,File order=buffer-list-sort-zeta,buffer-list-sort-middle,buffer-list-sort-alpha' ]]; then
+    pass sort-size "o s sorts by live buffer size"
+  else
+    fail sort-size "unexpected size state: $ui"
+  fi
+
+  lem_keys "$session" o f
+  ui=$(report_ui || true)
+  if [[ "$ui" == 'UI sort=filename reverse=no format=0 columns=,Buffer,Size,Mode,File order=buffer-list-sort-middle,buffer-list-sort-zeta,buffer-list-sort-alpha' ]]; then
+    pass sort-filename "o f sorts by visiting filename"
+  else
+    fail sort-filename "unexpected filename state: $ui"
+  fi
+
+  lem_keys "$session" o m
+  ui=$(report_ui || true)
+  if [[ "$ui" == 'UI sort=major-mode reverse=no format=0 columns=,Buffer,Size,Mode,File order=buffer-list-sort-middle,buffer-list-sort-zeta,buffer-list-sort-alpha' ]]; then
+    pass sort-major-mode "o m sorts by major-mode symbol"
+  else
+    fail sort-major-mode "unexpected major-mode state: $ui"
+  fi
+
+  lem_keys "$session" ,
+  ui=$(report_ui || true)
+  if [[ "$ui" == 'UI sort=mode-name reverse=no format=0 columns=,Buffer,Size,Mode,File order=buffer-list-sort-zeta,buffer-list-sort-alpha,buffer-list-sort-middle' ]]; then
+    pass sort-cycle "comma advances through pinned Ibuffer sort modes"
+  else
+    fail sort-cycle "unexpected cycled state: $ui"
+  fi
+
+  lem_keys "$session" o v
+  ui=$(report_ui || true)
+  if [[ "$ui" == UI\ sort=recency\ reverse=no\ format=0* ]]; then
+    pass sort-recency "o v restores the chooser's captured recency order"
+  else
+    fail sort-recency "unexpected recency state: $ui"
+  fi
+
+  lem_keys "$session" '`'
+  ui=$(report_ui || true)
+  screen=$(lem_capture "$session")
+  if [[ "$ui" == UI\ sort=recency\ reverse=no\ format=1\ columns=Buffer,File* ]] &&
+     grep -Eq 'Buffer[[:space:]]+File' <<<"$screen" &&
+     ! grep -Eq 'Buffer[[:space:]]+Size[[:space:]]+Mode[[:space:]]+File' <<<"$screen"; then
+    pass alternate-format "backtick switches to Ibuffer's compact name/file view"
+  else
+    fail alternate-format "compact format did not render: $ui"
+  fi
+
+  lem_keys "$session" '`'
+  ui=$(report_ui || true)
+  screen=$(lem_capture "$session")
+  if [[ "$ui" == UI\ sort=recency\ reverse=no\ format=0* ]] &&
+     grep -Eq 'Buffer[[:space:]]+Size[[:space:]]+Mode[[:space:]]+File' <<<"$screen"; then
+    pass primary-format "a second backtick restores the stock detailed view"
+  else
+    fail primary-format "primary format did not return: $ui"
+  fi
+else
+  fail sorting-ui "could not reopen the grouped chooser for sorting"
+fi
+lem_keys "$session" Escape
 
 lem_keys "$session" C-x C-b
 tmux_cmd send-keys -t "$session" -l 'save-target'

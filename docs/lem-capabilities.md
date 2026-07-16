@@ -891,13 +891,18 @@ through the ncurses editor.
   excluded from buffer actions. Fuzzy narrowing temporarily displays only
   matching selectable buffers. The default rows preserve mark, modified and
   read-only status, the reserved lock position, 18-cell elided name, 9-cell
-  right-aligned size, 16-cell elided mode, and filename. Return,
-  mark/save/kill, and control-character-safe display remain available. The real
-  TUI verifies classification, ordering, empty-group omission, heading
-  collapse/expansion and safety, filtering, stock field widths including wide
-  characters, selection, marked actions, and reload. Lem has no visited-file
-  locking state, and Ibuffer's wider sorting/filtering commands and alternate
-  format switching are not reproduced.
+  right-aligned size, 16-cell elided mode, and filename. The pinned Ibuffer
+  Evil-Collection controls select name, recency, size, filename, or major-mode
+  sorting with `o a/v/s/f/m`, reverse with `o i`, traverse the lexical sorter cycle with
+  comma, and switch between the detailed and compact name/file formats with
+  backtick. Sorting preserves group order, headings, marks, and narrowing.
+  Return, mark/save/kill, and control-character-safe display remain available.
+  The real TUI verifies classification, ordering, every bound sorter, reversal,
+  cycling, both formats, empty-group omission, heading collapse/expansion and
+  safety, filtering, stock field widths including wide characters, selection,
+  marked actions, and reload. Lem has no visited-file locking state, and
+  Ibuffer's wider filter stack, marking, and operation commands are not
+  reproduced.
 - Recent files: `M-g r` opens an annotated Lem persistent-MRU prompt after
   lem-yath sets the loaded
   history's 300-entry limit and normalizes oversized persisted histories to their

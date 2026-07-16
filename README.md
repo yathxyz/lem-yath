@@ -254,7 +254,9 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   org/tramp/emacs/ediff/dired/terminal/help headings, hidden empty groups, and a
   Default tail. The default view includes mark/status, fixed-width elided name,
   right-aligned size, fixed-width elided mode, and file columns. Return collapses
-  or expands a heading, while live filtering, marks, save/kill, and Return
+  or expands a heading. The effective Evil-Collection `o a/v/s/f/m`, `o i`, and comma sort controls
+  work inside every group, while backtick rotates between the detailed and
+  compact name/file formats. Live filtering, marks, save/kill, and Return
   selection remain available
 - project-scoped LSP lifecycle: canonical-root isolation, in-flight startup
   deduplication and timeout, explicit buffer ownership with save-as migration,
