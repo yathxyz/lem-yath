@@ -49,6 +49,21 @@ wait_report_count() {
   return 1
 }
 
+report_fixed_count() {
+  local value=$1
+  grep -cFx "$value" "$LEM_YATH_PROMPT_COMPLETION_REPORT" 2>/dev/null || true
+}
+
+wait_report_fixed_count() {
+  local value=$1 expected=$2 timeout=${3:-10} i=0
+  while ((i < timeout * 4)); do
+    if (( $(report_fixed_count "$value") >= expected )); then return 0; fi
+    sleep 0.25
+    i=$((i + 1))
+  done
+  return 1
+}
+
 invoke_prompt_command() {
   local command=$1 prompt=$2
   lem_keys "$session" Escape
@@ -73,6 +88,43 @@ close_prompt() {
   sleep 0.2
   lem_keys "$session" Escape
   sleep 0.2
+}
+
+prompt_edit_operation_test() {
+  local name=$1 command=$2 initial=$3 expected=$4
+  shift 4
+  local report_line="PROMPT-EDIT-SELECT value=$expected" before
+  before=$(report_fixed_count "$report_line")
+  if ! invoke_prompt_command "$command" "Prompt edit: $initial"; then
+    fail "$name" "the editing prompt did not open" "$session"
+    return
+  fi
+  local key
+  for key in "$@"; do
+    lem_keys "$session" "$key"
+    sleep 0.08
+  done
+  sleep 0.7
+  local edited_screen
+  edited_screen=$(lem_capture "$session")
+  if ! grep -Fq "Prompt edit: $expected" <<<"$edited_screen"; then
+    fail "$name" "the command itself did not produce $expected" "$session"
+    printf '%s\n' "$edited_screen"
+    close_prompt
+    return
+  fi
+  # Word and whitespace commands deliberately leave point where Emacs does.
+  # Move to the field end before Return so completion accepts the whole input,
+  # rather than replacing only the prefix before point.
+  lem_keys "$session" C-e
+  lem_keys "$session" Enter
+  if wait_report_fixed_count "$report_line" $((before + 1)); then
+    pass "$name" "the protected prompt produced $expected and accepted it"
+  else
+    fail "$name" "the prompt edit did not produce $expected" "$session"
+    printf '%s\n' "$edited_screen"
+    close_prompt
+  fi
 }
 
 prescient_toggle_test() {
@@ -114,6 +166,57 @@ else
   pass boot "configured Lem opened both file-backed fixture buffers"
 fi
 sleep 0.8
+
+# GNU's standard minibuffer map inherits these global editing commands.  Keep
+# completion live while they mutate only the editable field.
+prompt_edit_operation_test prompt-emacs-transpose-words \
+  lem-yath-test-prompt-transpose-editing 'alpha beta' 'beta alpha' \
+  C-a C-f C-f C-f C-f M-t
+prompt_edit_operation_test prompt-emacs-uppercase-word \
+  lem-yath-test-prompt-uppercase-editing 'alpha beta' 'ALPHA beta' \
+  C-a M-u
+prompt_edit_operation_test prompt-emacs-negative-uppercase-word \
+  lem-yath-test-prompt-negative-uppercase-editing \
+  'one tWo THREE' 'one TWO THREE' \
+  C-e Left Left Left Left Left Left C-u - M-u
+prompt_edit_operation_test prompt-emacs-negative-transpose-words \
+  lem-yath-test-prompt-negative-transpose-editing \
+  'one two three' 'two one three' \
+  C-a C-f C-f C-f C-f C-f C-u - M-t
+prompt_edit_operation_test prompt-emacs-lowercase-word \
+  lem-yath-test-prompt-lowercase-editing 'ALPHA beta' 'alpha beta' \
+  C-a M-l
+prompt_edit_operation_test prompt-emacs-capitalize-word \
+  lem-yath-test-prompt-capitalize-editing 'aLPHA beta' 'Alpha beta' \
+  C-a M-c
+prompt_edit_operation_test prompt-emacs-horizontal-space \
+  lem-yath-test-prompt-space-editing 'alpha   beta' 'alphabeta' \
+  C-a M-f 'M-\'
+prompt_edit_operation_test prompt-emacs-sentence-kill \
+  lem-yath-test-prompt-sentence-editing \
+  'One sentence.  Two sentence!' 'One sentence.  ' \
+  C-e C-x BSpace
+
+quoted_before=$(report_fixed_count 'PROMPT-EDIT-SELECT value=alpha-')
+if invoke_prompt_command lem-yath-test-prompt-quoted-editing \
+     'Prompt edit: alpha'; then
+  lem_keys "$session" C-e C-q
+  tmux_cmd send-keys -t "$session" -l -- '-'
+  sleep 0.7
+  lem_keys "$session" Enter
+  if wait_report_fixed_count 'PROMPT-EDIT-SELECT value=alpha-' \
+       $((quoted_before + 1)); then
+    pass prompt-emacs-quoted-insert \
+      'C-q inserted the following physical key and retained completion'
+  else
+    fail prompt-emacs-quoted-insert \
+      'C-q did not insert at the protected prompt boundary' "$session"
+    close_prompt
+  fi
+else
+  fail prompt-emacs-quoted-insert 'the quoted-insert prompt did not open' \
+    "$session"
+fi
 
 # Preserve the everyday Emacs yank-pop workflow over deterministic kill-ring
 # entries, including insertion at the empty read-only field boundary.

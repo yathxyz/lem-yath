@@ -358,6 +358,17 @@ in place. `scripts/prompt-completion-test.sh` drives the real M-x and annotated
 buffer prompts through zero results and verifies stale rows, Backspace recovery,
 and recovery through further input.
 
+The prompt field inherits the configured Emacs 31 non-Evil minibuffer editing
+surface without exposing its read-only label. In addition to character/word
+motion, deletion, mark, kill-ring, transpose-character, and undo commands, the
+field supports `M-t` word transpose, `M-u`/`M-l`/`M-c` word case conversion,
+`C-q` quoted insertion, `M-\` horizontal-space deletion, and `C-x Backspace`
+backward sentence kill. Signed word and sentence prefixes match the pinned GNU
+oracle, a whitespace prefix deletes only before point, and every mutation
+refreshes or reopens completion. The same keys close ordinary Corfu and replay
+unchanged, preserving Paredit's Lisp-local `M-t` and Lem's ordinary quoted
+insert rather than leaking prompt boundary logic into source buffers.
+
 ### Directory-local Consult outline — `lem-yath/src/project-outline.lisp` (verified)
 
 The audited Emacs configuration binds `C-c i` to `consult-outline` only for

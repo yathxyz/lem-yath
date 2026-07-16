@@ -519,6 +519,43 @@ else
 fi
 
 if setup_corfu_popup; then
+  lem_keys "$session" C-q
+  tmux_cmd send-keys -t "$session" -l -- '-'
+  sleep 0.2
+  corfu_control_q=$(report_corfu_state || true)
+  if grep -q 'context=NIL buffer="pre-"' <<<"$corfu_control_q"; then
+    pass corfu-control-q-fallthrough \
+      'prompt-local C-q replayed ordinary quoted-insert with its next key'
+  else
+    fail corfu-control-q-fallthrough \
+      "prompt quoted-insert leaked into ordinary completion: $corfu_control_q"
+  fi
+else
+  fail corfu-control-q-setup "could not prepare the C-q scenario"
+fi
+
+if run_fixture_command lem-yath-test-auto-corfu-lisp-setup &&
+   wait_report '^SETUP corfu-lisp paredit=T$' 10 && enter_insert; then
+  tmux_cmd send-keys -t "$session" -l pre
+  if lem_wait_for "$session" 'previewAlpha' 10 >/dev/null; then
+    lem_keys "$session" M-t
+    sleep 0.2
+    corfu_meta_t=$(report_corfu_state || true)
+    if grep -q 'context=NIL buffer="pre"' <<<"$corfu_meta_t"; then
+      pass corfu-meta-t-fallthrough \
+        'prompt word transpose yielded M-t to the active Paredit map'
+    else
+      fail corfu-meta-t-fallthrough \
+        "prompt transpose leaked into ordinary completion: $corfu_meta_t"
+    fi
+  else
+    fail corfu-meta-t-fallthrough "the Lisp Corfu popup did not appear"
+  fi
+else
+  fail corfu-meta-t-setup "could not prepare the Lisp M-t scenario"
+fi
+
+if setup_corfu_popup; then
   accept_before=$(grep -c '^CORFU ACCEPT ' "$LEM_YATH_AUTO_COMPLETION_REPORT" 2>/dev/null || true)
   lem_keys "$session" C-n
   lem_keys "$session" Space

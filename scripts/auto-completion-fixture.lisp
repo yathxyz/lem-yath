@@ -52,6 +52,8 @@
   (lem/completion-mode:completion-end)
   (auto-completion-cancel-timer)
   (setf *auto-completion-context* nil)
+  (when (mode-active-p (current-buffer) 'lem-paredit-mode:paredit-mode)
+    (lem-paredit-mode:paredit-mode nil))
   (change-buffer-mode (current-buffer) 'lem-yath-auto-test-mode)
   (setf (variable-value 'lem/language-mode:completion-spec
                         :buffer (current-buffer))

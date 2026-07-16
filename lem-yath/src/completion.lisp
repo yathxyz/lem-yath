@@ -892,6 +892,303 @@ provider's source-defined order."
       (call-command 'transpose-characters nil)
       (lem/completion-mode:completion-refresh))))
 
+(defun completion-prompt-word-character-p (character)
+  (not (null (lem-core/commands/word::word-type character))))
+
+(defun completion-prompt-range-has-word-p (first second)
+  (when (point< second first)
+    (rotatef first second))
+  (some #'completion-prompt-word-character-p
+        (points-to-string first second)))
+
+(defun completion-prompt-move-word-exact (point direction count
+                                          input-start input-end
+                                          &optional (context "word move"))
+  "Move POINT across exactly COUNT prompt words in DIRECTION.
+Signal instead of treating the protected label or buffer edge as a word."
+  (dotimes (index count point)
+    (with-point ((before point :temporary))
+      (lem-core/commands/word::word-offset point direction)
+      (when (point< point input-start)
+        (move-point point input-start))
+      (when (point< input-end point)
+        (move-point point input-end))
+      (unless (and (not (point= before point))
+                   (completion-prompt-range-has-word-p before point))
+        (editor-error
+         "Missing prompt word in ~a (~d/~d, direction ~d, from ~d to ~d)"
+         context
+         (1+ index)
+         count
+         direction
+         (position-at-point before)
+         (position-at-point point))))))
+
+(defun completion-prompt-word-before-bounds (origin input-start input-end)
+  "Return the word before or around ORIGIN, matching `transpose-words'."
+  (let ((start (copy-point origin :temporary))
+        (end nil))
+    (completion-prompt-move-word-exact
+     start -1 1 input-start input-end "word-before start")
+    (setf end (copy-point start :temporary))
+    (completion-prompt-move-word-exact
+     end 1 1 input-start input-end "word-before end")
+    (values start end)))
+
+(defun completion-prompt-word-after-bounds (origin input-start input-end)
+  "Return the word around or after ORIGIN, matching argument-zero transpose."
+  (let ((end (copy-point origin :temporary))
+        (start nil))
+    (completion-prompt-move-word-exact
+     end 1 1 input-start input-end "word-after end")
+    (setf start (copy-point end :temporary))
+    (completion-prompt-move-word-exact
+     start -1 1 input-start input-end "word-after start")
+    (values start end)))
+
+(defun completion-prompt-transpose-spans (first-start first-end
+                                          second-start second-end
+                                          leave-after-first-p)
+  "Swap two non-overlapping prompt spans and place point after the moved first.
+FIRST must precede SECOND.  The text between the spans remains between them."
+  (unless (and (point< first-start first-end)
+               (not (point< second-start first-end))
+               (point< second-start second-end))
+    (editor-error
+     "Invalid prompt transpose spans ~d..~d and ~d..~d"
+     (position-at-point first-start)
+     (position-at-point first-end)
+     (position-at-point second-start)
+     (position-at-point second-end)))
+  (let* ((first-text (points-to-string first-start first-end))
+         (middle-text (points-to-string first-end second-start))
+         (second-text (points-to-string second-start second-end))
+         (replacement (concatenate 'string
+                                   second-text middle-text first-text))
+         (first-length (length first-text))
+         (replacement-length (length replacement))
+         (point (current-point)))
+    (move-point point first-start)
+    (delete-between-points first-start second-end)
+    (insert-string point replacement)
+    (unless leave-after-first-p
+      (character-offset point (- first-length replacement-length)))))
+
+(define-command lem-yath-prompt-transpose-words (&optional (argument 1))
+    (:universal)
+  "Transpose prompt words with GNU signed-prefix and protected-field behavior."
+  (let* ((point (current-point))
+         (input-start (lem/prompt-window::current-prompt-start-point))
+         (input-end (buffer-end (copy-point point :temporary))))
+    (completion-clamp-point-to-prompt-input)
+    (cond
+      ((plusp argument)
+       (multiple-value-bind (word-start word-end)
+           (completion-prompt-word-before-bounds
+            point input-start input-end)
+         (let ((group-end (copy-point word-end :temporary)))
+           (completion-prompt-move-word-exact
+            group-end 1 argument input-start input-end "forward group end")
+           (let ((group-start (copy-point group-end :temporary)))
+             (completion-prompt-move-word-exact
+              group-start -1 argument input-start input-end
+              "forward group start")
+             (completion-prompt-transpose-spans
+              word-start word-end group-start group-end t)))))
+      ((minusp argument)
+       (multiple-value-bind (word-start word-end)
+           (completion-prompt-word-before-bounds
+            point input-start input-end)
+         (let ((group-start (copy-point word-start :temporary)))
+           (completion-prompt-move-word-exact
+            group-start -1 (- argument) input-start input-end
+            "backward group start")
+           (let ((group-end (copy-point group-start :temporary)))
+             (completion-prompt-move-word-exact
+              group-end 1 (- argument) input-start input-end
+              "backward group end")
+             (completion-prompt-transpose-spans
+              group-start group-end word-start word-end nil)))))
+      (t
+       (multiple-value-bind (point-word-start point-word-end)
+           (completion-prompt-word-after-bounds
+            point input-start input-end)
+         (multiple-value-bind (ignored mark-point)
+             (completion-prompt-region-or-error)
+           (declare (ignore ignored))
+           (multiple-value-bind (mark-word-start mark-word-end)
+               (completion-prompt-word-after-bounds
+                mark-point input-start input-end)
+             (cond
+               ((point< point-word-end mark-word-start)
+                (completion-prompt-transpose-spans
+                 point-word-start point-word-end
+                 mark-word-start mark-word-end t))
+               ((point< mark-word-end point-word-start)
+                (completion-prompt-transpose-spans
+                 mark-word-start mark-word-end
+                 point-word-start point-word-end nil))
+               (t
+                (editor-error "Prompt transpose words overlap"))))))))
+    (completion-refresh-or-open-prompt)))
+
+(defun completion-prompt-case-negative-region (start end operation)
+  "Apply backward word-case OPERATION to the half-open prompt region."
+  (let ((text (points-to-string start end)))
+    (ecase operation
+      (:uppercase
+       (setf text (string-upcase text)))
+      (:lowercase
+       (setf text (string-downcase text)))
+      (:capitalize
+       (let ((previous-type nil))
+         (setf text
+               (map 'string
+                    (lambda (character)
+                      (let ((type
+                              (lem-core/commands/word::word-type character)))
+                        (prog1
+                            (cond
+                              ((null type) character)
+                              ((not (eql type previous-type))
+                               (char-upcase character))
+                              ((alphanumericp character)
+                               (char-downcase character))
+                              (t character))
+                          (setf previous-type type))))
+                    text)))))
+    (delete-between-points start end)
+    (insert-string start text)))
+
+(defun completion-prompt-case-word (argument operation positive-command)
+  "Run a protected GNU word-case operation and retain prompt completion."
+  (completion-clamp-point-to-prompt-input)
+  (cond
+    ((plusp argument)
+     (call-command positive-command argument))
+    ((minusp argument)
+     (let* ((point (current-point))
+            (input-start (lem/prompt-window::current-prompt-start-point))
+            (origin-offset (- (position-at-point point)
+                              (position-at-point input-start)))
+            (start (copy-point point :temporary)))
+       (lem-core/commands/word::word-offset start argument)
+       (when (point< start input-start)
+         (move-point start input-start))
+       (completion-prompt-case-negative-region start point operation)
+       (move-point point input-start)
+       (character-offset point origin-offset))))
+  (completion-refresh-or-open-prompt))
+
+(define-command lem-yath-prompt-uppercase-word (&optional (argument 1))
+    (:universal)
+  (completion-prompt-case-word argument :uppercase 'uppercase-word))
+
+(define-command lem-yath-prompt-lowercase-word (&optional (argument 1))
+    (:universal)
+  (completion-prompt-case-word argument :lowercase 'lowercase-word))
+
+(define-command lem-yath-prompt-capitalize-word (&optional (argument 1))
+    (:universal)
+  (completion-prompt-case-word argument :capitalize 'capitalize-word))
+
+(define-command lem-yath-prompt-quoted-insert (&optional (argument 1))
+    (:universal)
+  "Insert the next physical key literally at the protected prompt boundary."
+  (completion-clamp-point-to-prompt-input)
+  (let ((lem/buffer/internal:*inhibit-read-only* t))
+    (call-command 'quoted-insert argument))
+  (completion-refresh-or-open-prompt))
+
+(define-command lem-yath-prompt-delete-horizontal-space (backward-only)
+    (:universal-nil)
+  "Delete prompt spaces and tabs around point, or only before with a prefix."
+  (completion-clamp-point-to-prompt-input)
+  (let* ((point (current-point))
+         (input-start (lem/prompt-window::current-prompt-start-point))
+         (start (copy-point point :temporary))
+         (end (copy-point point :temporary)))
+    (skip-chars-backward start '(#\Space #\Tab))
+    (when (point< start input-start)
+      (move-point start input-start))
+    (unless backward-only
+      (skip-chars-forward end '(#\Space #\Tab)))
+    (move-point point start)
+    (delete-between-points start end))
+  (completion-refresh-or-open-prompt))
+
+(defun completion-prompt-sentence-end-offsets (text)
+  "Return GNU-style one-line sentence ends within TEXT, including its end."
+  (let ((length (length text))
+        (ends nil))
+    (loop :for index :from 0 :below length
+          :when (find (char text index) ".?!" :test #'char=)
+            :do (let ((after (1+ index)))
+                  (loop :while (and (< after length)
+                                    (find (char text after) "]\"')}"
+                                          :test #'char=))
+                        :do (incf after))
+                  (when (or (= after length)
+                            (and (< (1+ after) length)
+                                 (find (char text after) " \t"
+                                       :test #'char=)
+                                 (find (char text (1+ after)) " \t"
+                                       :test #'char=)))
+                    (pushnew after ends :test #'=))))
+    (pushnew length ends :test #'=)
+    (sort ends #'<)))
+
+(defun completion-prompt-sentence-start-offsets (text ends)
+  (let ((starts '(0))
+        (length (length text)))
+    (dolist (end ends)
+      (let ((start end))
+        (loop :while (and (< start length)
+                          (find (char text start) " \t"
+                                :test #'char=))
+              :do (incf start))
+        (when (< start length)
+          (pushnew start starts :test #'=))))
+    (sort starts #'<)))
+
+(defun completion-prompt-move-sentence-offset (text offset count forward-p)
+  (let* ((ends (completion-prompt-sentence-end-offsets text))
+         (starts (completion-prompt-sentence-start-offsets text ends))
+         (position offset))
+    (dotimes (_ count position)
+      (let ((target
+              (if forward-p
+                  (find-if (lambda (candidate) (> candidate position)) ends)
+                  (car (last (remove-if-not
+                              (lambda (candidate) (< candidate position))
+                              starts))))))
+        (setf position (or target (if forward-p (length text) 0)))))))
+
+(define-command lem-yath-prompt-backward-kill-sentence
+    (&optional (argument 1))
+    (:universal)
+  "Kill backward by prompt sentences, or forward when ARGUMENT is negative."
+  (completion-clamp-point-to-prompt-input)
+  (let* ((point (current-point))
+         (input-start (lem/prompt-window::current-prompt-start-point))
+         (input-end (buffer-end (copy-point point :temporary)))
+         (text (points-to-string input-start input-end))
+         (offset (- (position-at-point point)
+                    (position-at-point input-start)))
+         (target-offset
+           (completion-prompt-move-sentence-offset
+            text offset (abs argument) (minusp argument)))
+         (target (copy-point input-start :temporary)))
+    (character-offset target target-offset)
+    (cond
+      ((point< target point)
+       (lem/common/killring:with-killring-context (:before-inserting t)
+         (kill-region target point)))
+      ((point< point target)
+       (kill-region point target)))
+    (move-point point target))
+  (completion-refresh-or-open-prompt))
+
 (dolist (keymap (list lem/prompt-window::*prompt-mode-keymap*
                       lem/completion-mode::*completion-mode-keymap*))
   (define-key keymap "C-a" 'lem-yath-prompt-beginning-of-line)
@@ -1014,6 +1311,55 @@ provider's source-defined order."
       (call-command 'lem-yath-prompt-yank-pop argument)
       (completion-replay-key-after-completion)))
 
+(define-command lem-yath-completion-prompt-transpose-words
+    (&optional (argument 1))
+    (:universal)
+  (if (completion-prompt-active-p)
+      (call-command 'lem-yath-prompt-transpose-words argument)
+      (completion-replay-key-after-completion)))
+
+(define-command lem-yath-completion-prompt-uppercase-word
+    (&optional (argument 1))
+    (:universal)
+  (if (completion-prompt-active-p)
+      (call-command 'lem-yath-prompt-uppercase-word argument)
+      (completion-replay-key-after-completion)))
+
+(define-command lem-yath-completion-prompt-lowercase-word
+    (&optional (argument 1))
+    (:universal)
+  (if (completion-prompt-active-p)
+      (call-command 'lem-yath-prompt-lowercase-word argument)
+      (completion-replay-key-after-completion)))
+
+(define-command lem-yath-completion-prompt-capitalize-word
+    (&optional (argument 1))
+    (:universal)
+  (if (completion-prompt-active-p)
+      (call-command 'lem-yath-prompt-capitalize-word argument)
+      (completion-replay-key-after-completion)))
+
+(define-command lem-yath-completion-prompt-quoted-insert
+    (&optional (argument 1))
+    (:universal)
+  (if (completion-prompt-active-p)
+      (call-command 'lem-yath-prompt-quoted-insert argument)
+      (completion-replay-key-after-completion)))
+
+(define-command lem-yath-completion-prompt-delete-horizontal-space
+    (backward-only)
+    (:universal-nil)
+  (if (completion-prompt-active-p)
+      (call-command 'lem-yath-prompt-delete-horizontal-space backward-only)
+      (completion-replay-key-after-completion)))
+
+(define-command lem-yath-completion-prompt-backward-kill-sentence
+    (&optional (argument 1))
+    (:universal)
+  (if (completion-prompt-active-p)
+      (call-command 'lem-yath-prompt-backward-kill-sentence argument)
+      (completion-replay-key-after-completion)))
+
 (dolist (keymap (list lem/prompt-window::*prompt-mode-keymap*
                       lem/completion-mode::*completion-mode-keymap*))
   (define-key keymap "C-Space" 'lem-yath-completion-prompt-set-mark)
@@ -1022,7 +1368,18 @@ provider's source-defined order."
     'lem-yath-completion-prompt-exchange-point-mark)
   (define-key keymap "C-w" 'lem-yath-completion-prompt-kill-region)
   (define-key keymap "M-w" 'lem-yath-completion-prompt-copy-region)
-  (define-key keymap "M-y" 'lem-yath-completion-prompt-yank-pop))
+  (define-key keymap "M-y" 'lem-yath-completion-prompt-yank-pop)
+  (define-key keymap "M-t" 'lem-yath-completion-prompt-transpose-words)
+  (define-key keymap "M-u" 'lem-yath-completion-prompt-uppercase-word)
+  (define-key keymap "M-l" 'lem-yath-completion-prompt-lowercase-word)
+  (define-key keymap "M-c" 'lem-yath-completion-prompt-capitalize-word)
+  (define-key keymap "C-q" 'lem-yath-completion-prompt-quoted-insert)
+  (define-key keymap "M-\\"
+    'lem-yath-completion-prompt-delete-horizontal-space)
+  (define-key keymap "C-x Backspace"
+    'lem-yath-completion-prompt-backward-kill-sentence)
+  (define-key keymap "C-x Delete"
+    'lem-yath-completion-prompt-backward-kill-sentence))
 
 (defun completion-reset-prompt-undo-history ()
   "Keep prompt construction outside the user's editable undo history."

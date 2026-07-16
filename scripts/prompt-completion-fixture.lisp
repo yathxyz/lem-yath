@@ -18,7 +18,23 @@
     "string-repeat"))
 
 (defparameter *prompt-completion-edit-candidates*
-  '("fixture-preset" "quick-lookup" "project-readonly"))
+  '("fixture-preset"
+    "quick-lookup"
+    "project-readonly"
+    "alpha beta"
+    "beta alpha"
+    "ALPHA beta"
+    "aLPHA beta"
+    "Alpha beta"
+    "alpha   beta"
+    "alphabeta"
+    "alpha-"
+    "one tWo THREE"
+    "one TWO THREE"
+    "one two three"
+    "two one three"
+    "One sentence.  Two sentence!"
+    "One sentence.  "))
 
 (defun prompt-completion-fixture-path (relative)
   (merge-pathnames relative *prompt-completion-fixture-root*))
@@ -48,6 +64,28 @@
          (and state (completion-prescient-state-case-folding state))
          (and state
               (completion-prescient-state-character-folding-p state)))))))
+
+(defun prompt-completion-fixture-log-edit-command ()
+  "Record the exact field state after each protected editing dispatcher."
+  (let* ((command (this-command))
+         (name (and command
+                    (string-upcase (string (command-name command))))))
+    (when (and name
+               (completion-prompt-active-p)
+               (or (search "LEM-YATH-COMPLETION-PROMPT-" name)
+                   (member name
+                           '("LEM-YATH-PROMPT-BEGINNING-OF-LINE"
+                             "LEM-YATH-PROMPT-BACKWARD-CHAR"
+                             "FORWARD-CHAR"
+                             "MOVE-TO-END-OF-LINE")
+                           :test #'string=)))
+      (prompt-completion-fixture-log
+       "PROMPT-EDIT-COMMAND command=~a input=~s point=~d start=~d"
+       name
+       (lem/prompt-window::get-input-string)
+       (position-at-point (current-point))
+       (position-at-point
+        (lem/prompt-window::current-prompt-start-point))))))
 
 (defun prompt-completion-fixture-write (relative contents)
   (let ((path (prompt-completion-fixture-path relative)))
@@ -188,19 +226,18 @@
                      :test #'string=)))))
     (prompt-completion-fixture-log "PRESCIENT-SELECT value=~a" choice)))
 
-(defun prompt-completion-fixture-read-edit (initial-value)
+(defun prompt-completion-fixture-read-edit
+    (initial-value &optional (candidates *prompt-completion-edit-candidates*))
   (let ((choice
           (prompt-for-string
            "Prompt edit: "
            :initial-value initial-value
            :completion-function
            (lambda (input)
-             (prescient-filter input *prompt-completion-edit-candidates*
-                               :rank-p nil))
+             (prescient-filter input candidates :rank-p nil))
            :test-function
            (lambda (input)
-             (member input *prompt-completion-edit-candidates*
-                     :test #'string=)))))
+             (member input candidates :test #'string=)))))
     (prompt-completion-fixture-log "PROMPT-EDIT-SELECT value=~a" choice)))
 
 (define-command lem-yath-test-prompt-line-editing () ()
@@ -215,10 +252,44 @@
    (current-killring) "fixture-preset")
   (prompt-completion-fixture-read-edit ""))
 
+(define-command lem-yath-test-prompt-transpose-editing () ()
+  (prompt-completion-fixture-read-edit "alpha beta" '("beta alpha")))
+
+(define-command lem-yath-test-prompt-uppercase-editing () ()
+  (prompt-completion-fixture-read-edit "alpha beta"))
+
+(define-command lem-yath-test-prompt-negative-uppercase-editing () ()
+  (prompt-completion-fixture-read-edit
+   "one tWo THREE" '("one TWO THREE")))
+
+(define-command lem-yath-test-prompt-negative-transpose-editing () ()
+  (prompt-completion-fixture-read-edit
+   "one two three" '("two one three")))
+
+(define-command lem-yath-test-prompt-lowercase-editing () ()
+  (prompt-completion-fixture-read-edit "ALPHA beta"))
+
+(define-command lem-yath-test-prompt-capitalize-editing () ()
+  (prompt-completion-fixture-read-edit "aLPHA beta"))
+
+(define-command lem-yath-test-prompt-space-editing () ()
+  (prompt-completion-fixture-read-edit "alpha   beta"))
+
+(define-command lem-yath-test-prompt-quoted-editing () ()
+  (prompt-completion-fixture-read-edit "alpha"))
+
+(define-command lem-yath-test-prompt-sentence-editing () ()
+  (prompt-completion-fixture-read-edit
+   "One sentence.  Two sentence!" '("One sentence.  ")))
+
 (prompt-completion-fixture-check-wrapper-installation)
 (prompt-completion-fixture-check-size-cache)
 (remove-hook *post-command-hook*
              'prompt-completion-fixture-log-prescient-state)
 (add-hook *post-command-hook*
           'prompt-completion-fixture-log-prescient-state)
+(remove-hook *post-command-hook*
+             'prompt-completion-fixture-log-edit-command)
+(add-hook *post-command-hook*
+          'prompt-completion-fixture-log-edit-command)
 (prompt-completion-fixture-setup)
