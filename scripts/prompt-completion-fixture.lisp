@@ -104,6 +104,10 @@
 
 (defun prompt-completion-fixture-check-wrapper-installation ()
   "Exercise fresh-provider capture and annotation-only reload idempotence."
+  (unless (= 1 (count 'completion-reset-prompt-undo-history
+                      *prompt-after-activate-hook*
+                      :key #'car :test #'eq))
+    (error "Prompt undo baseline hook was not installed exactly once"))
   (let ((original *completion-unannotated-buffer-function*)
         (replacement (lambda (input &rest arguments)
                        (declare (ignore input arguments))

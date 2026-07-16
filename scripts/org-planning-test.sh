@@ -49,7 +49,7 @@ mx() {
   tmux_cmd send-keys -t "$session" M-x
   lem_wait_for "$session" 'Command:' 10 >/dev/null || return 1
   tmux_cmd send-keys -t "$session" -l "$command"
-  sleep 0.3
+  lem_wait_for "$session" "Command: $command" 10 >/dev/null || return 1
   tmux_cmd send-keys -t "$session" Enter
 }
 

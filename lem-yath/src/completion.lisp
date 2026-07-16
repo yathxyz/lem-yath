@@ -855,6 +855,45 @@ provider's source-defined order."
                          (lem/prompt-window:current-prompt-window)))
     (eq (current-buffer) (window-buffer prompt))))
 
+(defun completion-reset-prompt-undo-history ()
+  "Keep prompt construction outside the user's editable undo history."
+  (when (completion-prompt-active-p)
+    (let ((buffer (current-buffer)))
+      (buffer-disable-undo buffer)
+      (buffer-enable-undo buffer))))
+
+(remove-hook *prompt-after-activate-hook*
+             'completion-reset-prompt-undo-history)
+(add-hook *prompt-after-activate-hook*
+          'completion-reset-prompt-undo-history
+          most-negative-fixnum)
+
+(define-command lem-yath-prompt-undo (&optional (argument 1))
+    (:universal)
+  "Undo editable prompt input without entering the protected label."
+  (unless (plusp argument)
+    (editor-error "Prompt undo count must be positive"))
+  (dotimes (_ argument)
+    (unless (buffer-undo (current-point))
+      (editor-error "No prompt edit to undo")))
+  (lem/completion-mode:completion-refresh))
+
+(define-command lem-yath-completion-prompt-undo
+    (&optional (argument 1))
+    (:universal)
+  "Undo a prompt, or replay the key after leaving ordinary completion."
+  (if (completion-prompt-active-p)
+      (call-command 'lem-yath-prompt-undo argument)
+      (let ((keys (last-read-key-sequence)))
+        (lem/completion-mode:completion-end)
+        (unread-key-sequence keys))))
+
+(dolist (keymap (list lem/prompt-window::*prompt-mode-keymap*
+                      lem/completion-mode::*completion-mode-keymap*))
+  (define-key keymap "C-/" 'lem-yath-completion-prompt-undo)
+  (define-key keymap "C-_" 'lem-yath-completion-prompt-undo)
+  (define-key keymap "C-x u" 'lem-yath-completion-prompt-undo))
+
 (define-command lem-yath-completion-backward-delete-word
     (&optional (argument 1))
     (:universal)

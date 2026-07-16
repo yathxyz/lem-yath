@@ -489,6 +489,21 @@ else
 fi
 
 if setup_corfu_popup; then
+  lem_keys "$session" C-/
+  sleep 0.2
+  corfu_control_slash=$(report_corfu_state || true)
+  if grep -q 'context=NIL buffer="pre"' <<<"$corfu_control_slash"; then
+    pass corfu-control-slash-fallthrough \
+      "prompt-local C-/ left ordinary completion on Lem's redo path"
+  else
+    fail corfu-control-slash-fallthrough \
+      "prompt-local undo leaked into ordinary completion: $corfu_control_slash"
+  fi
+else
+  fail corfu-control-slash-setup "could not prepare the C-/ scenario"
+fi
+
+if setup_corfu_popup; then
   accept_before=$(grep -c '^CORFU ACCEPT ' "$LEM_YATH_AUTO_COMPLETION_REPORT" 2>/dev/null || true)
   lem_keys "$session" C-n
   lem_keys "$session" Space

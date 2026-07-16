@@ -115,6 +115,37 @@ else
 fi
 sleep 0.8
 
+# GNU minibuffers put C-/, C-_, and C-x u on undo.  The initial undo must not
+# enter the protected label; later undos restore the prior query and repaint
+# completion without dismissing the prompt.
+if invoke_prompt_command lem-yath-test-prompt-line-editing \
+     'Prompt edit: quick-lookup'; then
+  lem_keys "$session" C-/
+  tmux_cmd send-keys -t "$session" -l X
+  lem_keys "$session" C-/
+  tmux_cmd send-keys -t "$session" -l Y
+  lem_keys "$session" C-x u
+  sleep 0.8
+  screen=$(lem_capture "$session")
+  if grep -Fq 'Prompt edit: quick-lookup' <<<"$screen" &&
+     grep -Fq 'quick-lookup' <<<"$screen"; then
+    lem_keys "$session" Enter
+    if wait_report_count '^PROMPT-EDIT-SELECT value=quick-lookup$' 1; then
+      pass prompt-emacs-undo \
+        'C-/ and C-x u restored input without crossing the prompt boundary'
+    else
+      fail prompt-emacs-undo \
+        'Return did not accept the physically undone prompt value' "$session"
+    fi
+  else
+    fail prompt-emacs-undo \
+      'prompt undo damaged the label, input, or live completion' "$session"
+    close_prompt
+  fi
+else
+  fail prompt-emacs-undo 'the undo prompt did not open' "$session"
+fi
+
 # Evil is disabled in the configured Emacs minibuffer, so standard Emacs line
 # editing remains active while Vertico is visible.  Exercise the corresponding
 # Lem prompt behavior against a nonempty initial value.
