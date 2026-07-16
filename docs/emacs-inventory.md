@@ -149,7 +149,11 @@ with `gj/gk`, group
 movement with Tab/backtab, `C-j/C-k`, and `]]/[[`, and quit with `q`.
 `gR` redisplays the existing snapshot, `gr` rebuilds it from live buffers while
 preserving applicable marks and filters, `yb/yf` copy the focused buffer name or
-visiting filename, and `go` visits the focused buffer in another window.
+visiting filename, and `go` visits the focused buffer in another window. `J`
+and `M-g` complete over every snapshot buffer, expand a collapsed target group,
+and retain GNU Ibuffer's refusal to bypass active filters. `=` opens a focused,
+read-only unified diff for ordinary-marked file buffers or the unmarked current
+row; non-file and `D`-marked buffers are ignored.
 `s m/n/f/b/.` enter live case-insensitive regexp filters for used mode, buffer
 name, full filename, basename, or extension; modal command letters remain
 literal while entering a filter, Return pushes it onto the stack, and Escape
@@ -163,6 +167,10 @@ isolated per buffer so a missing file does not prevent later buffers from being
 reverted. The terminal implementation uses the exact one/count confirmation
 prompt but omits GNU Ibuffer's auxiliary buffer-name window for a multi-buffer
 confirmation.
+Diff generation uses direct argument vectors, private temporary files, a
+ten-second bound, 16-million-character per-input and 2-MiB output limits. A missing associated
+file aborts before replacing the previous diff view. The view uses a concise
+buffer heading instead of GNU Emacs's displayed shell-command transcript.
 
 ### 1.4 Mode-local bindings
 

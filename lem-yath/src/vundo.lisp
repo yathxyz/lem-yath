@@ -814,7 +814,7 @@ clean marker is deliberately not an actual save."
                  (editor-error "vundo diff exceeded ~D output characters"
                                *vundo-diff-output-limit*))
                (case status
-                 (0 "No differences.\n")
+                 (0 (format nil "No differences.~%"))
                  (1 stdout)
                  (otherwise
                   (editor-error

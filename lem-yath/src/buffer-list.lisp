@@ -160,6 +160,19 @@ Each nonempty group begins with a distinct heading entry."
      :keymap *buffer-list-picker-mode-keymap*
      :hide-from-modeline t))
 
+(define-major-mode buffer-list-diff-mode lem-patch-mode:patch-mode
+    (:name "Ibuffer Diff"
+     :keymap *buffer-list-diff-mode-keymap*)
+  (setf (buffer-read-only-p (current-buffer)) t))
+
+(defmethod lem-vi-mode/core:mode-specific-keymaps
+    ((mode buffer-list-diff-mode))
+  (list *buffer-list-diff-mode-keymap*))
+
+(define-key *buffer-list-diff-mode-keymap* "q" 'quit-active-window)
+(define-key *buffer-list-diff-mode-keymap* "Z Z" 'quit-active-window)
+(define-key *buffer-list-diff-mode-keymap* "Z Q" 'quit-active-window)
+
 (defvar *buffer-list-filter-input-mode-keymap*
   (make-keymap :description '*buffer-list-filter-input-mode-keymap*)
   "Literal input map used while entering an Ibuffer regexp filter.")
@@ -508,6 +521,14 @@ Each nonempty group begins with a distinct heading entry."
 (defun buffer-list-current-entry (component)
   (alexandria:when-let ((item (buffer-list-current-item component)))
     (buffer-list-item-entry item)))
+
+(defun buffer-list-snapshot-buffers (component)
+  (loop :for item :in (buffer-list-component-all-items component)
+        :for entry := (buffer-list-item-entry item)
+        :for buffer := (unless (buffer-list-entry-heading-p entry)
+                         (buffer-list-entry-buffer entry))
+        :when (and buffer (eq buffer (get-buffer (buffer-name buffer))))
+          :collect buffer))
 
 (defun buffer-list-set-item-mark (component item mark)
   (let ((entry (and item (buffer-list-item-entry item))))
@@ -878,6 +899,45 @@ Each nonempty group begins with a distinct heading entry."
       (editor-error "Buffer is not visiting a file"))
     (buffer-list-copy-current (namestring filename) "file name")))
 
+(defun buffer-list-jump-to-buffer (component name)
+  (let* ((item
+           (find name (buffer-list-component-all-items component)
+                 :key (lambda (candidate)
+                        (let ((entry (buffer-list-item-entry candidate)))
+                          (unless (buffer-list-entry-heading-p entry)
+                            (buffer-name (buffer-list-entry-buffer entry)))))
+                 :test #'string=))
+         (entry (and item (buffer-list-item-entry item)))
+         (buffer (and entry (buffer-list-entry-buffer entry))))
+    (unless (and buffer
+                 (eq buffer (get-buffer name))
+                 (buffer-list-active-filters-match-p component buffer))
+      (editor-error "No buffer with name ~a" name))
+    (setf (buffer-list-component-hidden-groups component)
+          (delete (buffer-list-entry-group entry)
+                  (buffer-list-component-hidden-groups component)
+                  :test #'string=)
+          (lem/multi-column-list::multi-column-list-search-string component) "")
+    (buffer-list-reset-visible-items component)
+    (lem/multi-column-list:update component)
+    (unless (buffer-list-focus-buffer component buffer)
+      (editor-error "No buffer with name ~a" name))
+    buffer))
+
+(define-command lem-yath-buffer-list-jump-to-buffer () ()
+  (let* ((component (lem/multi-column-list::current-multi-column-list))
+         (names (mapcar #'buffer-name
+                        (buffer-list-snapshot-buffers component)))
+         (name
+           (prompt-for-string
+            "Jump to buffer: "
+            :completion-function
+            (lambda (input) (prescient-filter input names))
+            :test-function
+            (lambda (input) (member input names :test #'string=)))))
+    (unless (zerop (length name))
+      (buffer-list-jump-to-buffer component name))))
+
 (define-command lem-yath-buffer-list-visit-other-window () ()
   (let* ((component (lem/multi-column-list::current-multi-column-list))
          (buffer (buffer-list-require-current-buffer component)))
@@ -1105,6 +1165,82 @@ Each nonempty group begins with a distinct heading entry."
    (if (= 1 (length buffers))
        (format nil "Really revert buffer ~a?" (buffer-name (first buffers)))
        (format nil "Really revert ~d buffers?" (length buffers)))))
+
+(defparameter *buffer-list-diff-buffer-name* "*Ibuffer Diff*")
+(defparameter *buffer-list-diff-input-limit* (* 16 1024 1024))
+
+(declaim (ftype function vundo-unified-diff))
+
+(defun buffer-list-diff-file-text (pathname)
+  (with-open-file (stream pathname
+                          :direction :input
+                          :external-format :utf-8
+                          :if-does-not-exist nil)
+    (unless stream
+      (editor-error "File does not exist: ~a" pathname))
+    (let ((chunk (make-string 8192))
+          (count 0)
+          (output (make-string-output-stream)))
+      (loop :for length := (read-sequence chunk stream)
+            :until (zerop length)
+            :do
+               (incf count length)
+               (when (> count *buffer-list-diff-input-limit*)
+                 (editor-error "Ibuffer diff input exceeds ~d characters"
+                               *buffer-list-diff-input-limit*))
+               (write-sequence chunk output :end length))
+      (get-output-stream-string output))))
+
+(defun buffer-list-diff-buffer-text (buffer)
+  (let ((text (points-to-string (buffer-start-point buffer)
+                                (buffer-end-point buffer))))
+    (when (> (length text) *buffer-list-diff-input-limit*)
+      (editor-error "Ibuffer diff input exceeds ~d characters"
+                    *buffer-list-diff-input-limit*))
+    text))
+
+(defun buffer-list-diff-section (buffer)
+  (alexandria:when-let ((filename (buffer-filename buffer)))
+    (let ((label (uiop:native-namestring filename)))
+      (format nil "Buffer: ~a~%~a"
+              (buffer-name buffer)
+              (vundo-unified-diff
+               (buffer-list-diff-file-text filename)
+               (buffer-list-diff-buffer-text buffer)
+               label
+               (format nil "~a (buffer)" label))))))
+
+(defun buffer-list-diff-sections (component)
+  (let* ((ordinary-items
+           (remove-if-not
+            (lambda (item) (buffer-list-ordinary-marked-item-p component item))
+            (buffer-list-component-all-items component)))
+         (buffers
+           (if ordinary-items
+               (mapcar (lambda (item)
+                         (buffer-list-entry-buffer (buffer-list-item-entry item)))
+                       ordinary-items)
+               (list (buffer-list-require-current-buffer component)))))
+    (remove nil (mapcar #'buffer-list-diff-section buffers))))
+
+(define-command lem-yath-buffer-list-diff-with-file () ()
+  (let* ((component (lem/multi-column-list::current-multi-column-list))
+         (sections (buffer-list-diff-sections component))
+         (diff-buffer
+           (make-buffer *buffer-list-diff-buffer-name* :enable-undo-p nil)))
+    (buffer-disable-undo diff-buffer)
+    (with-buffer-read-only diff-buffer nil
+      (erase-buffer diff-buffer)
+      (when sections
+        (insert-string
+         (buffer-start-point diff-buffer)
+         (format nil "~{~a~^~%~}" sections)))
+      (buffer-start (buffer-point diff-buffer)))
+    (change-buffer-mode diff-buffer 'buffer-list-diff-mode)
+    (buffer-mark-saved diff-buffer)
+    (setf (buffer-read-only-p diff-buffer) t)
+    (lem/multi-column-list:quit component)
+    (switch-to-window (pop-to-buffer diff-buffer))))
 
 (define-command lem-yath-buffer-list-revert () ()
   (let* ((component (lem/multi-column-list::current-multi-column-list))
@@ -1337,6 +1473,12 @@ Each nonempty group begins with a distinct heading entry."
   'lem-yath-buffer-list-execute-deletions)
 (define-key *buffer-list-picker-mode-keymap* "S"
   'lem-yath-buffer-list-save-items)
+(define-key *buffer-list-picker-mode-keymap* "="
+  'lem-yath-buffer-list-diff-with-file)
+(define-key *buffer-list-picker-mode-keymap* "J"
+  'lem-yath-buffer-list-jump-to-buffer)
+(define-key *buffer-list-picker-mode-keymap* "M-g"
+  'lem-yath-buffer-list-jump-to-buffer)
 (define-key *buffer-list-picker-mode-keymap* "g j"
   'lem/multi-column-list::multi-column-list/down)
 (define-key *buffer-list-picker-mode-keymap* "g k"

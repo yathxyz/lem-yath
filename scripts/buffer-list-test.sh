@@ -202,6 +202,21 @@ report_revert() {
   return 1
 }
 
+report_diff() {
+  local before attempts=0
+  before=$(grep -c '^DIFF ' "$LEM_YATH_BUFFER_LIST_REPORT" 2>/dev/null || true)
+  lem_keys "$session" F10
+  while ((attempts < 40)); do
+    if (( $(grep -c '^DIFF ' "$LEM_YATH_BUFFER_LIST_REPORT" 2>/dev/null || true) > before )); then
+      grep '^DIFF ' "$LEM_YATH_BUFFER_LIST_REPORT" | tail -1
+      return 0
+    fi
+    sleep 0.25
+    attempts=$((attempts + 1))
+  done
+  return 1
+}
+
 check_star_mark() {
   local label=$1 query=$2 suffix=$3 expected=$4 nav
   lem_keys "$session" s / U
@@ -489,6 +504,55 @@ if lem_wait_for "$session" 'Buffer[[:space:]]+Size[[:space:]]+Mode[[:space:]]+Fi
   else
     fail modal-row-return "unexpected gk destination: $nav"
   fi
+
+  lem_keys "$session" Enter J
+  if lem_wait_for "$session" 'Jump to buffer:' 10 >/dev/null; then
+    tmux_cmd send-keys -t "$session" -l '*Org Src buffer-list*'
+    lem_keys "$session" Enter
+    nav=$(report_nav || true)
+    if [[ "$nav" == 'NAV focus=buffer:*Org Src buffer-list* marks=' ]]; then
+      pass jump-collapsed-group "J completed over the snapshot, expanded org, and focused the exact buffer"
+    else
+      fail jump-collapsed-group "J did not reveal the collapsed target: $nav"
+    fi
+  else
+    fail jump-prompt "J did not open the pinned buffer completion prompt"
+  fi
+
+  lem_keys "$session" s n
+  tmux_cmd send-keys -t "$session" -l 'sort-'
+  lem_keys "$session" Enter J
+  if lem_wait_for "$session" 'Jump to buffer:' 10 >/dev/null; then
+    tmux_cmd send-keys -t "$session" -l '*Org Src buffer-list*'
+    lem_keys "$session" Enter
+    if lem_wait_for "$session" 'No buffer with name \*Org Src buffer-list\*' 10 >/dev/null; then
+      filter=$(report_filter || true)
+      if [[ "$filter" == FILTER\ stack=name=sort-* ]] &&
+         [[ "$filter" != *'Org Src buffer-list'* ]]; then
+        pass jump-filter-boundary "J offered the snapshot target but did not bypass the active Ibuffer filter"
+      else
+        fail jump-filter-boundary "J disturbed the active filter after refusing its target: $filter"
+      fi
+    else
+      fail jump-filter-boundary "J bypassed the active Ibuffer filter or did not report the refusal"
+    fi
+  else
+    fail jump-filter-prompt "J did not prompt while a filter was active"
+  fi
+
+  lem_keys "$session" s / M-g
+  if lem_wait_for "$session" 'Jump to buffer:' 10 >/dev/null; then
+    tmux_cmd send-keys -t "$session" -l 'buffer-list-zz-target.txt'
+    lem_keys "$session" Enter
+    nav=$(report_nav || true)
+    if [[ "$nav" == 'NAV focus=buffer:buffer-list-zz-target.txt marks=' ]]; then
+      pass jump-meta-binding "M-g used the same exact buffer-jump workflow"
+    else
+      fail jump-meta-binding "M-g selected an unexpected row: $nav"
+    fi
+  else
+    fail jump-meta-binding "M-g did not open the buffer-jump prompt"
+  fi
 else
   fail sorting-ui "could not reopen the grouped chooser for sorting"
 fi
@@ -693,6 +757,74 @@ check_star_mark mark-dissociated mark-dissociated e buffer-list-mark-dissociated
 check_star_mark mark-help Help h '*Help*'
 check_star_mark mark-compressed mark-compressed z buffer-list-mark-compressed-hit.GZ
 lem_keys "$session" s / U q
+
+lem_keys "$session" C-x C-b F6
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'mark-revert-dirty'
+lem_keys "$session" Enter
+nav=$(report_nav || true)
+lem_keys "$session" =
+if lem_wait_for "$session" 'Buffer: buffer-list-mark-revert-dirty\.txt' 15 >/dev/null; then
+  diff=$(report_diff || true)
+  if [[ "$nav" == *'marks=' ]] &&
+     [[ "$diff" == *'live=yes current=*Ibuffer Diff* mode=BUFFER-LIST-DIFF-MODE readonly=yes modified=no'* ]] &&
+     [[ "$diff" == *'\n-DIRTY DISK\n+DIRTY LOCAL\n'* ]]; then
+    pass diff-current "= diffed the unmarked current buffer without manufacturing a mark"
+  else
+    fail diff-current "the current-buffer unified diff diverged: $nav / $diff"
+  fi
+else
+  fail diff-current "= did not open the dirty current buffer's diff"
+fi
+lem_keys "$session" q
+
+lem_keys "$session" C-x C-b F6
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'mark-revert-dirty'
+lem_keys "$session" Enter m s /
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'buffer-list-zz-target.txt'
+lem_keys "$session" Enter m s /
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'buffer-list-op-alpha'
+lem_keys "$session" Enter m s /
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'mark-revert-missing'
+lem_keys "$session" Enter d s / =
+if lem_wait_for "$session" 'Buffer: buffer-list-zz-target\.txt' 15 >/dev/null; then
+  diff=$(report_diff || true)
+  if [[ "$diff" == *'Buffer: buffer-list-mark-revert-dirty.txt'* ]] &&
+     [[ "$diff" == *'Buffer: buffer-list-zz-target.txt\nNo differences.\n'* ]] &&
+     [[ "$diff" != *'buffer-list-op-alpha'* ]] &&
+     [[ "$diff" != *'buffer-list-mark-revert-missing'* ]]; then
+    pass diff-marked "= diffed ordinary file marks, ignored a non-file buffer, and excluded D"
+  else
+    fail diff-marked "the marked multi-buffer diff selected the wrong buffers: $diff"
+  fi
+else
+  fail diff-marked "= did not open the marked multi-buffer diff"
+fi
+lem_keys "$session" q
+
+lem_keys "$session" C-x C-b
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'mark-revert-missing'
+lem_keys "$session" Enter =
+if lem_wait_for "$session" 'File does not exist:.*buffer-list-mark-revert-missing\.txt' 15 >/dev/null; then
+  diff=$(report_diff || true)
+  nav=$(report_nav || true)
+  if [[ "$diff" == *'Buffer: buffer-list-mark-revert-dirty.txt'* ]] &&
+     [[ "$diff" == *'Buffer: buffer-list-zz-target.txt'* ]] &&
+     [[ "$diff" != *'buffer-list-mark-revert-missing'* ]] &&
+     [[ "$nav" == *'marks=' ]]; then
+    pass diff-missing-file "a missing current file failed before replacing the prior diff or adding a mark"
+  else
+    fail diff-missing-file "missing-file diff handling changed state: $diff / $nav"
+  fi
+else
+  fail diff-missing-file "= did not report the missing associated file"
+fi
+lem_keys "$session" q
 
 lem_keys "$session" C-x C-b
 lem_keys "$session" s n

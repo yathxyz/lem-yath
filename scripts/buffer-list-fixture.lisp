@@ -223,10 +223,28 @@
 
 (define-command lem-yath-test-buffer-list-picker-bindings () ()
   (buffer-list-test-log
-   "PICKER-BINDINGS backspace=~a control-h=~a delete=~a"
+   "PICKER-BINDINGS backspace=~a control-h=~a delete=~a diff=~a jump=~a meta-jump=~a"
    (buffer-list-test-binding "Backspace")
    (buffer-list-test-binding "C-h")
-   (buffer-list-test-binding "Delete")))
+   (buffer-list-test-binding "Delete")
+   (buffer-list-test-binding "=")
+   (buffer-list-test-binding "J")
+   (buffer-list-test-binding "M-g")))
+
+(define-command lem-yath-test-buffer-list-diff-state () ()
+  (let ((buffer (get-buffer *buffer-list-diff-buffer-name*)))
+    (buffer-list-test-log
+     "DIFF live=~a current=~a mode=~a readonly=~a modified=~a text=~a"
+     (if buffer "yes" "no")
+     (completion-path-display-string (buffer-name (current-buffer)))
+     (if buffer (buffer-major-mode buffer) "none")
+     (if (and buffer (buffer-read-only-p buffer)) "yes" "no")
+     (if (and buffer (buffer-modified-p buffer)) "yes" "no")
+     (if buffer
+         (completion-path-display-string
+          (points-to-string (buffer-start-point buffer)
+                            (buffer-end-point buffer)))
+         ""))))
 
 (defun buffer-list-test-set-content (buffer content clean-p)
   (with-buffer-read-only buffer nil
@@ -409,6 +427,10 @@
   'lem-yath-test-buffer-list-revert-state)
 (define-key *buffer-list-picker-mode-keymap* "F6"
   'lem-yath-test-buffer-list-prepare-revert)
+(define-key *buffer-list-picker-mode-keymap* "F10"
+  'lem-yath-test-buffer-list-diff-state)
+(define-key *buffer-list-diff-mode-keymap* "F10"
+  'lem-yath-test-buffer-list-diff-state)
 (define-key lem-vi-mode:*normal-keymap* "F4"
   'lem-yath-test-buffer-list-window-state)
 (define-key lem-vi-mode:*normal-keymap* "F10"

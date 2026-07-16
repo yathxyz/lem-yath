@@ -275,7 +275,12 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   group, and quit navigation. `gR` redisplays the captured snapshot, `gr`
   rebuilds it from live buffers without losing marks or filters, `yb/yf` copy
   the focused buffer name or visiting filename, and `go` visits it in another
-  window. The filter stack also supports modified and
+  window. `J` and `M-g` complete over the snapshot, reveal collapsed target
+  groups, and respect the active Ibuffer filter stack. `=` opens a focused,
+  read-only unified diff for ordinary-marked file buffers or the unmarked
+  current row; it ignores non-file and deletion-marked buffers and fails
+  without replacing the prior diff when an associated file is missing. The
+  filter stack also supports modified and
   visiting-file filters on `s i/v`, top-filter negation and removal on `s !/p`,
   and complete disable on `s /`
 - project-scoped LSP lifecycle: canonical-root isolation, in-flight startup
