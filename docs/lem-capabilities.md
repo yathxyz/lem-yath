@@ -1074,12 +1074,15 @@ the selected text's value.
 
 Pair discovery uses each buffer's syntax table, supplemented by Emacs's Unicode
 single- and double-smart-quote pairs. Openers insert their matching closer,
-escaped quotes remain literal, an immediate matching closer is reused, and
-typing that closer advances over it. Numeric prefixes, odd/even escapes,
-balanced adjacent pairs, syntax-safe whitespace/newline skipping, prompt
-queries, and Lisp completion/Paredit dispatch are covered as well. Special
-delimiter input closes an ordinary in-buffer completion popup without stale
-state, while prompt completion refreshes in place.
+escaped quotes remain literal, and an unmatched matching closer later in the
+buffer is reused. The preserve-balance scan crosses intervening balanced forms,
+stops at the first genuine mismatched closer, ignores string/comment decoys
+from code, and maintains independent balance inside those text containers.
+Typing a closer advances over it. Numeric prefixes, odd/even escapes, balanced
+adjacent pairs, syntax-safe whitespace/newline skipping, prompt queries, and
+Lisp completion/Paredit dispatch are covered as well. Special delimiter input
+closes an ordinary in-buffer completion popup without stale state, while prompt
+completion refreshes in place.
 
 Physical Backspace immediately between a recognized pair preflights the complete
 range and removes both sides within one editor command, regardless of whether
@@ -1097,9 +1100,8 @@ The real ncurses suites cover completion refresh, prompt refresh after paired
 deletion, one-sided read-only preflight, Paredit protection for nonempty forms,
 and snippet mirrors as well as Fundamental, Python, and Lisp buffers.
 
-This remains an approximation of the complete Emacs mode: preserve-balance does
-not yet scan across intervening non-whitespace forms, a negative prefix delegates
-to ordinary Backspace instead of symmetrically deleting around a pair.
+This remains an approximation of the complete Emacs mode: a negative prefix
+delegates to ordinary Backspace instead of symmetrically deleting around a pair.
 For an active selection wider than one delimiter, Lem deletes exactly the
 selection; Emacs can also consume an unselected adjacent delimiter depending on
 orientation, a destructive quirk Lem deliberately does not reproduce.

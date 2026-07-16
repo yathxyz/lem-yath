@@ -157,6 +157,10 @@ count_file="$root/fixtures/count.txt"
 open_space_file="$root/fixtures/open-space.txt"
 close_space_file="$root/fixtures/close-space.txt"
 open_newline_file="$root/fixtures/open-newline.txt"
+forward_balance_file="$root/fixtures/forward-balance.txt"
+forward_mismatch_file="$root/fixtures/forward-mismatch.txt"
+forward_syntax_file="$root/fixtures/forward-syntax.py"
+forward_text_file="$root/fixtures/forward-text.py"
 balanced_file="$root/fixtures/balanced.txt"
 balanced_space_file="$root/fixtures/balanced-space.txt"
 balanced_string_file="$root/fixtures/balanced-string.txt"
@@ -178,6 +182,10 @@ printf '\\z' > "$escaped_file"
 printf '  )' > "$open_space_file"
 printf '  )' > "$close_space_file"
 printf '  \n)' > "$open_newline_file"
+printf 'foo (bar) )' > "$forward_balance_file"
+printf 'foo ] )' > "$forward_mismatch_file"
+printf 'foo = " ) "\n# )\nbar )' > "$forward_syntax_file"
+printf '"foo (bar) )"' > "$forward_text_file"
 printf '()' > "$balanced_file"
 printf '(  )' > "$balanced_space_file"
 printf '"()"' > "$balanced_string_file"
@@ -835,6 +843,62 @@ else
   fail opener-reuses-multiline-close-boot "multiline opener buffer did not initialize" "$open_newline_session"
 fi
 stop_session "$open_newline_session"
+
+forward_balance_session="lem-yath-electric-forward-balance-$id"
+if start_session "$forward_balance_session" "$forward_balance_file"; then
+  lem_keys "$forward_balance_session" i
+  send_literal "$forward_balance_session" '('
+  if record_result "$forward_balance_session" forward-balance.txt; then
+    assert_result forward-balance-scan forward-balance.txt '(foo (bar) )' 2 no "$forward_balance_session"
+  else
+    fail forward-balance-scan "forward balance probe did not run" "$forward_balance_session"
+  fi
+else
+  fail forward-balance-scan-boot "forward balance buffer did not initialize" "$forward_balance_session"
+fi
+stop_session "$forward_balance_session"
+
+forward_mismatch_session="lem-yath-electric-forward-mismatch-$id"
+if start_session "$forward_mismatch_session" "$forward_mismatch_file"; then
+  lem_keys "$forward_mismatch_session" i
+  send_literal "$forward_mismatch_session" '('
+  if record_result "$forward_mismatch_session" forward-mismatch.txt; then
+    assert_result forward-mismatch-stops-scan forward-mismatch.txt '()foo ] )' 2 no "$forward_mismatch_session"
+  else
+    fail forward-mismatch-stops-scan "forward mismatch probe did not run" "$forward_mismatch_session"
+  fi
+else
+  fail forward-mismatch-stops-scan-boot "forward mismatch buffer did not initialize" "$forward_mismatch_session"
+fi
+stop_session "$forward_mismatch_session"
+
+forward_syntax_session="lem-yath-electric-forward-syntax-$id"
+if start_session "$forward_syntax_session" "$forward_syntax_file"; then
+  lem_keys "$forward_syntax_session" i
+  send_literal "$forward_syntax_session" '('
+  if record_result "$forward_syntax_session" forward-syntax.py; then
+    assert_result forward-balance-syntax-domains forward-syntax.py $'(foo = " ) "\n# )\nbar )' 2 no "$forward_syntax_session"
+  else
+    fail forward-balance-syntax-domains "forward syntax-domain probe did not run" "$forward_syntax_session"
+  fi
+else
+  fail forward-balance-syntax-domains-boot "forward syntax buffer did not initialize" "$forward_syntax_session"
+fi
+stop_session "$forward_syntax_session"
+
+forward_text_session="lem-yath-electric-forward-text-$id"
+if start_session "$forward_text_session" "$forward_text_file"; then
+  lem_keys "$forward_text_session" l i
+  send_literal "$forward_text_session" '('
+  if record_result "$forward_text_session" forward-text.py; then
+    assert_result forward-balance-text-domain forward-text.py '"(foo (bar) )"' 3 no "$forward_text_session"
+  else
+    fail forward-balance-text-domain "forward text-domain probe did not run" "$forward_text_session"
+  fi
+else
+  fail forward-balance-text-domain-boot "forward text buffer did not initialize" "$forward_text_session"
+fi
+stop_session "$forward_text_session"
 
 balanced_session="lem-yath-electric-balanced-$id"
 if start_session "$balanced_session" "$balanced_file"; then

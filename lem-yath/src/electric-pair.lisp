@@ -65,28 +65,79 @@
                  (null cursor-container-start))
              (eql (character-at cursor) character))))))
 
-(defun electric-unmatched-close-after-whitespace-p (point character)
-  (and (electric-close-after-whitespace-p point character)
-       (let* ((state (syntax-ppss point))
-              (open (car (pps-state-paren-stack state))))
-         (if (pps-state-string-or-comment-p state)
-             (let ((text-open
-                     (car (syntax-closed-paren-char-p character)))
-                   (depth 0))
-               (with-point ((cursor (pps-state-token-start-point state)))
-                 (loop :while (point< cursor point)
-                       :for current = (character-at cursor)
-                       :unless (syntax-escape-point-p cursor 0)
-                         :do (cond
-                               ((eql current text-open)
-                                (incf depth))
-                               ((and (eql current character)
-                                     (plusp depth))
-                                (decf depth)))
-                       :do (character-offset cursor 1)))
-               (zerop depth))
-             (or (null open)
-                 (not (syntax-equal-paren-p open character)))))))
+(defun electric-state-container-start (state)
+  "Return STATE's string/comment start, or NIL in ordinary code."
+  (and (pps-state-string-or-comment-p state)
+       (pps-state-token-start-point state)))
+
+(defun electric-opening-matches-close-p (open close)
+  "Whether syntax opener OPEN is paired with CLOSE."
+  (alexandria:when-let ((pair (syntax-open-paren-char-p open)))
+    (eql (cdr pair) close)))
+
+(defun electric-container-open-stack (container-start point)
+  "Return unmatched openers before POINT in its text container."
+  (let (opens)
+    (with-point ((cursor container-start))
+      (loop :while (point< cursor point)
+            :for current = (character-at cursor)
+            :unless (syntax-escape-point-p cursor 0)
+              :do (cond
+                    ((syntax-open-paren-char-p current)
+                     (push current opens))
+                    ((and (syntax-closed-paren-char-p current)
+                          opens
+                          (electric-opening-matches-close-p
+                           (car opens) current))
+                     (pop opens)))
+            :do (character-offset cursor 1)))
+    opens))
+
+(defun electric-unmatched-close-forward-p (point character)
+  "Whether the first forward mismatch from POINT is CHARACTER.
+
+This is Electric Pair's preserve-balance scan.  Balanced intervening forms do
+not hide a later unmatched closer, while a different mismatched closer stops
+the search.  Delimiters in strings and comments are ignored from code; inside
+one of those containers they are parsed independently until its boundary."
+  (let* ((state (syntax-ppss point))
+         (container-start (electric-state-container-start state))
+         (opens
+           (if container-start
+               (electric-container-open-stack container-start point)
+               (copy-list (pps-state-paren-stack state)))))
+    (with-point ((cursor point)
+                 (end (buffer-end-point (point-buffer point))))
+      (loop :while (point< cursor end)
+            :for cursor-state = (syntax-ppss cursor)
+            :for cursor-container =
+              (electric-state-container-start cursor-state)
+            :for same-container-p =
+              (and container-start cursor-container
+                   (point= container-start cursor-container))
+            :do
+               (cond
+                 ;; Text containers have their own delimiter balance.  Once
+                 ;; their closing boundary is crossed, no later code closer
+                 ;; can balance an opener typed inside them.
+                 ((and container-start (not same-container-p))
+                  (return nil))
+                 ;; From code, strings and comments are opaque.  Scanning
+                 ;; resumes when their original syntax domain ends.
+                 ((and (null container-start) cursor-container))
+                 (t
+                  (let ((current (character-at cursor)))
+                    (cond
+                      ((syntax-open-paren-char-p current)
+                       (push current opens))
+                      ((syntax-closed-paren-char-p current)
+                       (if (and opens
+                                (electric-opening-matches-close-p
+                                 (car opens) current))
+                           (pop opens)
+                           (return (eql current character))))))))
+               (character-offset cursor 1)
+            :finally (return nil)))))
 
 (defun electric-unmatched-quote-after-whitespace-p (point character)
   (and (not (in-string-p point))
@@ -213,7 +264,7 @@ commands retain an outer selection and its original orientation."
       ;; duplicate.  Quotes are excluded because their role depends on syntax.
       ((and close
             (char/= character close)
-            (electric-unmatched-close-after-whitespace-p point close))
+            (electric-unmatched-close-forward-p point close))
        (insert-character point character))
       (close
        (insert-character point character)
@@ -247,7 +298,7 @@ commands retain an outer selection and its original orientation."
                    (if (char= character close)
                        (electric-unmatched-quote-after-whitespace-p
                         (current-point) close)
-                       (electric-unmatched-close-after-whitespace-p
+                       (electric-unmatched-close-forward-p
                         (current-point) close))))
              (insert-character (current-point) character remaining)
              (unless reuse-close-p
