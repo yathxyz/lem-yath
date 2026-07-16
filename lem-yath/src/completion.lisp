@@ -762,13 +762,75 @@ provider's source-defined order."
     (call-command 'kill-line argument)
     (lem/completion-mode:completion-refresh)))
 
+(defun completion-clamp-point-to-prompt-input ()
+  (let ((point (current-point))
+        (input-start (lem/prompt-window::current-prompt-start-point)))
+    (when (point< point input-start)
+      (move-point point input-start))))
+
+(define-command lem-yath-prompt-backward-char (&optional (argument 1))
+    (:universal)
+  "Move backward without crossing the prompt's editable field."
+  (character-offset (current-point) (- argument))
+  (completion-clamp-point-to-prompt-input))
+
+(define-command lem-yath-prompt-previous-word (&optional (argument 1))
+    (:universal)
+  "Move backward by words without crossing the prompt's editable field."
+  (call-command 'previous-word argument)
+  (completion-clamp-point-to-prompt-input))
+
+(define-command lem-yath-prompt-delete-next-char (argument) (:universal-nil)
+  "Delete forward and refresh visible prompt completion."
+  (call-command 'delete-next-char argument)
+  (lem/completion-mode:completion-refresh))
+
+(define-command lem-yath-prompt-delete-word (&optional (argument 1))
+    (:universal)
+  "Kill forward by words and refresh visible prompt completion."
+  (when (minusp argument)
+    (editor-error "Prompt M-d does not delete before the editable field"))
+  (call-command 'delete-word argument)
+  (lem/completion-mode:completion-refresh))
+
+(define-command lem-yath-prompt-yank (argument) (:universal-nil)
+  "Yank into the prompt and refresh visible completion."
+  (call-command 'yank argument)
+  (lem/completion-mode:completion-refresh))
+
+(define-command lem-yath-prompt-transpose-characters () ()
+  "Transpose input characters without touching the prompt label."
+  (let* ((point (current-point))
+         (input-start (lem/prompt-window::current-prompt-start-point))
+         (input-offset (- (position-at-point point)
+                          (position-at-point input-start))))
+    (when (if (end-line-p point)
+              (> input-offset 1)
+              (plusp input-offset))
+      (call-command 'transpose-characters nil)
+      (lem/completion-mode:completion-refresh))))
+
 (dolist (keymap (list lem/prompt-window::*prompt-mode-keymap*
                       lem/completion-mode::*completion-mode-keymap*))
   (define-key keymap "C-a" 'lem-yath-prompt-beginning-of-line)
   (define-key keymap "Home" 'lem-yath-prompt-beginning-of-line)
   (define-key keymap "C-e" 'move-to-end-of-line)
   (define-key keymap "End" 'move-to-end-of-line)
-  (define-key keymap "C-k" 'lem-yath-prompt-kill-line))
+  (define-key keymap "C-b" 'lem-yath-prompt-backward-char)
+  (define-key keymap "Left" 'lem-yath-prompt-backward-char)
+  (define-key keymap "C-f" 'forward-char)
+  (define-key keymap "Right" 'forward-char)
+  (define-key keymap "M-b" 'lem-yath-prompt-previous-word)
+  (define-key keymap "C-Left" 'lem-yath-prompt-previous-word)
+  (define-key keymap "M-f" 'forward-word)
+  (define-key keymap "C-Right" 'forward-word)
+  (define-key keymap "C-k" 'lem-yath-prompt-kill-line)
+  (define-key keymap "C-d" 'lem-yath-prompt-delete-next-char)
+  (define-key keymap "Delete" 'lem-yath-prompt-delete-next-char)
+  (define-key keymap "M-d" 'lem-yath-prompt-delete-word)
+  (define-key keymap "C-Delete" 'lem-yath-prompt-delete-word)
+  (define-key keymap "C-y" 'lem-yath-prompt-yank)
+  (define-key keymap "C-t" 'lem-yath-prompt-transpose-characters))
 
 (defun completion-prompt-active-p ()
   (alexandria:when-let ((prompt

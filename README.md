@@ -156,8 +156,9 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   initialism, literal, literal-prefix, prefix, regexp, character-fold, and
   smart-case behavior for the current Prescient-backed prompt, while
   `C-u M-s KEY` selects one filter exclusively. File prompts retain Lem's
-  path-aware matching and gain the same ranking. Prompt-local `C-a`, `C-e`, and
-  `C-k` retain standard Emacs line editing while completion remains visible
+  path-aware matching and gain the same ranking. Standard Emacs line,
+  character, word, kill, yank, and transpose keys remain prompt-local while
+  completion is visible
 - bounded, display-only Marginalia-style context for commands, Lisp symbols,
   buffers, files, loadable Lisp libraries, themes, and bookmarks; metadata
   failures do not alter candidate identity or prevent ordinary selection.

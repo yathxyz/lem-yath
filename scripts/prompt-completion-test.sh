@@ -127,6 +127,18 @@ if invoke_prompt_command lem-yath-test-prompt-line-editing \
   lem_keys "$session" C-a
   lem_keys "$session" C-k
   tmux_cmd send-keys -t "$session" -l fixture-preset
+  lem_keys "$session" C-a
+  lem_keys "$session" M-f
+  lem_keys "$session" M-d
+  lem_keys "$session" C-y
+  lem_keys "$session" M-b
+  lem_keys "$session" C-b
+  lem_keys "$session" C-f
+  lem_keys "$session" C-d
+  tmux_cmd send-keys -t "$session" -l p
+  lem_keys "$session" C-e
+  lem_keys "$session" C-t
+  lem_keys "$session" C-t
   sleep 0.8
   screen=$(lem_capture "$session")
   if grep -Fq 'Prompt edit: fixture-preset' <<<"$screen" &&
@@ -134,7 +146,7 @@ if invoke_prompt_command lem-yath-test-prompt-line-editing \
     lem_keys "$session" Enter
     if wait_report_count '^PROMPT-EDIT-SELECT value=fixture-preset$' 1; then
       pass prompt-emacs-line-editing \
-        'C-a, C-e, and C-k retained and refreshed the completion prompt'
+        'Emacs line, character, word, kill, yank, and transpose keys stayed live'
     else
       fail prompt-emacs-line-editing \
         'Return did not accept the physically edited prompt value' "$session"
