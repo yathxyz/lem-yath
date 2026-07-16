@@ -8,6 +8,9 @@
 (defvar *buffer-list-test-kill-a* nil)
 (defvar *buffer-list-test-kill-b* nil)
 
+(define-major-mode buffer-list-test-long-mode ()
+    (:name "Long Fixture Mode Name"))
+
 (defun buffer-list-test-log (control &rest arguments)
   (with-open-file (stream *buffer-list-test-report*
                           :direction :output
@@ -57,7 +60,17 @@
     (buffer-list-test-log
      "STATE classify=~{~a~^,~} order=~{~a~^,~} subset=~{~a~^,~} binding=~a definitions=~d"
      groups order subset (buffer-list-test-binding "C-x C-b")
-     (length *buffer-list-filter-groups*))))
+     (length *buffer-list-filter-groups*))
+    (destructuring-bind (status name size mode file)
+        (buffer-list-columns nil (make-buffer-list-entry
+                                  "Default"
+                                  (buffer-list-test-buffer 'long)))
+      (let ((wide (buffer-list-fixed-field "12345678901234界尾x" 18)))
+        (buffer-list-test-log
+         "COLUMNS status=[~a] name=[~a] name-width=~d size=[~a] mode=[~a] mode-width=~d file=[~a] wide=[~a] wide-width=~d"
+         status name (lem/common/character:string-width name) size mode
+         (lem/common/character:string-width mode) file wide
+         (lem/common/character:string-width wide))))))
 
 (define-command lem-yath-test-buffer-list-report () ()
   (buffer-list-test-report))
@@ -115,7 +128,12 @@
 (setf *buffer-list-test-kill-b*
       (buffer-list-test-make-buffer 'kill-b "buffer-list-kill-target-b"))
 (buffer-list-test-make-buffer
- 'control (format nil "buffer-list-control~%name"))
+ 'control (format nil "ctl~%name"))
+(let ((buffer
+        (buffer-list-test-make-buffer
+         'long "buffer-list-name-that-is-long" 'buffer-list-test-long-mode)))
+  (insert-string (buffer-end-point buffer) "x")
+  (setf (buffer-read-only-p buffer) t))
 
 (define-key lem-vi-mode:*normal-keymap* "F5"
   'lem-yath-test-buffer-list-report)

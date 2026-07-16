@@ -177,9 +177,32 @@ Each nonempty group begins with a distinct heading entry."
     (nreverse matching)))
 
 (defun buffer-list-attributes (buffer)
-  (cond ((buffer-read-only-p buffer) (icon-string "lock"))
-        ((buffer-modified-p buffer) (icon-string "bullet-point"))
-        (t " ")))
+  "Return Ibuffer's modified, read-only, and reserved lock status fields."
+  (format nil "~c~c "
+          (if (buffer-modified-p buffer) #\* #\Space)
+          (if (buffer-read-only-p buffer) #\% #\Space)))
+
+(defun buffer-list-fixed-field (value width)
+  "Fit VALUE to exactly WIDTH terminal cells using Ibuffer-style elision."
+  (let ((display-width (lem/common/character:string-width value)))
+    (cond
+      ((< display-width width)
+       (concatenate 'string value
+                    (make-string (- width display-width)
+                                 :initial-element #\Space)))
+      ((= display-width width) value)
+      (t
+       (let* ((ellipsis "...")
+              (prefix-width (- width
+                               (lem/common/character:string-width ellipsis)))
+              (end (or (lem/common/character:wide-index value prefix-width)
+                       (length value)))
+              (prefix (subseq value 0 end))
+              (padding (- prefix-width
+                          (lem/common/character:string-width prefix))))
+         (concatenate 'string prefix
+                      (make-string padding :initial-element #\.)
+                      ellipsis))))))
 
 (defun buffer-list-columns (component entry)
   (if (buffer-list-entry-heading-p entry)
@@ -190,10 +213,16 @@ Each nonempty group begins with a distinct heading entry."
                          component (buffer-list-entry-group entry))
                         " ..."
                         ""))
+            ""
+            ""
             "")
       (let ((buffer (buffer-list-entry-buffer entry)))
         (list (buffer-list-attributes buffer)
-              (completion-path-display-string (buffer-name buffer))
+              (buffer-list-fixed-field
+               (completion-path-display-string (buffer-name buffer)) 18)
+              (format nil "~9d" (completion-buffer-size buffer))
+              (buffer-list-fixed-field
+               (mode-name (buffer-major-mode buffer)) 16)
               (if (buffer-filename buffer)
                   (completion-path-display-string (buffer-filename buffer))
                   "")))))
@@ -326,7 +355,7 @@ Each nonempty group begins with a distinct heading entry."
     (setf component
           (make-instance
            'buffer-list-component
-           :columns '("" "Buffer" "File")
+           :columns '("" "Buffer" "Size" "Mode" "File")
            :column-function #'buffer-list-columns
            :items (buffer-list-grouped-entries)
            :filter-function

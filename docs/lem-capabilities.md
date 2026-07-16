@@ -845,11 +845,15 @@ through the ncurses editor.
   recency within each group, and appends unmatched buffers as `Default`.
   Distinct `[ name ]` headings collapse to `[ name ... ]` with Return and are
   excluded from buffer actions. Fuzzy narrowing temporarily displays only
-  matching selectable buffers; Return, mark/save/kill, and control-character-safe
-  display remain available. The real TUI verifies classification, ordering,
-  empty-group omission, heading collapse/expansion and safety, filtering,
-  selection, marked actions, and reload. Ibuffer's wider sort/filter/format
-  commands are not reproduced.
+  matching selectable buffers. The default rows preserve mark, modified and
+  read-only status, the reserved lock position, 18-cell elided name, 9-cell
+  right-aligned size, 16-cell elided mode, and filename. Return,
+  mark/save/kill, and control-character-safe display remain available. The real
+  TUI verifies classification, ordering, empty-group omission, heading
+  collapse/expansion and safety, filtering, stock field widths including wide
+  characters, selection, marked actions, and reload. Lem has no visited-file
+  locking state, and Ibuffer's wider sorting/filtering commands and alternate
+  format switching are not reproduced.
 - Recent files: `M-g r` opens an annotated Lem persistent-MRU prompt after
   lem-yath sets the loaded
   history's 300-entry limit and normalizes oversized persisted histories to their

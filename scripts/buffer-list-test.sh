@@ -87,8 +87,15 @@ else
   fail hidden-empty-binding "empty-group or binding behavior diverged"
 fi
 
+if grep -Fq 'COLUMNS status=[*% ] name=[buffer-list-nam...] name-width=18 size=[        1] mode=[Long Fixture ...] mode-width=16 file=[] wide=[12345678901234....] wide-width=18' \
+     "$LEM_YATH_BUFFER_LIST_REPORT"; then
+  pass stock-columns "status, fixed widths, right alignment, and cell-safe elision match Ibuffer"
+else
+  fail stock-columns "the stock Ibuffer column contract diverged"
+fi
+
 lem_keys "$session" C-x C-b
-if lem_wait_for "$session" 'Buffer[[:space:]]+File' 15 >/dev/null; then
+if lem_wait_for "$session" 'Buffer[[:space:]]+Size[[:space:]]+Mode[[:space:]]+File' 15 >/dev/null; then
   screen=$(lem_capture "$session")
   missing=0
   for group in org tramp emacs ediff dired terminal help Default; do
@@ -97,12 +104,13 @@ if lem_wait_for "$session" 'Buffer[[:space:]]+File' 15 >/dev/null; then
     fi
   done
   if ((missing == 0)) &&
-     grep -q 'buffer-list-zz-target\.txt' <<<"$screen" &&
-     grep -Fq 'buffer-list-control\nname' <<<"$screen" &&
-     grep -q '\*Org Src directory-first-match\*' <<<"$screen"; then
-    pass grouped-ui "the chooser displays distinct Ibuffer headings and escaped rows"
+     grep -Eq 'buffer-list-zz-\.\.\.[[:space:]]+[0-9]+[[:space:]]+Fundamental' <<<"$screen" &&
+     grep -Eq 'buffer-list-nam\.\.\.[[:space:]]+1[[:space:]]+Long Fixture \.\.\.' <<<"$screen" &&
+     grep -Fq 'ctl\nname' <<<"$screen" &&
+     grep -Fq '*Org Src direct...' <<<"$screen"; then
+    pass grouped-ui "the chooser displays grouped stock Ibuffer columns and escaped rows"
   else
-    fail grouped-ui "the grouped chooser omitted headings or fixture rows"
+    fail grouped-ui "the grouped chooser omitted headings, columns, or fixture rows"
   fi
 else
   fail grouped-ui "C-x C-b did not open the grouped multi-column chooser"
@@ -115,7 +123,7 @@ lem_keys "$session" Space
 sleep 0.3
 screen=$(lem_capture "$session")
 if grep -Fq '[ org ]' <<<"$screen" &&
-   grep -q '\*Org Src buffer-list\*' <<<"$screen" &&
+   grep -Fq '*Org Src buffer...' <<<"$screen" &&
    ! grep -Eq 'x[[:space:]]+\[ org \]' <<<"$screen"; then
   pass heading-safety "kill, save, and mark cannot target a group heading"
 else
@@ -129,7 +137,7 @@ lem_keys "$session" Enter
 sleep 0.4
 screen=$(lem_capture "$session")
 if grep -Fq '[ org ... ]' <<<"$screen" &&
-   ! grep -q '\*Org Src buffer-list\*' <<<"$screen" &&
+   ! grep -Fq '*Org Src buffer...' <<<"$screen" &&
    grep -Fq '[ tramp ]' <<<"$screen"; then
   pass grouped-collapse "Return collapsed only the focused Ibuffer group"
 else
@@ -140,7 +148,7 @@ lem_keys "$session" Enter
 sleep 0.4
 screen=$(lem_capture "$session")
 if grep -Fq '[ org ]' <<<"$screen" &&
-   grep -q '\*Org Src buffer-list\*' <<<"$screen" &&
+   grep -Fq '*Org Src buffer...' <<<"$screen" &&
    ! grep -Fq '[ org ... ]' <<<"$screen"; then
   pass grouped-expand "Return restored the collapsed group in place"
 else
@@ -150,7 +158,7 @@ fi
 tmux_cmd send-keys -t "$session" -l 'zz-target'
 sleep 0.6
 screen=$(lem_capture "$session")
-if grep -q 'buffer-list-zz-target\.txt' <<<"$screen" &&
+if grep -Fq 'buffer-list-zz-...' <<<"$screen" &&
    [[ $(grep -c 'buffer-list-source\.txt' <<<"$screen") -eq 1 ]] &&
    ! grep -Eq '\[ (org|Default) (\.\.\. )?\]' <<<"$screen"; then
   pass grouped-filter "live filtering presents matching buffers without heading traps"
@@ -208,8 +216,9 @@ lem_wait_for "$session" 'SAVE LOCAL' 15 >/dev/null ||
 
 lem_keys "$session" C-x C-b
 tmux_cmd send-keys -t "$session" -l 'kill-target'
-if lem_wait_for "$session" 'buffer-list-kill-target-a' 15 >/dev/null &&
-   lem_wait_for "$session" 'buffer-list-kill-target-b' 15 >/dev/null; then
+sleep 0.6
+screen=$(lem_capture "$session")
+if (( $(grep -Fc 'buffer-list-kil...' <<<"$screen") >= 2 )); then
   lem_keys "$session" Space
   lem_keys "$session" Space
   lem_keys "$session" C-k

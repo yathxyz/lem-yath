@@ -124,8 +124,11 @@ and the current window from Visual or operator state with or without a prefix.
 
 The Lem mapping preserves that group order and Ibuffer's exclusive first-match
 partition, omits empty groups, retains unmatched buffers under `Default`, and
-renders each group as a distinct collapsible heading. Live name filtering
-temporarily presents only matching selectable buffer rows
+renders each group as a distinct collapsible heading. Its default row mirrors
+the configured stock format's mark, modified/read-only status, 18-cell elided
+name, 9-cell right-aligned size, 16-cell elided mode, and file fields. Lem has no
+visited-file locking state, so the stock lock field remains a reserved blank.
+Live name filtering temporarily presents only matching selectable buffer rows
 (`src/buffer-list.lisp`, `scripts/buffer-list-test.sh`).
 
 ### 1.4 Mode-local bindings
