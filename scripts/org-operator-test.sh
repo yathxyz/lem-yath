@@ -1729,7 +1729,7 @@ if start_case postblank "$WORKDIR/inline-outer.org" 'code.*tail'; then
 fi
 
 # Source block element objects: outer removes the block; inner removes its body.
-if start_case daE "$WORKDIR/source-outer.org" 'begin_src text'; then
+if start_case daE "$WORKDIR/source-outer.org" 'source body'; then
   if operate_and_record daE "$CASE_SESSION" d a E; then
     assert_state daE daE "$CASE_SESSION" \
       'text=AFTER\n bytes=' 'register=#+begin_src text\nsource body\n#+end_src\n' \
@@ -1738,7 +1738,7 @@ if start_case daE "$WORKDIR/source-outer.org" 'begin_src text'; then
   stop_case "$CASE_SESSION"
 fi
 
-if start_case diE "$WORKDIR/source-inner.org" 'begin_src text'; then
+if start_case diE "$WORKDIR/source-inner.org" 'source body'; then
   if operate_and_record diE "$CASE_SESSION" d i E; then
     assert_state diE diE "$CASE_SESSION" \
       'text=#+begin_src text\n#+end_src\nAFTER\n bytes=' \
