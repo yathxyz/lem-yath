@@ -2019,11 +2019,18 @@ and moves a table column, while falling back to prose-word motion. `M-k/j`
 moves heading/simple unordered-list trees or table rows. `M-H/L` uses complete
 subtree/list-tree scope or deletes/inserts a formula-free table column;
 `M-K/J` deletes/inserts a table row or drags one literal non-CLOCK line.
-Ordered and structurally tabbed list transforms, point-only indentation of a
-continuation-bearing item, formula-table structure edits, CLOCK-line dragging,
-and every visual Meta operation fail byte-identically. Type-matched source
-blocks, including mismatched nested end markers, are excluded from heading,
-list, and table dispatch; literal `M-K/J` line dragging remains available.
+In Visual state, `M-h/l` changes every selected heading or contiguous list
+zone and retains the selection; table-column dispatch follows GNU Org's
+expanded moving endpoint. `M-k/j` moves consecutive selected sibling
+subtrees, or transposes any other selection by complete logical lines while
+keeping the selection on the text that moved. Visual Block retains Block state.
+The shifted `M-H/L/K/J` commands reproduce GNU Org's expanded-endpoint
+dispatch and exit Visual state only after a successful edit; region lists
+include continuation and child lines. Top-level promotion, unsafe ordered or
+tab-structured lists, formula-table structure edits, and CLOCK-line dragging
+fail byte-identically with the selection intact. Type-matched source blocks,
+including mismatched nested end markers, are excluded from heading, list, and
+table dispatch; literal `M-K/J` line dragging remains available.
 
 The always-active Evil-Org base motions are also local to `.org` buffers.
 `gh/gl/gk/gj` reproduce `org-up/down/backward/forward-element` across
@@ -2286,9 +2293,9 @@ consumers would still require a different backend.
 
 This is intentionally narrower than GNU Org and Evil-Org. Richer drawer,
 footnote, nested-special, and malformed text-object contexts; structural
-repairs beyond the bounded `d/x/X/< />` behavior; region-aware Meta operations,
-generic Org-element movement, unimplemented list/table Shift-control contexts,
-and richer list/table semantics; mouse calendar selection and Org's exact live
+repairs beyond the bounded `d/x/X/< />` and Visual Meta behavior; generic
+Org-element movement, unimplemented list/table Shift-control contexts, and
+richer list/table semantics; mouse calendar selection and Org's exact live
 echo overlay and wider timestamp variants; prefixed live Babel-session
 source editing, variables/sessions and the rest of Babel's
 backend/header/result matrix; in-editor LaTeX preview, non-HTML export

@@ -380,6 +380,36 @@ write_fixtures() {
   printf '%s\n' '| a | b |' '| c | d |' '#+TBLFM: $1=1' \
     >"$WORKDIR/shift-table-formula.org"
   printf '%s\n' 'alpha' 'beta' 'gamma' >"$WORKDIR/shift-prose.org"
+  printf '%s\n' '* A' '** A child' '* B' '* C' \
+    >"$WORKDIR/visual-meta-headings.org"
+  printf '%s\n' '** A' '*** A child' '** B' '* C' \
+    >"$WORKDIR/visual-meta-headings-promote.org"
+  printf '%s\n' '* A' '** A child' '* B' '* C' \
+    >"$WORKDIR/visual-meta-heading-move.org"
+  printf '%s\n' '- zero' '- one' '- two' '- three' \
+    >"$WORKDIR/visual-meta-list.org"
+  printf '%s\n' '- zero' '  - one' '  - two' '- three' \
+    >"$WORKDIR/visual-meta-list-outdent.org"
+  printf '%s\n' \
+    '- zero' \
+    '- one' \
+    '  continuation' \
+    '  - child' \
+    '- two' >"$WORKDIR/visual-meta-list-tree.org"
+  printf '%s\n' \
+    '- zero' \
+    '  - one' \
+    '    continuation' \
+    '    - child' \
+    '- two' >"$WORKDIR/visual-meta-list-tree-outdent.org"
+  printf '%s\n' 'zero' 'one' 'two' 'three' 'four' \
+    >"$WORKDIR/visual-meta-lines.org"
+  printf '%s\n' '| a | b |' '| c | d |' 'AFTER' \
+    >"$WORKDIR/visual-meta-table.org"
+  printf '%s\n' '* A' '** A child' '* B' '* C' '* D' \
+    >"$WORKDIR/visual-shift-meta-heading.org"
+  printf '%s\n' 'zero' 'one' 'two' 'three' \
+    >"$WORKDIR/visual-shift-meta-lines.org"
   printf '%s\n' \
     '[[file:target.org][described link]] tail' \
     >"$WORKDIR/link-outer.org"
@@ -1290,6 +1320,270 @@ if start_case shift-heading-visual "$WORKDIR/shift-heading.org" 'H1'; then
     assert_state shift-heading-visual shift-heading-visual "$CASE_SESSION" \
       'text=** H1\nbody\n** H2\nbody2\n** Child\n bytes=' \
       'state=normal selection=none' 'modified=yes'
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+# Evil-Org exposes GNU Org's Meta commands directly in Visual state.  The
+# unshifted commands keep the selection live and operate on its structural
+# region; shifted commands use the expanded moving endpoint and leave Visual
+# state after a successful edit.
+if start_case visual-meta-heading-level \
+     "$WORKDIR/visual-meta-headings.org" 'A child'; then
+  send_keys "$CASE_SESSION" V 2 j M-l
+  if lem_wait_for "$CASE_SESSION" 'V-LINE' "$WAIT_TIMEOUT" >/dev/null &&
+     record_state visual-meta-heading-level "$CASE_SESSION"; then
+    assert_state visual-meta-heading-level visual-meta-heading-level \
+      "$CASE_SESSION" \
+      'text=** A\n*** A child\n** B\n* C\n bytes=' \
+      'state=visual-line selection=line' \
+      'selected=** A\n*** A child\n** B\n' 'modified=yes'
+    send_keys "$CASE_SESSION" Escape u
+    if record_state visual-meta-heading-level "$CASE_SESSION"; then
+      assert_state visual-meta-heading-level-undo \
+        visual-meta-heading-level "$CASE_SESSION" \
+        'text=* A\n** A child\n* B\n* C\n bytes=' \
+        'state=normal selection=none' 'modified=no'
+    fi
+  else
+    fail visual-meta-heading-level \
+      "Visual heading demotion did not retain and report its range" \
+      "$CASE_SESSION"
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case visual-meta-heading-promote-reverse \
+     "$WORKDIR/visual-meta-headings-promote.org" 'A child'; then
+  send_keys "$CASE_SESSION" 2 j V 2 k M-h
+  if lem_wait_for "$CASE_SESSION" 'V-LINE' "$WAIT_TIMEOUT" >/dev/null &&
+     record_state visual-meta-heading-promote-reverse "$CASE_SESSION"; then
+    assert_state visual-meta-heading-promote-reverse \
+      visual-meta-heading-promote-reverse "$CASE_SESSION" \
+      'text=* A\n** A child\n* B\n* C\n bytes=' \
+      'state=visual-line selection=line' \
+      'selected=* A\n** A child\n* B\n' 'modified=yes'
+  else
+    fail visual-meta-heading-promote-reverse \
+      "reverse Visual heading promotion did not settle" "$CASE_SESSION"
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case visual-meta-heading-move \
+     "$WORKDIR/visual-meta-heading-move.org" 'A child'; then
+  send_keys "$CASE_SESSION" V j M-j
+  if lem_wait_for "$CASE_SESSION" 'V-LINE' "$WAIT_TIMEOUT" >/dev/null &&
+     record_state visual-meta-heading-move "$CASE_SESSION"; then
+    assert_state visual-meta-heading-move visual-meta-heading-move \
+      "$CASE_SESSION" \
+      'text=* B\n* A\n** A child\n* C\n bytes=' \
+      'state=visual-line selection=line' \
+      'selected=* A\n** A child\n' 'modified=yes'
+  else
+    fail visual-meta-heading-move \
+      "selected subtree movement did not settle" "$CASE_SESSION"
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case visual-meta-list-indent \
+     "$WORKDIR/visual-meta-list.org" 'zero'; then
+  send_keys "$CASE_SESSION" j V j M-l
+  if lem_wait_for "$CASE_SESSION" 'V-LINE' "$WAIT_TIMEOUT" >/dev/null &&
+     record_state visual-meta-list-indent "$CASE_SESSION"; then
+    assert_state visual-meta-list-indent visual-meta-list-indent \
+      "$CASE_SESSION" \
+      'text=- zero\n  - one\n  - two\n- three\n bytes=' \
+      'state=visual-line selection=line' \
+      'selected=  - one\n  - two\n' 'modified=yes'
+  else
+    fail visual-meta-list-indent \
+      "Visual list indentation did not settle" "$CASE_SESSION"
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case visual-meta-list-outdent-reverse \
+     "$WORKDIR/visual-meta-list-outdent.org" 'zero'; then
+  send_keys "$CASE_SESSION" 2 j V k M-h
+  if lem_wait_for "$CASE_SESSION" 'V-LINE' "$WAIT_TIMEOUT" >/dev/null &&
+     record_state visual-meta-list-outdent-reverse "$CASE_SESSION"; then
+    assert_state visual-meta-list-outdent-reverse \
+      visual-meta-list-outdent-reverse "$CASE_SESSION" \
+      'text=- zero\n- one\n- two\n- three\n bytes=' \
+      'state=visual-line selection=line' \
+      'selected=- one\n- two\n' 'modified=yes'
+  else
+    fail visual-meta-list-outdent-reverse \
+      "reverse Visual list outdent did not settle" "$CASE_SESSION"
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case visual-meta-lines-down \
+     "$WORKDIR/visual-meta-lines.org" 'zero'; then
+  send_keys "$CASE_SESSION" j V j M-j
+  if lem_wait_for "$CASE_SESSION" 'V-LINE' "$WAIT_TIMEOUT" >/dev/null &&
+     record_state visual-meta-lines-down "$CASE_SESSION"; then
+    assert_state visual-meta-lines-down visual-meta-lines-down \
+      "$CASE_SESSION" \
+      'text=zero\nthree\none\ntwo\nfour\n bytes=' \
+      'state=visual-line selection=line' \
+      'selected=one\ntwo\n' 'modified=yes'
+  else
+    fail visual-meta-lines-down \
+      "Visual line-region movement did not settle" "$CASE_SESSION"
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case visual-meta-lines-up-block \
+     "$WORKDIR/visual-meta-lines.org" 'zero'; then
+  send_keys "$CASE_SESSION" 2 j C-v k M-k
+  if lem_wait_for "$CASE_SESSION" 'V-BLOCK' "$WAIT_TIMEOUT" >/dev/null &&
+     record_state visual-meta-lines-up-block "$CASE_SESSION"; then
+    assert_state visual-meta-lines-up-block visual-meta-lines-up-block \
+      "$CASE_SESSION" \
+      'text=one\ntwo\nzero\nthree\nfour\n bytes=' \
+      'state=visual-block selection=block' 'modified=yes'
+  else
+    fail visual-meta-lines-up-block \
+      "Visual Block line-region movement did not settle" "$CASE_SESSION"
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case visual-meta-table-reverse \
+     "$WORKDIR/visual-meta-table.org" 'AFTER'; then
+  send_keys "$CASE_SESSION" j V k M-l
+  if lem_wait_for "$CASE_SESSION" 'V-LINE' "$WAIT_TIMEOUT" >/dev/null &&
+     record_state visual-meta-table-reverse "$CASE_SESSION"; then
+    assert_state visual-meta-table-reverse visual-meta-table-reverse \
+      "$CASE_SESSION" \
+      'text=| b | a |\n| d | c |\nAFTER\n bytes=' \
+      'state=visual-line selection=line' 'modified=yes'
+  else
+    fail visual-meta-table-reverse \
+      "reverse Visual table context did not move its column" "$CASE_SESSION"
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case visual-shift-meta-list \
+     "$WORKDIR/visual-meta-list-tree.org" 'continuation'; then
+  send_keys "$CASE_SESSION" j V 2 j M-L
+  if lem_wait_for "$CASE_SESSION" 'NORMAL' "$WAIT_TIMEOUT" >/dev/null &&
+     record_state visual-shift-meta-list "$CASE_SESSION"; then
+    assert_state visual-shift-meta-list visual-shift-meta-list \
+      "$CASE_SESSION" \
+      'text=- zero\n  - one\n    continuation\n    - child\n- two\n bytes=' \
+      'state=normal selection=none' 'modified=yes'
+  else
+    fail visual-shift-meta-list \
+      "shifted Visual list-tree edit did not exit Visual state" \
+      "$CASE_SESSION"
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case visual-shift-meta-list-left \
+     "$WORKDIR/visual-meta-list-tree-outdent.org" 'continuation'; then
+  send_keys "$CASE_SESSION" j V 2 j M-H
+  if lem_wait_for "$CASE_SESSION" 'NORMAL' "$WAIT_TIMEOUT" >/dev/null &&
+     record_state visual-shift-meta-list-left "$CASE_SESSION"; then
+    assert_state visual-shift-meta-list-left visual-shift-meta-list-left \
+      "$CASE_SESSION" \
+      'text=- zero\n- one\n  continuation\n  - child\n- two\n bytes=' \
+      'state=normal selection=none' 'modified=yes'
+  else
+    fail visual-shift-meta-list-left \
+      "shifted Visual list-tree outdent did not exit Visual state" \
+      "$CASE_SESSION"
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case visual-shift-meta-heading-context \
+     "$WORKDIR/visual-shift-meta-heading.org" 'A child'; then
+  send_keys "$CASE_SESSION" V 2 j M-L
+  if lem_wait_for "$CASE_SESSION" 'NORMAL' "$WAIT_TIMEOUT" >/dev/null &&
+     record_state visual-shift-meta-heading-context "$CASE_SESSION"; then
+    assert_state visual-shift-meta-heading-context \
+      visual-shift-meta-heading-context "$CASE_SESSION" \
+      'text=* A\n** A child\n* B\n** C\n* D\n bytes=' \
+      'state=normal selection=none' 'modified=yes'
+  else
+    fail visual-shift-meta-heading-context \
+      "shifted heading command did not use the expanded endpoint" \
+      "$CASE_SESSION"
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case visual-shift-meta-line-context \
+     "$WORKDIR/visual-shift-meta-lines.org" 'zero'; then
+  send_keys "$CASE_SESSION" j V j M-K
+  if lem_wait_for "$CASE_SESSION" 'NORMAL' "$WAIT_TIMEOUT" >/dev/null &&
+     record_state visual-shift-meta-line-context "$CASE_SESSION"; then
+    assert_state visual-shift-meta-line-context \
+      visual-shift-meta-line-context "$CASE_SESSION" \
+      'text=zero\none\nthree\ntwo\n bytes=' \
+      'state=normal selection=none' 'modified=yes'
+  else
+    fail visual-shift-meta-line-context \
+      "shifted line command did not use the expanded endpoint" \
+      "$CASE_SESSION"
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case visual-shift-meta-line-down-context \
+     "$WORKDIR/visual-meta-lines.org" 'zero'; then
+  send_keys "$CASE_SESSION" j V j M-J
+  if lem_wait_for "$CASE_SESSION" 'NORMAL' "$WAIT_TIMEOUT" >/dev/null &&
+     record_state visual-shift-meta-line-down-context "$CASE_SESSION"; then
+    assert_state visual-shift-meta-line-down-context \
+      visual-shift-meta-line-down-context "$CASE_SESSION" \
+      'text=zero\none\ntwo\nfour\nthree\n bytes=' \
+      'state=normal selection=none' 'modified=yes'
+  else
+    fail visual-shift-meta-line-down-context \
+      "shifted downward line command did not use the expanded endpoint" \
+      "$CASE_SESSION"
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case visual-shift-meta-table-reverse \
+     "$WORKDIR/visual-meta-table.org" 'AFTER'; then
+  send_keys "$CASE_SESSION" j V k M-K
+  if lem_wait_for "$CASE_SESSION" 'NORMAL' "$WAIT_TIMEOUT" >/dev/null &&
+     record_state visual-shift-meta-table-reverse "$CASE_SESSION"; then
+    assert_state visual-shift-meta-table-reverse \
+      visual-shift-meta-table-reverse "$CASE_SESSION" \
+      'text=| c | d |\nAFTER\n bytes=' \
+      'state=normal selection=none' 'modified=yes'
+  else
+    fail visual-shift-meta-table-reverse \
+      "reverse shifted Visual table context did not delete its row" \
+      "$CASE_SESSION"
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case visual-meta-level-guard \
+     "$WORKDIR/visual-meta-headings.org" 'A child'; then
+  send_keys "$CASE_SESSION" V 2 j M-h
+  if lem_wait_for "$CASE_SESSION" 'V-LINE' "$WAIT_TIMEOUT" >/dev/null &&
+     record_state visual-meta-level-guard "$CASE_SESSION"; then
+    assert_state visual-meta-level-guard visual-meta-level-guard \
+      "$CASE_SESSION" 'text=* A\n** A child\n* B\n* C\n bytes=' \
+      'state=visual-line selection=line' \
+      'selected=* A\n** A child\n* B\n' 'modified=no'
+  else
+    fail visual-meta-level-guard \
+      "unsafe region promotion did not preserve Visual state" "$CASE_SESSION"
   fi
   stop_case "$CASE_SESSION"
 fi

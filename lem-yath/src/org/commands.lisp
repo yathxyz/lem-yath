@@ -1185,6 +1185,416 @@ source blocks on the ordinary Evil path."
                     'lem-core/commands/word:forward-word)
                 1))
 
+(defun org-visual-meta-range ()
+  "Return ordered copies of the current Visual selection bounds."
+  (destructuring-bind (first second)
+      (lem-vi-mode/visual:visual-range)
+    (let ((start (copy-point first :temporary))
+          (end (copy-point second :temporary)))
+      (when (point< end start)
+        (rotatef start end))
+      (values start end))))
+
+(defun org-visual-meta-forward-p ()
+  "Whether the moving end of the Visual selection follows its anchor."
+  (point<= (buffer-mark (current-buffer)) (current-point)))
+
+(defun org-visual-meta-context-point (start end)
+  "Return GNU Org's expanded Visual command point for START..END."
+  (copy-point (if (org-visual-meta-forward-p) end start) :temporary))
+
+(defun org-visual-meta-structural-start-p (point predicate)
+  "Whether POINT begins a structural line recognized by PREDICATE."
+  (and (zerop (point-charpos point))
+       (funcall predicate point)))
+
+(defun org-visual-meta-lines (start end)
+  "Return complete logical lines touched by Visual START..END.
+
+Visual character selections use an exclusive END, while Visual Block keeps
+both literal corners.  A block whose far corner is at column zero therefore
+still includes that line."
+  (with-point ((first start)
+               (last end))
+    (line-start first)
+    (unless (lem-vi-mode/visual:visual-block-p)
+      (when (and (point< first last)
+                 (zerop (point-charpos last)))
+        (line-offset last -1)))
+    (line-start last)
+    (loop :with lines := nil
+          :with point := (copy-point first :temporary)
+          :do (push (copy-point point :left-inserting) lines)
+          :when (same-line-p point last)
+            :do (return (nreverse lines))
+          :unless (line-offset point 1)
+            :do (return (nreverse lines)))))
+
+(defun org-visual-meta-line-bounds (start end)
+  "Return exclusive whole-line bounds covering Visual START..END."
+  (let* ((lines (org-visual-meta-lines start end))
+         (first (and lines (copy-point (first lines) :temporary)))
+         (last (and lines (copy-point (car (last lines)) :temporary))))
+    (when first
+      (line-start first)
+      (line-start last)
+      (if (line-offset last 1)
+          (values first last)
+          (values first
+                  (copy-point (buffer-end-point (current-buffer))
+                              :temporary))))))
+
+(defun org-restore-visual-meta-selection (state mark point)
+  "Restore Visual STATE and its literal MARK/POINT orientation."
+  (let ((buffer (current-buffer)))
+    (setf (buffer-mark buffer) mark)
+    (move-point (buffer-point buffer) point)
+    (setf (lem-vi-mode/core:buffer-state buffer) state)))
+
+(defun org-visual-meta-point-at-line-column (line column)
+  "Return a temporary point at one-based LINE and zero-based COLUMN."
+  (with-point ((point (buffer-start-point (current-buffer))))
+    (line-offset point (1- line))
+    (move-to-column point column)
+    (copy-point point :temporary)))
+
+(defun org-call-with-visual-meta-selection (function &key deactivate)
+  "Call FUNCTION while preserving the current Visual selection.
+
+When DEACTIVATE is true, a successful edit exits Visual state like GNU Org's
+shifted Meta commands.  A refused edit or signaled error restores the original
+selection byte-for-byte."
+  (let* ((buffer (current-buffer))
+         (state (lem-vi-mode/core:buffer-state buffer))
+         (mark-line (line-number-at-point (buffer-mark buffer)))
+         (mark-column (point-charpos (buffer-mark buffer)))
+         (point-line (line-number-at-point (buffer-point buffer)))
+         (point-column (point-charpos (buffer-point buffer)))
+         (distinct-p
+           (not (point= (buffer-mark buffer) (buffer-point buffer))))
+         (completed-p nil)
+         (result nil))
+    (with-point ((saved-mark (buffer-mark buffer) :right-inserting)
+                 (saved-point (buffer-point buffer) :right-inserting))
+      (unwind-protect
+           (progn
+             (setf result (funcall function)
+                   completed-p t)
+             result)
+        (cond
+          ((and completed-p result deactivate)
+           (lem-vi-mode/visual:vi-visual-end buffer))
+          (t
+           ;; Table alignment and similar safe structural rewrites replace a
+           ;; complete line range, which can collapse both live markers at the
+           ;; insertion point.  These horizontal commands never change the
+           ;; line count, so recover either invalidated endpoint by its stable
+           ;; line and column while retaining marker tracking for ordinary
+           ;; star/indent edits.
+           (let* ((collapsed-p (and distinct-p
+                                    (point= saved-mark saved-point)))
+                  (restored-mark
+                   (if (and (not collapsed-p)
+                            (= mark-line (line-number-at-point saved-mark)))
+                       saved-mark
+                       (org-visual-meta-point-at-line-column
+                        mark-line mark-column)))
+                 (restored-point
+                   (if (and (not collapsed-p)
+                            (= point-line (line-number-at-point saved-point)))
+                       saved-point
+                       (org-visual-meta-point-at-line-column
+                        point-line point-column))))
+             (org-restore-visual-meta-selection
+              state restored-mark restored-point))))))))
+
+(defun org-set-visual-meta-line-selection (state reverse-p start end)
+  "Select the complete moved line block START..END in Visual STATE."
+  (with-point ((first start)
+               (last end))
+    (line-start first)
+    (when (point< first last)
+      (character-offset last -1)
+      (when (typep state 'lem-vi-mode/visual::visual-line)
+        (line-start last)))
+    (let ((buffer (current-buffer)))
+      (setf (buffer-mark buffer) (if reverse-p last first))
+      (move-point (buffer-point buffer) (if reverse-p first last))
+      (setf (lem-vi-mode/core:buffer-state buffer) state))))
+
+(defun org-visual-meta-heading-lines (start end)
+  (remove-if-not #'org-heading-line-p
+                 (org-visual-meta-lines start end)))
+
+(defun org-adjust-visual-heading-levels (start end direction)
+  "Promote or demote every real Org heading in Visual START..END."
+  (let ((headings (org-visual-meta-heading-lines start end)))
+    (when (and (minusp direction)
+               (find-if (lambda (heading)
+                          (= 1 (org-heading-level-at heading)))
+                        headings))
+      (message "A level-1 heading cannot be promoted")
+      (return-from org-adjust-visual-heading-levels nil))
+    (unless headings
+      (message "No Org headings in selection")
+      (return-from org-adjust-visual-heading-levels nil))
+    (org-clear-folds (current-buffer))
+    (dolist (heading headings)
+      (with-point ((point heading))
+        (line-start point)
+        (if (plusp direction)
+            (insert-character point #\*)
+            (delete-character point 1)))
+      (org-align-current-heading-tags heading))
+    t))
+
+(defun org-adjust-visual-list-region (start end direction)
+  "Structurally indent or outdent the list zone in Visual START..END."
+  (let ((selected (org-visual-meta-lines start end)))
+    (move-point (current-point) start)
+    (line-start (current-point))
+    (let* ((context (org-list-context-lines-for-range))
+           (items (remove-if-not #'org-list-item-line-p selected)))
+      (unless (and context items
+                   (same-line-p (first selected) (first items))
+                   (org-lines-contained-p selected context))
+        (message "Region is not a contiguous Org list zone")
+        (return-from org-adjust-visual-list-region nil))
+      (when (find-if #'org-list-line-structural-tab-p context)
+        (message "Tab-indented list structure cannot be shifted exactly")
+        (return-from org-adjust-visual-list-region nil))
+      (unless (every (lambda (line)
+                       (or (zerop (length (line-string line)))
+                           (org-list-item-line-p line)
+                           (plusp (org-line-indentation line))))
+                     selected)
+        (message "Region crosses text outside the list")
+        (return-from org-adjust-visual-list-region nil))
+      (when (and (minusp direction)
+                 (org-list-item-has-child-p (car (last items)))
+                 (not (org-list-tree-contained-in-lines-p
+                       (car (last items)) selected)))
+        (message "Cannot outdent an item without its children")
+        (return-from org-adjust-visual-list-region nil))
+      (when (org-list-context-ordered-p context)
+        (multiple-value-bind (lines safe-p ordered-p)
+            (org-ordered-list-repair-plan (current-point))
+          (declare (ignore lines ordered-p))
+          (unless safe-p
+            (message "Ordered-list shifting needs unsupported structural repair")
+            (return-from org-adjust-visual-list-region nil))))
+      (let* ((first-item (first items))
+             (indent (nth-value 0 (org-list-item-columns first-item)))
+             (target (org-list-indent-target first-item direction)))
+        (unless target
+          (message "Cannot ~:[outdent~;indent~] this list region"
+                   (plusp direction))
+          (return-from org-adjust-visual-list-region nil))
+        (let ((delta (- target indent)))
+          (org-clear-folds (current-buffer))
+          (dolist (line selected)
+            (unless (zerop (length (line-string line)))
+              (org-shift-line-indentation line delta)))
+          (org-convert-top-level-star-items selected delta)))
+      (when (org-list-context-ordered-p context)
+        (org-repair-ordered-list-at-point))
+      t)))
+
+(defun org-swap-visual-meta-regions
+    (first-start first-end second-start second-end selected-second-p)
+  "Swap adjacent linewise regions and return the moved selection bounds."
+  (let ((first-text (points-to-string first-start first-end))
+        (second-text (points-to-string second-start second-end)))
+    (with-point ((origin first-start :right-inserting))
+      (delete-between-points first-start second-end)
+      (multiple-value-bind (replacement second-length)
+          (org-swap-adjacent-linewise-text first-text second-text)
+        (insert-string origin replacement)
+        (let ((new-start (copy-point origin :temporary))
+              (new-end (copy-point origin :temporary)))
+          (if selected-second-p
+              (character-offset new-end second-length)
+              (progn
+                (character-offset new-start second-length)
+                (character-offset new-end (length replacement))))
+          (values new-start new-end))))))
+
+(defun org-move-visual-line-region (start end direction state reverse-p)
+  "Move the complete Visual line block one line in DIRECTION."
+  (multiple-value-bind (selected-start selected-end)
+      (org-visual-meta-line-bounds start end)
+    (unless selected-start
+      (return-from org-move-visual-line-region nil))
+    (org-clear-folds (current-buffer))
+    (multiple-value-bind (new-start new-end)
+        (if (minusp direction)
+            (with-point ((neighbor-start selected-start))
+              (unless (line-offset neighbor-start -1)
+                (message "Cannot move selection further")
+                (return-from org-move-visual-line-region nil))
+              (line-start neighbor-start)
+              (org-swap-visual-meta-regions
+               neighbor-start selected-start selected-start selected-end t))
+            (with-point ((neighbor-end selected-end))
+              (when (end-buffer-p selected-end)
+                (message "Cannot move selection further")
+                (return-from org-move-visual-line-region nil))
+              (line-start neighbor-end)
+              (or (line-offset neighbor-end 1)
+                  (buffer-end neighbor-end))
+              (org-swap-visual-meta-regions
+               selected-start selected-end selected-end neighbor-end nil)))
+      (org-set-visual-meta-line-selection
+       state reverse-p new-start new-end)
+      t)))
+
+(defun org-move-visual-heading-region (start end direction state reverse-p)
+  "Move the consecutive sibling subtrees selected by START..END."
+  (let* ((headings (org-visual-meta-heading-lines start end))
+         (first-heading (first headings))
+         (level (and first-heading (org-heading-level-at first-heading))))
+    (unless (and first-heading
+                 (org-visual-meta-structural-start-p
+                  start #'org-heading-line-p))
+      (return-from org-move-visual-heading-region nil))
+    (when (find-if (lambda (heading)
+                     (< (org-heading-level-at heading) level))
+                   headings)
+      (message "Cannot move past a superior heading")
+      (return-from org-move-visual-heading-region nil))
+    (let* ((siblings
+             (remove-if-not (lambda (heading)
+                              (= level (org-heading-level-at heading)))
+                            headings))
+           (last-heading (car (last siblings)))
+           (selected-start first-heading)
+           (selected-end (org-subtree-end-point last-heading)))
+      (org-clear-folds (current-buffer))
+      (multiple-value-bind (new-start new-end)
+          (if (minusp direction)
+              (let ((previous (org-same-level-sibling first-heading -1)))
+                (unless previous
+                  (message "No same-level sibling in that direction")
+                  (return-from org-move-visual-heading-region nil))
+                (org-swap-visual-meta-regions
+                 previous selected-start selected-start selected-end t))
+              (let ((next (org-same-level-sibling last-heading 1)))
+                (unless next
+                  (message "No same-level sibling in that direction")
+                  (return-from org-move-visual-heading-region nil))
+                (org-swap-visual-meta-regions
+                 selected-start selected-end next
+                 (org-subtree-end-point next) nil)))
+        (org-set-visual-meta-line-selection
+         state reverse-p new-start new-end)
+        t))))
+
+(defun org-visual-meta-horizontal (direction)
+  "Implement region-aware Evil-Org M-h/M-l in DIRECTION."
+  (multiple-value-bind (start end) (org-visual-meta-range)
+    (let ((context (org-visual-meta-context-point start end)))
+      (cond
+        ((org-table-line-p context)
+         (org-call-with-visual-meta-selection
+          (lambda ()
+            (move-point (current-point) context)
+            (org-table-move-column direction))))
+        ((or (org-visual-meta-structural-start-p
+              context #'org-heading-line-p)
+             (org-visual-meta-structural-start-p
+              start #'org-heading-line-p))
+         (org-call-with-visual-meta-selection
+          (lambda ()
+            (org-adjust-visual-heading-levels start end direction))))
+        ((or (org-visual-meta-structural-start-p
+              context #'org-list-item-line-p)
+             (org-visual-meta-structural-start-p
+              start #'org-list-item-line-p))
+         (org-call-with-visual-meta-selection
+          (lambda ()
+            (org-adjust-visual-list-region start end direction))))
+        (t
+         (org-word-motion direction))))))
+
+(defun org-visual-meta-vertical (direction)
+  "Implement region-aware Evil-Org M-k/M-j in DIRECTION."
+  (multiple-value-bind (start end) (org-visual-meta-range)
+    (let ((state (lem-vi-mode/core:buffer-state (current-buffer)))
+          (reverse-p (not (org-visual-meta-forward-p))))
+      (if (org-visual-meta-structural-start-p start #'org-heading-line-p)
+          (org-move-visual-heading-region
+           start end direction state reverse-p)
+          (org-move-visual-line-region
+           start end direction state reverse-p)))))
+
+(defun org-visual-shift-meta-horizontal (direction)
+  "Implement Evil-Org Visual M-H/M-L in DIRECTION."
+  (multiple-value-bind (start end) (org-visual-meta-range)
+    (let ((context (org-visual-meta-context-point start end)))
+      (org-call-with-visual-meta-selection
+       (lambda ()
+         (move-point (current-point) context)
+         (cond
+           ((org-table-line-p context)
+            (if (minusp direction)
+                (org-table-delete-column)
+                (org-table-insert-column)))
+           ((org-visual-meta-structural-start-p
+             context #'org-heading-line-p)
+            (org-adjust-subtree-level direction))
+           ((org-visual-meta-structural-start-p
+             start #'org-list-item-line-p)
+            (org-adjust-visual-list-region start end direction))
+           (t
+            (message "This command requires a table, heading, or list item")
+            nil)))
+       :deactivate t))))
+
+(defun org-visual-shift-meta-vertical (direction)
+  "Implement Evil-Org Visual M-K/M-J in DIRECTION."
+  (let* ((range (multiple-value-list (org-visual-meta-range)))
+         (start (first range))
+         (end (second range)))
+    (let ((context (org-visual-meta-context-point start end)))
+      (org-call-with-visual-meta-selection
+       (lambda ()
+         (move-point (current-point) context)
+         (cond
+           ((org-table-line-p context)
+            (if (minusp direction)
+                (org-table-delete-row)
+                (org-table-insert-row t)))
+           ((cl-ppcre:scan "(?i)^\\s*CLOCK:" (line-string context))
+            (message "CLOCK timestamp adjustment is not implemented; line unchanged")
+            nil)
+           (t
+            (org-drag-current-line direction))))
+       :deactivate t))))
+
+(define-command lem-yath-org-visual-metaleft () ()
+  (org-visual-meta-horizontal -1))
+
+(define-command lem-yath-org-visual-metaright () ()
+  (org-visual-meta-horizontal 1))
+
+(define-command lem-yath-org-visual-metaup () ()
+  (org-visual-meta-vertical -1))
+
+(define-command lem-yath-org-visual-metadown () ()
+  (org-visual-meta-vertical 1))
+
+(define-command lem-yath-org-visual-shiftmetaleft () ()
+  (org-visual-shift-meta-horizontal -1))
+
+(define-command lem-yath-org-visual-shiftmetaright () ()
+  (org-visual-shift-meta-horizontal 1))
+
+(define-command lem-yath-org-visual-shiftmetaup () ()
+  (org-visual-shift-meta-vertical -1))
+
+(define-command lem-yath-org-visual-shiftmetadown () ()
+  (org-visual-shift-meta-vertical 1))
+
 (define-command lem-yath-org-metaleft () ()
   "Move a table column left, or promote the current heading/list item."
   (cond
@@ -2482,15 +2892,14 @@ matching the active Emacs terminal profile.")
 (define-key *org-vi-visual-keymap* "C-c C-s" 'lem-yath-org-schedule)
 (define-key *org-vi-visual-keymap* "C-c C-d" 'lem-yath-org-deadline)
 
-(define-command lem-yath-org-visual-structural-unsupported () ()
-  (message "Region-aware Evil-Org Meta editing is not implemented; selection unchanged"))
-
-;; Point-only structural commands would silently ignore most of a Vi
-;; selection.  Keep the selection byte-identical until the region semantics
-;; can be implemented as true operators.
-(dolist (key '("M-h" "M-l" "M-k" "M-j" "M-H" "M-L" "M-K" "M-J"))
-  (define-key *org-vi-visual-keymap* key
-    'lem-yath-org-visual-structural-unsupported))
+(define-key *org-vi-visual-keymap* "M-h" 'lem-yath-org-visual-metaleft)
+(define-key *org-vi-visual-keymap* "M-l" 'lem-yath-org-visual-metaright)
+(define-key *org-vi-visual-keymap* "M-k" 'lem-yath-org-visual-metaup)
+(define-key *org-vi-visual-keymap* "M-j" 'lem-yath-org-visual-metadown)
+(define-key *org-vi-visual-keymap* "M-H" 'lem-yath-org-visual-shiftmetaleft)
+(define-key *org-vi-visual-keymap* "M-L" 'lem-yath-org-visual-shiftmetaright)
+(define-key *org-vi-visual-keymap* "M-K" 'lem-yath-org-visual-shiftmetaup)
+(define-key *org-vi-visual-keymap* "M-J" 'lem-yath-org-visual-shiftmetadown)
 
 (define-key *org-vi-normal-keymap* "o" 'lem-yath-org-open-below)
 (define-key *org-vi-normal-keymap* "O" 'lem-yath-org-open-above)

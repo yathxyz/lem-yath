@@ -70,6 +70,16 @@
     ("g j" lem-yath-org-forward-element)
     ("g H" lem-yath-org-top)))
 
+(defparameter *org-operator-test-visual-meta-routes*
+  '(("M-h" lem-yath-org-visual-metaleft)
+    ("M-l" lem-yath-org-visual-metaright)
+    ("M-k" lem-yath-org-visual-metaup)
+    ("M-j" lem-yath-org-visual-metadown)
+    ("M-H" lem-yath-org-visual-shiftmetaleft)
+    ("M-L" lem-yath-org-visual-shiftmetaright)
+    ("M-K" lem-yath-org-visual-shiftmetaup)
+    ("M-J" lem-yath-org-visual-shiftmetadown)))
+
 (defun org-operator-test-routes-p (state)
   (loop :for (keys command) :in *org-operator-test-object-routes*
         :always (org-operator-test-route-p state keys command)))
@@ -127,7 +137,12 @@
            (and (org-operator-test-routes-p operator)
                 (string= operator-left "LEM-YATH-ORG-SHIFT-LEFT")
                 (string= operator-right "LEM-YATH-ORG-SHIFT-RIGHT")))
-         (visual-ok (org-operator-test-routes-p visual))
+         (visual-ok
+           (and (org-operator-test-routes-p visual)
+                (loop :for (keys command)
+                        :in *org-operator-test-visual-meta-routes*
+                      :always
+                      (org-operator-test-route-p visual keys command))))
          (stock-ok (and (string= operator-aw "VI-A-WORD")
                         (string= operator-iw "VI-INNER-WORD")))
          (snipe-ok
