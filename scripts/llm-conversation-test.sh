@@ -8,6 +8,7 @@ root="$(mktemp -d "${TMPDIR:-/tmp}/lem-yath-llm-conversation.XXXXXX")"
 export HOME="$root/home"
 export XDG_CACHE_HOME="$root/cache"
 export LEM_YATH_LLM_CONVERSATION_REPORT="$root/report"
+export LEM_YATH_LLM_CONVERSATION_SLEEP="$(command -v sleep)"
 source "$here/scripts/tui-driver.sh"
 export LEM_YATH_SOURCE
 
@@ -168,5 +169,37 @@ if ! grep -qE \
   die read-only-fallback 'source or shared transcript content differed'
 fi
 pass read-only-fallback 'read-only conversation fell back without changing its source'
+
+send_key F7
+if ! wait_report_count '^SETUP label=kill ' 1; then
+  die buffer-kill 'could not prepare the killed-conversation scenario'
+fi
+send_conversation
+if ! wait_report_count '^FIRST label=kill$' 1; then
+  die buffer-kill 'the process-backed local response did not begin'
+fi
+send_key Escape
+send_key Space
+send_key b
+send_key k
+if ! lem_wait_for "$session" 'kill anyway' "$WAIT_TIMEOUT" >/dev/null; then
+  die buffer-kill 'SPC b k did not request confirmation for modified scratch'
+fi
+send_key y
+kill_ok=0
+for _ in $(seq 1 $((WAIT_TIMEOUT * 4))); do
+  send_key F11
+  if grep -qE \
+    '^KILL buffer=deleted active=no aborted=yes insertion=none process=nil saved-process=dead shared-active=no hook=1$' \
+    "$LEM_YATH_LLM_CONVERSATION_REPORT"; then
+    kill_ok=1
+    break
+  fi
+  sleep 0.1
+done
+if [ "$kill_ok" -ne 1 ]; then
+  die buffer-kill 'buffer deletion did not release the request and child process'
+fi
+pass buffer-kill 'SPC b k released request ownership and terminated its process'
 
 printf 'All LLM conversation tests passed.\n'

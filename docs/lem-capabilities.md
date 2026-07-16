@@ -2898,9 +2898,14 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
 - **Markdown preview**: yes, `preview` generic in markdown-mode (§8), plus literate
   eval-block.
 - **AI / shipped in-tree (all in the image):**
-  Lem-yath adds a shared Markdown conversation buffer for OpenRouter,
+  Lem-yath starts its Org scratch as a buffer-local LLM conversation and streams
+  replies at the tracked send position before adding the next `* ` prompt.
+  Ordinary buffers retain a shared Markdown transcript for OpenRouter,
   Perplexity, GitHub Copilot Chat, native ChatGPT Codex and Grok OAuth HTTP,
-  and the Claude Code, Codex, and Grok CLIs.
+  and the Claude Code, Codex, and Grok CLIs; read-only conversation buffers use
+  that transcript without source mutation. Killing a request-bearing buffer
+  aborts its tools/process, releases its response marker, and rejects late
+  callbacks.
   The CLI adapters consume their native
   JSON event streams, retain a separate session ID for each backend for the
   lifetime of that buffer, render text/thinking/tool/command/file activity,

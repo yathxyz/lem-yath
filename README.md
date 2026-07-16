@@ -466,8 +466,9 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
 - streaming OpenRouter LLM client plus native Claude/Codex/Grok JSON event
   backends, with source-position Org conversations, tagged assistant/user spans,
   per-buffer session resume, rendered agent activity, guarded request lifecycle,
-  abort (`SPC g a`), and fresh-session (`SPC g n`). Ordinary buffers retain the
-  shared Markdown transcript, which is also the non-destructive read-only fallback
+  abort (`SPC g a`), fresh-session (`SPC g n`), and killed-buffer process/marker
+  cleanup. Ordinary buffers retain the shared Markdown transcript, which is also
+  the non-destructive read-only fallback
 - native `chatgpt-codex` and `grok-oauth` HTTP backends with the configured
   `codex-agentic` and `grok-build-oauth-agentic` five-tool presets. ChatGPT
   Codex shares and safely refreshes `~/.codex/auth.json`, streams the Responses

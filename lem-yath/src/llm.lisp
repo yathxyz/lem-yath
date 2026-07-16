@@ -539,6 +539,20 @@ SHARED-HEADING is rendered only for the traditional shared transcript."
           (message "Aborting ~(~a~) request"
                    (llm-request-backend request))))))
 
+(defun llm-kill-buffer-hook (buffer)
+  "Abort asynchronous state owned by BUFFER before BUFFER is deleted."
+  (alexandria:when-let ((request (llm-active-request buffer)))
+    (setf (buffer-value buffer *llm-active-request-key*) nil)
+    (alexandria:when-let ((process (llm-request-abort-now request)))
+      (ignore-errors (uiop:terminate-process process :urgent t))
+      (ignore-errors (uiop:close-streams process)))
+    (llm-request-release-insertion-point request)))
+
+(remove-hook (variable-value 'kill-buffer-hook :global t)
+             'llm-kill-buffer-hook)
+(add-hook (variable-value 'kill-buffer-hook :global t)
+          'llm-kill-buffer-hook)
+
 (defun llm-launch-openrouter-process (key body)
   (uiop:launch-program
    (list *llm-curl-executable* "-sN" *llm-endpoint*

@@ -3,6 +3,9 @@
 (defvar *llm-conversation-test-report*
   (uiop:getenv "LEM_YATH_LLM_CONVERSATION_REPORT"))
 (defvar *llm-conversation-test-last-prompt* nil)
+(defvar *llm-conversation-test-killed-buffer* nil)
+(defvar *llm-conversation-test-killed-request* nil)
+(defvar *llm-conversation-test-killed-process* nil)
 
 (defun llm-conversation-test-log (control &rest arguments)
   (with-open-file (stream *llm-conversation-test-report*
@@ -40,6 +43,11 @@
   (let* ((buffer (llm-output-buffer))
          (label (or (buffer-value buffer :llm-conversation-test-label)
                     "shared"))
+         (process
+           (and (string= prompt "kill")
+                (uiop:launch-program
+                 (list (uiop:getenv "LEM_YATH_LLM_CONVERSATION_SLEEP") "30")
+                 :output :stream :error-output :output)))
          (insertion-point
            (llm-prepare-response
             buffer
@@ -48,8 +56,12 @@
                     prompt)))
          (request
            (llm-register-request
-            buffer nil backend :insertion-point insertion-point)))
+            buffer process backend :insertion-point insertion-point)))
     (setf *llm-conversation-test-last-prompt* prompt)
+    (when process
+      (setf *llm-conversation-test-killed-buffer* buffer
+            *llm-conversation-test-killed-request* request
+            *llm-conversation-test-killed-process* process))
     (llm-conversation-test-log "SEND label=~a buffer=~a prompt-hex=~a"
                                label (buffer-name buffer)
                                (llm-conversation-test-hex prompt))
@@ -57,6 +69,15 @@
      request
      (lambda ()
        (cond
+         ((string= prompt "kill")
+          (llm-request-append request "partial")
+          (send-event
+           (lambda ()
+             (llm-conversation-test-log "FIRST label=~a" label)))
+          (ignore-errors (uiop:wait-process process))
+          (sleep 0.2)
+          (llm-request-append request "late")
+          (llm-request-finish request (string #\Newline)))
          ((string= prompt "abort")
           (llm-request-append request "partial")
           (send-event
@@ -124,6 +145,12 @@
 (define-command lem-yath-test-llm-conversation-read-only () ()
   (llm-conversation-test-setup "readonly" "readonly" 8 :read-only-p t))
 
+(define-command lem-yath-test-llm-conversation-kill () ()
+  (setf *llm-conversation-test-killed-buffer* nil
+        *llm-conversation-test-killed-request* nil
+        *llm-conversation-test-killed-process* nil)
+  (llm-conversation-test-setup "kill" "kill" 4))
+
 (define-command lem-yath-test-llm-conversation-static () ()
   (let* ((buffer (current-buffer))
          (command
@@ -162,6 +189,28 @@
      (or (llm-conversation-test-role-at scratch "alpha") "none")
      (or (llm-conversation-test-role-at scratch "* ") "none"))))
 
+(define-command lem-yath-test-llm-conversation-kill-record () ()
+  (let ((buffer *llm-conversation-test-killed-buffer*)
+        (request *llm-conversation-test-killed-request*)
+        (process *llm-conversation-test-killed-process*)
+        (shared (get-buffer *llm-buffer-name*)))
+    (llm-conversation-test-log
+     (concatenate
+      'string
+      "KILL buffer=~a active=~a aborted=~a insertion=~a process=~a "
+      "saved-process=~a shared-active=~a hook=~d")
+     (if (and buffer (deleted-buffer-p buffer)) "deleted" "live")
+     (if (and buffer (llm-active-request buffer)) "yes" "no")
+     (if (and request (llm-request-aborted-now-p request)) "yes" "no")
+     (if (and request (llm-request-insertion-point request)) "live" "none")
+     (if (and request (llm-request-process request)) "live" "nil")
+     (if (and process (ignore-errors (uiop:process-alive-p process)))
+         "live" "dead")
+     (if (llm-active-request shared) "yes" "no")
+     (count 'llm-kill-buffer-hook
+            (variable-value 'kill-buffer-hook :global t)
+            :key #'car :test #'eq))))
+
 (dolist (keymap (list *global-keymap*
                       lem-vi-mode:*normal-keymap*
                       lem-vi-mode:*insert-keymap*
@@ -171,6 +220,8 @@
   (define-key keymap "F4" 'lem-yath-test-llm-conversation-prefix-edit)
   (define-key keymap "F5" 'lem-yath-test-llm-conversation-abort)
   (define-key keymap "F6" 'lem-yath-test-llm-conversation-read-only)
+  (define-key keymap "F7" 'lem-yath-test-llm-conversation-kill)
+  (define-key keymap "F11" 'lem-yath-test-llm-conversation-kill-record)
   (define-key keymap "F12" 'lem-yath-test-llm-conversation-record))
 
 (setf *llm-backend* :lem-yath-conversation-test)
