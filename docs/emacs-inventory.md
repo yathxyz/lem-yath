@@ -342,8 +342,9 @@ Orderless separator without accepting a preview.
 An isolated live-Vertico probe confirmed that opening candidates does not insert
 a common prefix or accept a singleton. `TAB` inserts the focused candidate while
 retaining the minibuffer, `RET` accepts and submits once, and `M-p`/`M-n` traverse
-history. `C-g` aborts; one physical `Escape` starts a Meta sequence rather than
-aborting.
+history. Evil is disabled in the minibuffer, so standard Emacs `C-a`, `C-e`, and
+`C-k` line editing remains available while Vertico is visible. `C-g` aborts; one
+physical `Escape` starts a Meta sequence rather than aborting.
 
 The pinned Orderless default affix table includes `%` character folding and `&`
 annotation matching. `%` is effective in the ordinary Corfu/Orderless pipeline.

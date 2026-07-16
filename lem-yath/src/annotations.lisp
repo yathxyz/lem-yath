@@ -448,9 +448,20 @@ When FROM-LEFT is true, preserve the useful end of paths and locations."
           (symbol-value symbol)))
     (error () nil)))
 
+(defun completion-lem-source-root ()
+  "Return the validated bundled Lem source root used by this installation."
+  (let* ((override (uiop:getenv "LEM_YATH_LEM_SOURCE"))
+         (root (and override
+                    (ignore-errors
+                      (uiop:ensure-directory-pathname
+                       (uiop:parse-native-namestring override))))))
+    (if (and root (uiop:file-exists-p (merge-pathnames "lem.asd" root)))
+        root
+        (asdf:system-source-directory :lem))))
+
 (defun completion-library-asd-files ()
   "Return bundled and Quicklisp-local Lem library definitions."
-  (let* ((lem-root (asdf:system-source-directory :lem))
+  (let* ((lem-root (completion-lem-source-root))
          ;; Marginalia's library category covers the whole load path, not only
          ;; optional contribs.  The Nix image keeps all bundled ASDs here.
          (bundled-files

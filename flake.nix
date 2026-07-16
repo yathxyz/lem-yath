@@ -473,6 +473,7 @@
               export LEM_YATH_ASPELL_PROGRAM=${lib.getExe' aspellRuntime "aspell"}
               export LEM_YATH_TIMEOUT_PROGRAM=${lib.getExe' pkgs.coreutils "timeout"}
               export LEM_YATH_GUARDIAN_PYTHON=${lib.getExe' pkgs.python3 "python3"}
+              export LEM_YATH_LEM_SOURCE=${lemPatchedSrc}
               export LEM_YATH_MCP_FETCH_PROGRAM="''${LEM_YATH_MCP_FETCH_PROGRAM:-${lib.getExe' pkgs.uv "uvx"}}"
               export LEM_YATH_MCP_DOCKER_PROGRAM="''${LEM_YATH_MCP_DOCKER_PROGRAM:-${lib.getExe pkgs.docker-client}}"
               export LEM_YATH_TREE_SITTER_BUNDLE=${treeSitterBundle}

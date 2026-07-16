@@ -17,6 +17,9 @@
     "phantom"
     "string-repeat"))
 
+(defparameter *prompt-completion-edit-candidates*
+  '("fixture-preset" "quick-lookup" "project-readonly"))
+
 (defun prompt-completion-fixture-path (relative)
   (merge-pathnames relative *prompt-completion-fixture-root*))
 
@@ -180,6 +183,22 @@
              (member input *prompt-completion-prescient-candidates*
                      :test #'string=)))))
     (prompt-completion-fixture-log "PRESCIENT-SELECT value=~a" choice)))
+
+(define-command lem-yath-test-prompt-line-editing () ()
+  "Open a nonempty prompt for physical Emacs line-editing coverage."
+  (let ((choice
+          (prompt-for-string
+           "Prompt edit: "
+           :initial-value "quick-lookup"
+           :completion-function
+           (lambda (input)
+             (prescient-filter input *prompt-completion-edit-candidates*
+                               :rank-p nil))
+           :test-function
+           (lambda (input)
+             (member input *prompt-completion-edit-candidates*
+                     :test #'string=)))))
+    (prompt-completion-fixture-log "PROMPT-EDIT-SELECT value=~a" choice)))
 
 (prompt-completion-fixture-check-wrapper-installation)
 (prompt-completion-fixture-check-size-cache)

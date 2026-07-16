@@ -115,6 +115,41 @@ else
 fi
 sleep 0.8
 
+# Evil is disabled in the configured Emacs minibuffer, so standard Emacs line
+# editing remains active while Vertico is visible.  Exercise the corresponding
+# Lem prompt behavior against a nonempty initial value.
+if invoke_prompt_command lem-yath-test-prompt-line-editing \
+     'Prompt edit: quick-lookup'; then
+  lem_keys "$session" C-a
+  tmux_cmd send-keys -t "$session" -l X
+  lem_keys "$session" C-e
+  tmux_cmd send-keys -t "$session" -l Y
+  lem_keys "$session" C-a
+  lem_keys "$session" C-k
+  tmux_cmd send-keys -t "$session" -l fixture-preset
+  sleep 0.8
+  screen=$(lem_capture "$session")
+  if grep -Fq 'Prompt edit: fixture-preset' <<<"$screen" &&
+     grep -Fq 'fixture-preset' <<<"$screen"; then
+    lem_keys "$session" Enter
+    if wait_report_count '^PROMPT-EDIT-SELECT value=fixture-preset$' 1; then
+      pass prompt-emacs-line-editing \
+        'C-a, C-e, and C-k retained and refreshed the completion prompt'
+    else
+      fail prompt-emacs-line-editing \
+        'Return did not accept the physically edited prompt value' "$session"
+    fi
+  else
+    fail prompt-emacs-line-editing \
+      'line editing did not replace the initial value with live completion' \
+      "$session"
+    close_prompt
+  fi
+else
+  fail prompt-emacs-line-editing 'the line-editing prompt did not open' \
+    "$session"
+fi
+
 # Vertico keeps the prompt editable after a zero-result query and repopulates
 # candidates as soon as the query becomes valid again.  Exercise the actual
 # M-x command provider first, including its Marginalia-style documentation.

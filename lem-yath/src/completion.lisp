@@ -748,6 +748,28 @@ provider's source-defined order."
 (define-key lem/prompt-window::*prompt-mode-keymap*
   "Return" 'lem-yath-prompt-execute)
 
+(define-command lem-yath-prompt-beginning-of-line () ()
+  "Move to the line beginning without crossing the prompt's editable field."
+  (let ((point (current-point))
+        (input-start (lem/prompt-window::current-prompt-start-point)))
+    (line-start point)
+    (when (point< point input-start)
+      (move-point point input-start))))
+
+(define-command lem-yath-prompt-kill-line (argument) (:universal-nil)
+  "Kill to the end of the prompt line and refresh visible completion."
+  (unless (end-buffer-p (current-point))
+    (call-command 'kill-line argument)
+    (lem/completion-mode:completion-refresh)))
+
+(dolist (keymap (list lem/prompt-window::*prompt-mode-keymap*
+                      lem/completion-mode::*completion-mode-keymap*))
+  (define-key keymap "C-a" 'lem-yath-prompt-beginning-of-line)
+  (define-key keymap "Home" 'lem-yath-prompt-beginning-of-line)
+  (define-key keymap "C-e" 'move-to-end-of-line)
+  (define-key keymap "End" 'move-to-end-of-line)
+  (define-key keymap "C-k" 'lem-yath-prompt-kill-line))
+
 (defun completion-prompt-active-p ()
   (alexandria:when-let ((prompt
                          (lem/prompt-window:current-prompt-window)))
