@@ -261,15 +261,18 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   extension; Return pushes the filter and Escape cancels pending input.
   `s RET` completes over all registered exact major modes (including
   comma-separated choices), `s M` includes active parent modes, `s *` selects
-  GNU-style starred names, `s </>` apply strict character-size limits, and
-  `s c` matches buffer content case-insensitively. Content scanning skips
+  GNU-style starred names, `s E` selects live process owners, `s F` matches
+  file or working directories, `s </>` apply strict character-size limits,
+  and `s c` matches buffer content case-insensitively. Content scanning skips
   buffers above 16 million characters.
   `m/u/Backspace/U/t/~`
   manage ordinary `>` marks, `d` assigns distinct `D` deletion marks, `x`
   executes those deletions, and `S` saves marked buffers. The starred
   `* *`/`* s`, `* m`, `* u`, `* r`, `* /`, `* e`, `* h`, and `* z` catalog
   marks visible special, modified, unsaved, read-only, directory, dissociated,
-  help, or compressed-file buffers.
+  help, or compressed-file buffers. `* M` marks an exact used major mode, while
+  `% n/m/f/g` mark visible rows by name, displayed mode, file, or bounded
+  content regexp; invalid regexps change no marks.
   `{`/`}` traverse
   ordinary marks; `M`, `T`, and `R` toggle modified/read-only state or rename
   marked buffers uniquely, `V` confirms once before safely reverting the

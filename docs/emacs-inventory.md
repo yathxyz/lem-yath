@@ -142,6 +142,8 @@ execution with `d` then `x`, marked save with `S`, cyclic ordinary-mark
 navigation with `{`/`}`, visible-snapshot starred marking for special,
 modified, unsaved, read-only, Dired, dissociated, help, and compressed-file
 buffers on `* *`/`* s`, `* m`, `* u`, `* r`, `* /`, `* e`, `* h`, and `* z`,
+exact used-mode marking on `* M`, and name/mode/file/content regexp marking on
+`% n/m/f/g`,
 marked modified/read-only toggles and Emacs-style
 unique renaming with `M/T/R`, one-confirmation marked-or-current reversion with
 `V`, focused-buffer burying with `X`, row movement
@@ -167,10 +169,12 @@ literal while entering a filter, Return pushes it onto the stack, and Escape
 cancels only the pending input. `s RET` completes over one or more exact
 registered major modes and accepts the displayed current-mode default; `s M`
 offers snapshot modes and their CLOS parents. `s *` matches GNU's exact starred
-name form, `s <`/`s >` compare character sizes strictly, and `s c` applies a
-case-insensitive content regexp. `s i` and `s v` push GNU Ibuffer's modified
-and visiting-file filters, multiple filters compose by AND, `s !` negates the
-top filter, `s p` removes it, and `s /` disables the stack
+name form, `s E` retains live generic, shell, compilation, and terminal process
+owners, `s F` matches a file's containing directory or a non-file buffer's
+working directory, `s <`/`s >` compare character sizes strictly, and `s c`
+applies a case-insensitive content regexp. `s i` and `s v` push GNU Ibuffer's
+modified and visiting-file filters, multiple filters compose by AND, `s !`
+negates the top filter, `s p` removes it, and `s /` disables the stack
 (`src/buffer-list.lisp`, `scripts/buffer-list-test.sh`).
 `O` and `M-s a C-o` reproduce `ibuffer-do-occur` over ordinary marks, in GNU's
 reverse display order, excluding `D`; with no ordinary marks the current row is

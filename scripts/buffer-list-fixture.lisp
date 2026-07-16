@@ -21,6 +21,7 @@
 (defvar *buffer-list-test-query-delete* nil)
 (defvar *buffer-list-test-query-read-only* nil)
 (defvar *buffer-list-test-query-expand* nil)
+(defvar *buffer-list-test-process* nil)
 
 (define-major-mode buffer-list-test-long-mode ()
     (:name "Long Fixture Mode Name"))
@@ -40,6 +41,13 @@
 (define-major-mode buffer-list-test-derived-child-mode
     buffer-list-test-derived-parent-mode
     (:name "Ibuffer Child Fixture"))
+
+(defun buffer-list-test-stop-process ()
+  (when *buffer-list-test-process*
+    (when (ignore-errors (uiop:process-alive-p *buffer-list-test-process*))
+      (ignore-errors (uiop:terminate-process *buffer-list-test-process*)))
+    (ignore-errors (uiop:wait-process *buffer-list-test-process*))
+    (setf *buffer-list-test-process* nil)))
 
 (defun buffer-list-test-log (control &rest arguments)
   (with-open-file (stream *buffer-list-test-report*
@@ -631,6 +639,21 @@
  *buffer-list-test-op-alpha* (format nil "unique filter needle alpha~%") t)
 (buffer-list-test-set-content
  *buffer-list-test-op-beta* (format nil "ordinary beta content~%") t)
+(setf *buffer-list-test-process*
+      (uiop:launch-program '("sleep" "600")
+                           :input nil :output nil :error-output nil)
+      (buffer-value *buffer-list-test-op-alpha* 'process)
+      *buffer-list-test-process*
+      (buffer-value *buffer-list-test-op-beta*
+                    :lem-yath-compilation-session)
+      (make-compilation-session
+       :buffer *buffer-list-test-op-beta*
+       :process *buffer-list-test-process*
+       :control-armed-p t
+       :state :running))
+(let ((buffer (buffer-list-test-buffer 'help)))
+  (buffer-list-test-set-content
+   buffer (format nil "unique filter needle alpha~%") t))
 (setf *buffer-list-test-revert-clean*
       (buffer-list-test-find-file-buffer
        'revert-clean "LEM_YATH_BUFFER_LIST_REVERT_CLEAN"))
@@ -716,8 +739,16 @@
    'sort-zeta "buffer-list-sort-zeta" 'buffer-list-test-sort-m-mode 10
    (uiop:getenv "LEM_YATH_BUFFER_LIST_SORT_B")))
 
-(buffer-list-test-make-buffer 'view-alpha "buffer-list-view-alpha")
-(buffer-list-test-make-buffer 'view-beta "buffer-list-view-beta")
+(let ((buffer
+        (buffer-list-test-make-buffer 'view-alpha "buffer-list-view-alpha")))
+  (setf (buffer-directory buffer)
+        (uiop:pathname-directory-pathname
+         (uiop:getenv "LEM_YATH_BUFFER_LIST_DIRECTORY_HIT"))))
+(let ((buffer
+        (buffer-list-test-make-buffer 'view-beta "buffer-list-view-beta")))
+  (setf (buffer-directory buffer)
+        (uiop:pathname-directory-pathname
+         (uiop:getenv "LEM_YATH_BUFFER_LIST_DIRECTORY_MISS"))))
 (buffer-list-test-make-buffer 'view-delete "buffer-list-view-delete")
 
 (setf *buffer-list-test-occur-alpha*
@@ -834,5 +865,8 @@
   'lem-yath-test-buffer-list-prepare-query)
 (define-key *buffer-list-picker-mode-keymap* "F5"
   'lem-yath-test-buffer-list-query-state)
+
+(remove-hook *exit-editor-hook* 'buffer-list-test-stop-process)
+(add-hook *exit-editor-hook* 'buffer-list-test-stop-process)
 
 (buffer-list-test-log "READY")

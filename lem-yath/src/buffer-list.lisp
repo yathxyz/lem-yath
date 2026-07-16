@@ -324,6 +324,16 @@ Each nonempty group begins with a distinct heading entry."
 (defparameter *buffer-list-content-filter-character-limit* (* 16 1024 1024)
   "Maximum buffer length inspected by one Ibuffer content filter.")
 
+(defparameter *buffer-list-content-mark-exact-exclusions*
+  '("*Completions*" "*Help*" "*Messages*" "*Pp Eval Output*"
+    "*CompileLog*" "*Info*" "*Buffer List*" "*Ibuffer*" "*Apropos*")
+  "GNU Ibuffer buffer names skipped by an ordinary content-regexp mark.")
+
+(defparameter *buffer-list-content-mark-prefix-exclusions*
+  '("*Customize Option: " "*Async Shell Command*"
+    "*Shell Command Output*" "*ediff ")
+  "GNU Ibuffer buffer-name prefixes skipped by an ordinary content mark.")
+
 (defparameter *buffer-list-starred-name-scanner*
   (cl-ppcre:create-scanner "\\A\\*[^*]+\\*(?:<[0-9]+>)?\\z"))
 
@@ -340,8 +350,55 @@ Each nonempty group begins with a distinct heading entry."
               (points-to-string (buffer-start-point buffer)
                                 (buffer-end-point buffer)))))))
 
+(defun buffer-list-buffer-directory-name (buffer)
+  "Return BUFFER's file directory or buffer working directory as a string."
+  (let ((directory
+          (if (buffer-filename buffer)
+              (uiop:pathname-directory-pathname (buffer-filename buffer))
+              (ignore-errors (buffer-directory buffer)))))
+    (and directory (namestring directory))))
+
+(defun buffer-list-live-process-p (process)
+  "Return true when PROCESS is a live UIOP or Lem process object."
+  (and process
+       (or (ignore-errors (uiop:process-alive-p process))
+           (ignore-errors (lem-process:process-alive-p process)))))
+
+(defun buffer-list-compilation-process-buffer-p (buffer)
+  "Return true when BUFFER owns the active configured compilation process."
+  (let ((session
+          (ignore-errors
+            (buffer-value buffer :lem-yath-compilation-session))))
+    (and session
+         (fboundp 'compilation-process-alive-p)
+         (ignore-errors
+           (funcall (symbol-function 'compilation-process-alive-p) session)))))
+
+(defun buffer-list-process-buffer-p (buffer)
+  "Return true when BUFFER owns a process visible to Lem."
+  (or (buffer-list-live-process-p
+       (ignore-errors (buffer-value buffer 'process)))
+      (buffer-list-live-process-p
+       (ignore-errors (lem-shell-mode::buffer-process buffer)))
+      (buffer-list-compilation-process-buffer-p buffer)
+      (ignore-errors
+        (with-current-buffer buffer
+          (not (null
+                (lem-terminal/terminal-mode::get-current-terminal)))))))
+
+(defun buffer-list-content-mark-excluded-p (buffer)
+  "Return true when GNU Ibuffer normally skips BUFFER's content."
+  (let ((name (buffer-name buffer)))
+    (or (buffer-list-dired-buffer-p buffer)
+        (member name *buffer-list-content-mark-exact-exclusions*
+                :test #'string=)
+        (some (lambda (prefix)
+                (alexandria:starts-with-subseq prefix name))
+              *buffer-list-content-mark-prefix-exclusions*))))
+
 (defun buffer-list-filter-match-p (filter buffer)
   (ecase (first filter)
+    (:process (buffer-list-process-buffer-p buffer))
     (:modified (buffer-modified-p buffer))
     (:visiting-file (buffer-filename buffer))
     (:exact-mode
@@ -360,6 +417,9 @@ Each nonempty group begins with a distinct heading entry."
      (buffer-list-regexp-match-p (second filter) (buffer-name buffer)))
     (:filename
      (buffer-list-regexp-match-p (second filter) (buffer-filename buffer)))
+    (:directory
+     (buffer-list-regexp-match-p
+      (second filter) (buffer-list-buffer-directory-name buffer)))
     (:basename
      (alexandria:when-let ((filename (buffer-filename buffer)))
        (buffer-list-regexp-match-p
@@ -840,6 +900,61 @@ Each nonempty group begins with a distinct heading entry."
    (lem/multi-column-list::current-multi-column-list)
    #'buffer-list-compressed-file-buffer-p))
 
+(defun buffer-list-compile-mark-regexp (pattern)
+  "Compile PATTERN before any Ibuffer mark is changed."
+  (handler-case
+      (cl-ppcre:create-scanner pattern :case-insensitive-mode t)
+    (error () (editor-error "Invalid Ibuffer mark regexp"))))
+
+(defun buffer-list-mark-by-regexp (component scanner value-function)
+  "Mark visible buffers whose VALUE-FUNCTION result matches SCANNER."
+  (buffer-list-mark-matching
+   component
+   (lambda (buffer)
+     (alexandria:when-let ((value (funcall value-function buffer)))
+       (not (null (cl-ppcre:scan scanner value)))))))
+
+(define-command lem-yath-buffer-list-mark-by-name-regexp () ()
+  "Mark visible buffers whose names match a regexp."
+  (let* ((pattern (prompt-for-string "Mark by name (regexp): "))
+         (scanner (buffer-list-compile-mark-regexp pattern)))
+    (buffer-list-mark-by-regexp
+     (lem/multi-column-list::current-multi-column-list)
+     scanner #'buffer-name)))
+
+(define-command lem-yath-buffer-list-mark-by-mode-regexp () ()
+  "Mark visible buffers whose displayed major-mode names match a regexp."
+  (let* ((pattern (prompt-for-string "Mark by major mode (regexp): "))
+         (scanner (buffer-list-compile-mark-regexp pattern)))
+    (buffer-list-mark-by-regexp
+     (lem/multi-column-list::current-multi-column-list)
+     scanner
+     (lambda (buffer) (mode-name (buffer-major-mode buffer))))))
+
+(define-command lem-yath-buffer-list-mark-by-file-regexp () ()
+  "Mark visible file buffers whose full names match a regexp."
+  (let* ((pattern (prompt-for-string "Mark by file name (regexp): "))
+         (scanner (buffer-list-compile-mark-regexp pattern)))
+    (buffer-list-mark-by-regexp
+     (lem/multi-column-list::current-multi-column-list)
+     scanner
+     (lambda (buffer)
+       (alexandria:when-let ((filename (buffer-filename buffer)))
+         (namestring filename))))))
+
+(define-command lem-yath-buffer-list-mark-by-content-regexp
+    (all-buffers) (:universal-nil)
+  "Mark visible buffers whose bounded contents match a regexp.
+With a prefix, include buffers GNU Ibuffer normally excludes."
+  (let* ((pattern (prompt-for-string "Mark by content (regexp): "))
+         (scanner (buffer-list-compile-mark-regexp pattern)))
+    (buffer-list-mark-matching
+     (lem/multi-column-list::current-multi-column-list)
+     (lambda (buffer)
+       (and (or all-buffers
+                (not (buffer-list-content-mark-excluded-p buffer)))
+            (buffer-list-content-regexp-match-p scanner buffer))))))
+
 (define-command lem-yath-buffer-list-check-and-down () ()
   (let ((component (lem/multi-column-list::current-multi-column-list)))
     (buffer-list-toggle-current-check component)
@@ -891,6 +1006,9 @@ Each nonempty group begins with a distinct heading entry."
 (define-command lem-yath-buffer-list-start-filename-filter () ()
   (buffer-list-start-input-filter :filename "full file name"))
 
+(define-command lem-yath-buffer-list-start-directory-filter () ()
+  (buffer-list-start-input-filter :directory "directory name"))
+
 (define-command lem-yath-buffer-list-start-basename-filter () ()
   (buffer-list-start-input-filter :basename "file basename"))
 
@@ -918,6 +1036,7 @@ Each nonempty group begins with a distinct heading entry."
 
 (defun buffer-list-filter-description (filter)
   (ecase (first filter)
+    (:process "process")
     (:modified "modified")
     (:visiting-file "visiting-file")
     (:exact-mode
@@ -930,6 +1049,7 @@ Each nonempty group begins with a distinct heading entry."
     (:starred-name "starred-name")
     (:name (format nil "name=~a" (second filter)))
     (:filename (format nil "filename=~a" (second filter)))
+    (:directory (format nil "directory=~a" (second filter)))
     (:basename (format nil "basename=~a" (second filter)))
     (:extension (format nil "extension=~a" (second filter)))
     (:size-lt (format nil "size<~d" (second filter)))
@@ -1003,9 +1123,47 @@ Each nonempty group begins with a distinct heading entry."
      component :derived-mode "Filter by derived mode"
      (buffer-list-snapshot-derived-modes component))))
 
+(define-command lem-yath-buffer-list-mark-by-mode () ()
+  "Mark visible buffers whose major mode equals the selected used mode."
+  (let* ((component (lem/multi-column-list::current-multi-column-list))
+         (modes (remove-duplicates
+                 (mapcar #'buffer-major-mode
+                         (buffer-list-snapshot-buffers component))
+                 :test #'eq))
+         (candidates (buffer-list-mode-candidates modes))
+         (current (buffer-list-require-current-buffer component))
+         (default (rassoc (buffer-major-mode current) candidates :test #'eq)))
+    (unless candidates
+      (editor-error "No Ibuffer modes are available"))
+    (let* ((choice
+             (prompt-for-string
+              (if default
+                  (format nil "Mark by major mode (default ~a): " (car default))
+                  "Mark by major mode: ")
+              :completion-function
+              (lambda (input)
+                (buffer-list-mode-completions input candidates))
+              :test-function
+              (lambda (input)
+                (or (and default (zerop (length input)))
+                    (assoc input candidates :test #'string=)))))
+           (mode
+             (if (zerop (length choice))
+                 (and default (cdr default))
+                 (cdr (assoc choice candidates :test #'string=)))))
+      (unless mode
+        (editor-error "No matching Ibuffer mode"))
+      (buffer-list-mark-matching
+       component
+       (lambda (buffer) (eq mode (buffer-major-mode buffer)))))))
+
 (define-command lem-yath-buffer-list-filter-starred-name () ()
   (buffer-list-push-filter
    (lem/multi-column-list::current-multi-column-list) '(:starred-name)))
+
+(define-command lem-yath-buffer-list-filter-process () ()
+  (buffer-list-push-filter
+   (lem/multi-column-list::current-multi-column-list) '(:process)))
 
 (define-command lem-yath-buffer-list-filter-size-lt () ()
   (buffer-list-push-filter
@@ -3058,6 +3216,16 @@ through later selected buffers without wrapping."
   'lem-yath-buffer-list-mark-help)
 (define-key *buffer-list-picker-mode-keymap* "* z"
   'lem-yath-buffer-list-mark-compressed-file)
+(define-key *buffer-list-picker-mode-keymap* "* M"
+  'lem-yath-buffer-list-mark-by-mode)
+(define-key *buffer-list-picker-mode-keymap* "% n"
+  'lem-yath-buffer-list-mark-by-name-regexp)
+(define-key *buffer-list-picker-mode-keymap* "% m"
+  'lem-yath-buffer-list-mark-by-mode-regexp)
+(define-key *buffer-list-picker-mode-keymap* "% f"
+  'lem-yath-buffer-list-mark-by-file-regexp)
+(define-key *buffer-list-picker-mode-keymap* "% g"
+  'lem-yath-buffer-list-mark-by-content-regexp)
 (define-key *buffer-list-picker-mode-keymap* "d"
   'lem-yath-buffer-list-mark-deletion)
 (define-key *buffer-list-picker-mode-keymap* "x"
@@ -3148,8 +3316,12 @@ through later selected buffers without wrapping."
   'lem-yath-buffer-list-filter-by-derived-mode)
 (define-key *buffer-list-picker-mode-keymap* "s *"
   'lem-yath-buffer-list-filter-starred-name)
+(define-key *buffer-list-picker-mode-keymap* "s E"
+  'lem-yath-buffer-list-filter-process)
 (define-key *buffer-list-picker-mode-keymap* "s f"
   'lem-yath-buffer-list-start-filename-filter)
+(define-key *buffer-list-picker-mode-keymap* "s F"
+  'lem-yath-buffer-list-start-directory-filter)
 (define-key *buffer-list-picker-mode-keymap* "s b"
   'lem-yath-buffer-list-start-basename-filter)
 (define-key *buffer-list-picker-mode-keymap* "s ."

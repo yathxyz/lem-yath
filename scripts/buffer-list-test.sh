@@ -22,9 +22,11 @@ export LEM_YATH_BUFFER_LIST_MARK_COMPRESSED_MISS="$root/buffer-list-mark-compres
 export LEM_YATH_BUFFER_LIST_REVERT_CLEAN="$root/buffer-list-mark-revert-clean.txt"
 export LEM_YATH_BUFFER_LIST_REVERT_DIRTY="$root/buffer-list-mark-revert-dirty.txt"
 export LEM_YATH_BUFFER_LIST_REVERT_MISSING="$root/buffer-list-mark-revert-missing.txt"
+export LEM_YATH_BUFFER_LIST_DIRECTORY_HIT="$root/directory-hit/file.txt"
+export LEM_YATH_BUFFER_LIST_DIRECTORY_MISS="$root/directory-miss.txt"
 export LEM_TUI_WIDTH=180
 export LEM_TUI_HEIGHT=60
-mkdir -p "$HOME" "$XDG_CACHE_HOME"
+mkdir -p "$HOME" "$XDG_CACHE_HOME" "$root/directory-hit"
 
 source_file="$root/buffer-list-source.txt"
 printf 'BUFFER LIST SOURCE\n' >"$source_file"
@@ -40,6 +42,8 @@ printf 'COMPRESSED HIT\n' >"$LEM_YATH_BUFFER_LIST_MARK_COMPRESSED_HIT"
 printf 'COMPRESSED MISS\n' >"$LEM_YATH_BUFFER_LIST_MARK_COMPRESSED_MISS"
 printf 'CLEAN DISK\n' >"$LEM_YATH_BUFFER_LIST_REVERT_CLEAN"
 printf 'DIRTY DISK\n' >"$LEM_YATH_BUFFER_LIST_REVERT_DIRTY"
+printf 'DIRECTORY HIT\n' >"$LEM_YATH_BUFFER_LIST_DIRECTORY_HIT"
+printf 'DIRECTORY MISS\n' >"$LEM_YATH_BUFFER_LIST_DIRECTORY_MISS"
 : >"$LEM_YATH_BUFFER_LIST_REPORT"
 
 source "$here/scripts/tui-driver.sh"
@@ -60,6 +64,16 @@ fail() {
   printf 'FAIL  %-28s %s\n' "$1" "$2"
   tail -20 "$LEM_YATH_BUFFER_LIST_REPORT" 2>/dev/null || true
   lem_capture "$session" 2>/dev/null || true
+}
+
+wait_for_absent() {
+  local pattern=$1 attempts=0
+  while ((attempts < 60)); do
+    if ! lem_capture "$session" | grep -qE "$pattern"; then return 0; fi
+    sleep 0.25
+    attempts=$((attempts + 1))
+  done
+  return 1
 }
 
 report_count() {
@@ -1025,12 +1039,48 @@ else
   fail filter-extension "unexpected extension filter state: $filter"
 fi
 lem_keys "$session" s /
+
+lem_keys "$session" s E
+filter=$(report_filter || true)
+if [[ "$filter" == FILTER\ stack=process* ]] &&
+   [[ "$filter" == *'buffer-list-op-alpha'* ]] &&
+   [[ "$filter" == *'buffer-list-op-beta'* ]] &&
+   [[ "$filter" != *'buffer-list-view-delete'* ]]; then
+  pass filter-process "s E retained generic and compilation process owners"
+else
+  fail filter-process "unexpected process filter state: $filter"
+fi
+lem_keys "$session" s p
+
+lem_keys "$session" s F
+tmux_cmd send-keys -t "$session" -l 'directory-hit'
+sleep 0.3
+lem_keys "$session" Enter
+filter=$(report_filter || true)
+if [[ "$filter" == FILTER\ stack=directory=directory-hit* ]] &&
+   [[ "$filter" == *'buffer-list-view-alpha'* ]] &&
+   [[ "$filter" != *'buffer-list-view-beta'* ]]; then
+  pass filter-directory "s F matched a non-file buffer's working directory"
+else
+  fail filter-directory "unexpected directory filter state: $filter"
+fi
+lem_keys "$session" s p
 lem_keys "$session" q
 
+if ! wait_for_absent \
+     'Buffer[[:space:]]+Size[[:space:]]+Mode[[:space:]]+File'; then
+  fail filter-transition "the process/directory filter picker did not close"
+fi
+
 lem_keys "$session" C-x C-b
+sleep 0.5
+if ! lem_capture "$session" |
+     grep -qE 'Buffer[[:space:]]+Size[[:space:]]+Mode[[:space:]]+File'; then
+  fail filter-transition "the picker did not reopen after process/directory filters"
+fi
 lem_keys "$session" s n
 tmux_cmd send-keys -t "$session" -l 'sort-'
-if lem_wait_for "$session" 'sort-[[:space:]]' 15 >/dev/null; then
+if lem_wait_for "$session" '^[[:space:]]*sort-$' 15 >/dev/null; then
   lem_keys "$session" Enter
   filter=$(report_filter || true)
   if [[ "$filter" == FILTER\ stack=name=sort-* ]]; then
@@ -1088,7 +1138,7 @@ if lem_wait_for "$session" 'sort-[[:space:]]' 15 >/dev/null; then
 
   lem_keys "$session" s n
   tmux_cmd send-keys -t "$session" -l 'sort-'
-  lem_wait_for "$session" 'sort-[[:space:]]' 15 >/dev/null ||
+  lem_wait_for "$session" '^[[:space:]]*sort-$' 15 >/dev/null ||
     fail modal-filter-cancel "s n did not re-enter literal filter input"
   lem_keys "$session" Escape
   sleep 0.3
@@ -1116,6 +1166,101 @@ check_star_mark mark-dired mark-dired / buffer-list-mark-dired-hit
 check_star_mark mark-dissociated mark-dissociated e buffer-list-mark-dissociated-hit
 check_star_mark mark-help Help h '*Help*'
 check_star_mark mark-compressed mark-compressed z buffer-list-mark-compressed-hit.GZ
+
+lem_keys "$session" s / U '*' M
+if lem_wait_for "$session" 'Mark by major mode' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l \
+    'LEM-YATH::BUFFER-LIST-TEST-DERIVED-CHILD-MODE'
+  sleep 0.3
+  lem_keys "$session" Enter
+  nav=$(report_nav || true)
+  if [[ "$nav" == *'buffer-list-op-alpha:>'* ]] &&
+     [[ "$nav" != *'buffer-list-op-beta:>'* ]]; then
+    pass mark-exact-mode "* M marked buffers using the selected exact used mode"
+  else
+    fail mark-exact-mode "exact mode marking diverged: $nav"
+  fi
+else
+  fail mark-exact-mode "* M did not open major-mode completion"
+fi
+
+lem_keys "$session" U '%' n
+if lem_wait_for "$session" 'Mark by name \(regexp\):' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l 'buffer-list-op-alpha$'
+  lem_keys "$session" Enter
+  nav=$(report_nav || true)
+  if [[ "$nav" == *'buffer-list-op-alpha:>'* ]] &&
+     [[ "$nav" != *'buffer-list-op-beta:>'* ]]; then
+    pass mark-name-regexp "% n marked the matching buffer name"
+  else
+    fail mark-name-regexp "name regexp marking diverged: $nav"
+  fi
+else
+  fail mark-name-regexp "% n did not prompt for a regexp"
+fi
+
+lem_keys "$session" U '%' m
+if lem_wait_for "$session" 'Mark by major mode \(regexp\):' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l 'Ibuffer Child Fixture'
+  lem_keys "$session" Enter
+  nav=$(report_nav || true)
+  if [[ "$nav" == *'buffer-list-op-alpha:>'* ]] &&
+     [[ "$nav" != *'buffer-list-op-beta:>'* ]]; then
+    pass mark-mode-regexp "% m matched the displayed major-mode name"
+  else
+    fail mark-mode-regexp "mode regexp marking diverged: $nav"
+  fi
+else
+  fail mark-mode-regexp "% m did not prompt for a regexp"
+fi
+
+lem_keys "$session" U '%' f
+if lem_wait_for "$session" 'Mark by file name \(regexp\):' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l 'b-file\.txt$'
+  lem_keys "$session" Enter
+  nav=$(report_nav || true)
+  if [[ "$nav" == *'buffer-list-sort-zeta:>'* ]] &&
+     [[ "$nav" != *'buffer-list-sort-middle:>'* ]]; then
+    pass mark-file-regexp "% f matched the full visiting-file name"
+  else
+    fail mark-file-regexp "file regexp marking diverged: $nav"
+  fi
+else
+  fail mark-file-regexp "% f did not prompt for a regexp"
+fi
+
+lem_keys "$session" U '%' g
+if lem_wait_for "$session" 'Mark by content \(regexp\):' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l 'UNIQUE FILTER NEEDLE ALPHA'
+  lem_keys "$session" Enter
+  nav=$(report_nav || true)
+  if [[ "$nav" == *'buffer-list-op-alpha:>'* ]] &&
+     [[ "$nav" != *'*Help*:>'* ]]; then
+    pass mark-content-regexp "% g matched bounded contents and skipped GNU Ibuffer exclusions"
+  else
+    fail mark-content-regexp "content regexp marking diverged: $nav"
+  fi
+else
+  fail mark-content-regexp "% g did not prompt for a regexp"
+fi
+
+lem_keys "$session" U '%' n
+if lem_wait_for "$session" 'Mark by name \(regexp\):' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l '['
+  lem_keys "$session" Enter
+  if lem_wait_for "$session" 'Invalid Ibuffer mark regexp' 10 >/dev/null; then
+    nav=$(report_nav || true)
+    if [[ "$nav" == *'marks=' ]]; then
+      pass mark-regexp-invalid "an invalid mark regexp changed no marks"
+    else
+      fail mark-regexp-invalid "an invalid mark regexp changed state: $nav"
+    fi
+  else
+    fail mark-regexp-invalid "an invalid mark regexp was not rejected"
+  fi
+else
+  fail mark-regexp-invalid "% n did not reopen the regexp prompt"
+fi
 lem_keys "$session" s / U q
 
 lem_keys "$session" C-x C-b F6
@@ -1124,17 +1269,13 @@ tmux_cmd send-keys -t "$session" -l 'mark-revert-dirty'
 lem_keys "$session" Enter
 nav=$(report_nav || true)
 lem_keys "$session" =
-if lem_wait_for "$session" 'Buffer: buffer-list-mark-revert-dirty\.txt' 15 >/dev/null; then
-  diff=$(report_diff || true)
-  if [[ "$nav" == *'marks=' ]] &&
-     [[ "$diff" == *'live=yes current=*Ibuffer Diff* mode=BUFFER-LIST-DIFF-MODE readonly=yes modified=no'* ]] &&
-     [[ "$diff" == *'\n-DIRTY DISK\n+DIRTY LOCAL\n'* ]]; then
-    pass diff-current "= diffed the unmarked current buffer without manufacturing a mark"
-  else
-    fail diff-current "the current-buffer unified diff diverged: $nav / $diff"
-  fi
+diff=$(report_diff || true)
+if [[ "$nav" == *'marks=' ]] &&
+   [[ "$diff" == *'live=yes current=*Ibuffer Diff* mode=BUFFER-LIST-DIFF-MODE readonly=yes modified=no'* ]] &&
+   [[ "$diff" == *'\n-DIRTY DISK\n+DIRTY LOCAL\n'* ]]; then
+  pass diff-current "= diffed the unmarked current buffer without manufacturing a mark"
 else
-  fail diff-current "= did not open the dirty current buffer's diff"
+  fail diff-current "the current-buffer unified diff diverged: $nav / $diff"
 fi
 lem_keys "$session" q
 
@@ -1151,18 +1292,14 @@ lem_keys "$session" Enter m s /
 lem_keys "$session" s n
 tmux_cmd send-keys -t "$session" -l 'mark-revert-missing'
 lem_keys "$session" Enter d s / =
-if lem_wait_for "$session" 'Buffer: buffer-list-zz-target\.txt' 15 >/dev/null; then
-  diff=$(report_diff || true)
-  if [[ "$diff" == *'Buffer: buffer-list-mark-revert-dirty.txt'* ]] &&
-     [[ "$diff" == *'Buffer: buffer-list-zz-target.txt\nNo differences.\n'* ]] &&
-     [[ "$diff" != *'buffer-list-op-alpha'* ]] &&
-     [[ "$diff" != *'buffer-list-mark-revert-missing'* ]]; then
-    pass diff-marked "= diffed ordinary file marks, ignored a non-file buffer, and excluded D"
-  else
-    fail diff-marked "the marked multi-buffer diff selected the wrong buffers: $diff"
-  fi
+diff=$(report_diff || true)
+if [[ "$diff" == *'Buffer: buffer-list-mark-revert-dirty.txt'* ]] &&
+   [[ "$diff" == *'Buffer: buffer-list-zz-target.txt\nNo differences.\n'* ]] &&
+   [[ "$diff" != *'buffer-list-op-alpha'* ]] &&
+   [[ "$diff" != *'buffer-list-mark-revert-missing'* ]]; then
+  pass diff-marked "= diffed ordinary file marks, ignored a non-file buffer, and excluded D"
 else
-  fail diff-marked "= did not open the marked multi-buffer diff"
+  fail diff-marked "the marked multi-buffer diff selected the wrong buffers: $diff"
 fi
 lem_keys "$session" q
 
@@ -2074,23 +2211,19 @@ else
 fi
 
 select_occur_buffer
-if lem_wait_for "$session" '6 matches in 5 lines total for "needle"' 15 >/dev/null; then
-  occur=$(report_occur || true)
-  if [[ "$occur" == *'current=*Occur* mode=BUFFER-LIST-OCCUR-MODE readonly=yes modified=no'* ]] &&
-     [[ "$occur" == *"sources=$expected_sources"* ]] &&
-     [[ "$occur" == *'6 matches in 5 lines total for "needle":\n'* ]] &&
-     [[ "$occur" == *'4 matches in 3 lines in buffer: buffer-list-occur-alpha\n'* ]] &&
-     [[ "$occur" == *'2 matches in buffer: buffer-list-occur-beta\n'* ]] &&
-     [[ "$occur" == *'-------\n'* ]] &&
-     [[ "$occur" == *'control\\t\\x9B;\\x202E;needle'* ]] &&
-     [[ "$occur" != *'buffer-list-occur-delete'* ]] &&
-     [[ "$occur" != *'forbidden deletion'* ]]; then
-    pass occur-render "smart-case matches, reverse source order, context merging, escaping, and D exclusion match GNU Occur"
-  else
-    fail occur-render "the persistent Occur rendering diverged: $occur"
-  fi
+occur=$(report_occur || true)
+if [[ "$occur" == *'current=*Occur* mode=BUFFER-LIST-OCCUR-MODE readonly=yes modified=no'* ]] &&
+   [[ "$occur" == *"sources=$expected_sources"* ]] &&
+   [[ "$occur" == *'6 matches in 5 lines total for "needle":\n'* ]] &&
+   [[ "$occur" == *'4 matches in 3 lines in buffer: buffer-list-occur-alpha\n'* ]] &&
+   [[ "$occur" == *'2 matches in buffer: buffer-list-occur-beta\n'* ]] &&
+   [[ "$occur" == *'-------\n'* ]] &&
+   [[ "$occur" == *'control\\t\\x9B;\\x202E;needle'* ]] &&
+   [[ "$occur" != *'buffer-list-occur-delete'* ]] &&
+   [[ "$occur" != *'forbidden deletion'* ]]; then
+  pass occur-render "smart-case matches, reverse source order, context merging, escaping, and D exclusion match GNU Occur"
 else
-  fail occur-render "the marked multi-buffer Occur result was not selectable"
+  fail occur-render "the persistent Occur rendering diverged: $occur"
 fi
 
 occur_bindings=$(report_occur_bindings || true)
