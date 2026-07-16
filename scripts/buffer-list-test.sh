@@ -277,6 +277,36 @@ report_occur_source_zero() {
   return 1
 }
 
+report_multi_isearch() {
+  local before attempts=0
+  before=$(grep -c '^M-ISEARCH ' "$LEM_YATH_BUFFER_LIST_REPORT" 2>/dev/null || true)
+  lem_keys "$session" F5
+  while ((attempts < 40)); do
+    if (( $(grep -c '^M-ISEARCH ' "$LEM_YATH_BUFFER_LIST_REPORT" 2>/dev/null || true) > before )); then
+      grep '^M-ISEARCH ' "$LEM_YATH_BUFFER_LIST_REPORT" | tail -1
+      return 0
+    fi
+    sleep 0.25
+    attempts=$((attempts + 1))
+  done
+  return 1
+}
+
+report_multi_isearch_lifecycle() {
+  local before attempts=0
+  before=$(grep -c '^M-ISEARCH-LIFECYCLE ' "$LEM_YATH_BUFFER_LIST_REPORT" 2>/dev/null || true)
+  lem_keys "$session" F12
+  while ((attempts < 40)); do
+    if (( $(grep -c '^M-ISEARCH-LIFECYCLE ' "$LEM_YATH_BUFFER_LIST_REPORT" 2>/dev/null || true) > before )); then
+      grep '^M-ISEARCH-LIFECYCLE ' "$LEM_YATH_BUFFER_LIST_REPORT" | tail -1
+      return 0
+    fi
+    sleep 0.25
+    attempts=$((attempts + 1))
+  done
+  return 1
+}
+
 report_occur_bindings() {
   local before attempts=0
   before=$(grep -c '^OCCUR-BINDINGS ' "$LEM_YATH_BUFFER_LIST_REPORT" 2>/dev/null || true)
@@ -1295,8 +1325,8 @@ if [[ "$picker_bindings" == *'group-jump=LEM-YATH-BUFFER-LIST-JUMP-TO-GROUP'* ]]
    [[ "$picker_bindings" == *'other-noselect=LEM-YATH-BUFFER-LIST-VISIT-OTHER-WINDOW-NOSELECT'* ]] &&
    [[ "$picker_bindings" == *'one-window=LEM-YATH-BUFFER-LIST-VISIT-ONE-WINDOW'* ]] &&
    [[ "$picker_bindings" == *'view=LEM-YATH-BUFFER-LIST-VIEW view-g=LEM-YATH-BUFFER-LIST-VIEW view-horizontal=LEM-YATH-BUFFER-LIST-VIEW-HORIZONTALLY'* ]] &&
-   [[ "$picker_bindings" == *'occur=LEM-YATH-BUFFER-LIST-OCCUR occur-meta=LEM-YATH-BUFFER-LIST-OCCUR'* ]]; then
-  pass visit-view-bindings "M-j, visits, views, O, and M-s a C-o resolve in the focused picker map"
+   [[ "$picker_bindings" == *'occur=LEM-YATH-BUFFER-LIST-OCCUR occur-meta=LEM-YATH-BUFFER-LIST-OCCUR isearch=LEM-YATH-BUFFER-LIST-MULTI-ISEARCH isearch-regexp=LEM-YATH-BUFFER-LIST-MULTI-ISEARCH-REGEXP'* ]]; then
+  pass visit-view-bindings "M-j, visits, views, Occur, and both multi-isearch chords resolve in the picker map"
 else
   fail visit-view-bindings "one or more visit/view bindings diverged: $picker_bindings"
 fi
@@ -1504,6 +1534,111 @@ if [[ "$window" == 'WINDOW count=1 current=buffer-list-view-alpha buffers=buffer
   pass view-current-fallback "unmarked gv viewed only the current row in one ordinary window"
 else
   fail view-current-fallback "unmarked gv did not use the current-row fallback: $window"
+fi
+
+# Unlike define-ibuffer-op bulk actions, GNU ibuffer-do-isearch consumes only
+# explicit ordinary marks.  With none, refuse without dismissing the chooser.
+lem_keys "$session" C-x C-b
+lem_keys "$session" M-s a C-s
+if lem_wait_for "$session" 'No ordinarily marked buffers for Ibuffer multi-isearch' 10 >/dev/null; then
+  picker_state=$(report_picker_bindings || true)
+  if [[ "$picker_state" == *'current-popup=yes ordinary-count='* ]]; then
+    pass multi-isearch-no-marks "literal multi-isearch refused an empty marked set without dismissing Ibuffer"
+  else
+    fail multi-isearch-no-marks "the no-mark refusal changed chooser focus: $picker_state"
+  fi
+else
+  fail multi-isearch-no-marks "literal multi-isearch did not refuse an empty marked set"
+fi
+
+# Establish deterministic display order, two ordinary marks, and one deletion
+# mark.  Input pauses failing in the first source; C-s then crosses to the next.
+lem_keys "$session" o a
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'buffer-list-occur-alpha'
+lem_keys "$session" Enter m
+lem_keys "$session" s /
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'buffer-list-occur-beta'
+lem_keys "$session" Enter m
+lem_keys "$session" s /
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'buffer-list-occur-delete'
+lem_keys "$session" Enter d
+lem_keys "$session" s /
+lem_keys "$session" M-s a C-s
+tmux_cmd send-keys -t "$session" -l 'beta lower'
+initial_multi=$(report_multi_isearch || true)
+if [[ "$initial_multi" == *'active=yes native=yes current=buffer-list-occur-alpha line=1 column=0 regexp=no string=beta lower'* ]] &&
+   [[ "$initial_multi" == *'next=LEM-YATH-BUFFER-LIST-MULTI-ISEARCH-NEXT previous=LEM-YATH-BUFFER-LIST-MULTI-ISEARCH-PREVIOUS abort=LEM-YATH-BUFFER-LIST-MULTI-ISEARCH-ABORT'* ]] &&
+   [[ "$initial_multi" == *'sources=buffer-list-occur-alpha,buffer-list-occur-beta'* ]] &&
+   [[ "$initial_multi" != *'sources='*'buffer-list-occur-delete'* ]]; then
+  pass multi-isearch-initial "literal input paused in the first display-order ordinary mark and excluded D"
+else
+  fail multi-isearch-initial "the initial multi-isearch state diverged: $initial_multi"
+fi
+
+lem_keys "$session" C-s
+literal_cross=$(report_multi_isearch || true)
+if [[ "$literal_cross" == *'active=yes native=yes current=buffer-list-occur-beta line=1 column=16 regexp=no string=beta lower'* ]] &&
+   [[ "$literal_cross" == *'buffer-list-occur-alpha:native/multi,buffer-list-occur-beta:native/multi'* ]]; then
+  pass multi-isearch-cross "C-s continued the live search into the next marked buffer at the exact match end"
+else
+  fail multi-isearch-cross "C-s did not cross buffers cleanly: $literal_cross"
+fi
+
+lem_keys "$session" C-r
+literal_previous=$(report_multi_isearch || true)
+lem_keys "$session" C-s BSpace
+literal_edited=$(report_multi_isearch || true)
+tmux_cmd send-keys -t "$session" -l 'r'
+literal_restored=$(report_multi_isearch || true)
+if [[ "$literal_previous" == *'current=buffer-list-occur-beta line=1 column=16 regexp=no string=beta lower'* ]] &&
+   [[ "$literal_edited" == *'current=buffer-list-occur-beta line=1 column=16 regexp=no string=beta lowe'* ]] &&
+   [[ "$literal_restored" == *'current=buffer-list-occur-beta line=1 column=16 regexp=no string=beta lower'* ]]; then
+  pass multi-isearch-edit "C-r and pattern edits retained valid cross-buffer point ownership"
+else
+  fail multi-isearch-edit "backward or edited cross-buffer search diverged: $literal_previous / $literal_edited / $literal_restored"
+fi
+
+lem_keys "$session" Enter
+literal_lifecycle=$(report_multi_isearch_lifecycle || true)
+if [[ "$literal_lifecycle" == *'active=no current=buffer-list-occur-beta line=1 column=16 alpha=no-native/no-multi beta=no-native/no-multi literal-top=beta lower'* ]]; then
+  pass multi-isearch-finish "Return retained the match, recorded literal history, and removed every transient mode"
+else
+  fail multi-isearch-finish "literal finish leaked state or lost history: $literal_lifecycle"
+fi
+
+# The Evil-Collection regexp chord uses the same marked order.  C-g from a
+# later source must restore the first source's initial point and clear modes
+# without recording the aborted regexp in persistent history.
+lem_keys "$session" C-x C-b o a
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'buffer-list-occur-alpha'
+lem_keys "$session" Enter m
+lem_keys "$session" s /
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'buffer-list-occur-beta'
+lem_keys "$session" Enter m
+lem_keys "$session" s /
+lem_keys "$session" M-s a C-M-s
+tmux_cmd send-keys -t "$session" -l 'NEEDLE beta (upper|missing)'
+regexp_initial=$(report_multi_isearch || true)
+lem_keys "$session" C-s
+regexp_cross=$(report_multi_isearch || true)
+if [[ "$regexp_initial" == *'current=buffer-list-occur-alpha line=1 column=0 regexp=yes string=NEEDLE beta (upper|missing)'* ]] &&
+   [[ "$regexp_cross" == *'current=buffer-list-occur-beta line=3 column=16 regexp=yes string=NEEDLE beta (upper|missing)'* ]]; then
+  pass multi-isearch-regexp "the regexp chord paused, then continued across marked buffers"
+else
+  fail multi-isearch-regexp "regexp multi-isearch state diverged: $regexp_initial / $regexp_cross"
+fi
+lem_keys "$session" C-g
+regexp_lifecycle=$(report_multi_isearch_lifecycle || true)
+if [[ "$regexp_lifecycle" == *'active=no current=buffer-list-occur-alpha line=1 column=0 alpha=no-native/no-multi beta=no-native/no-multi'* ]] &&
+   [[ "$regexp_lifecycle" == *'regexp-recorded=no'* ]]; then
+  pass multi-isearch-abort "C-g restored the first source and cleared the aborted regexp session"
+else
+  fail multi-isearch-abort "regexp abort leaked state or retained the later buffer: $regexp_lifecycle"
 fi
 
 # GNU Ibuffer's O searches ordinary marks in reverse display order, excludes D,

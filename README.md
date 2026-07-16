@@ -300,6 +300,11 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   `M-Return` no-select display, and `gj/gk` or `C-j/C-k` match navigation while
   leaving the chooser selected when first displayed. Invalid regexps preserve
   the previous result, zero matches remove it, and killed sources fail closed.
+  `M-s a C-s` and `M-s a M-C-s` start literal or regexp incremental search over
+  explicit ordinary marks in display order, excluding `D`. Input pauses in the
+  first buffer; `C-s`/`C-r` continue and wrap through the marked set, Return
+  keeps the match and search history, and `C-g` restores the first buffer's
+  starting point.
 - project-scoped LSP lifecycle: canonical-root isolation, in-flight startup
   deduplication and timeout, explicit buffer ownership with save-as migration,
   project-wide restart, bounded shutdown/disposal, graceful exit when responsive,

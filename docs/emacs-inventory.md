@@ -184,6 +184,15 @@ the source. Invalid regexps preserve the prior result, no matches remove it,
 and navigation refuses killed sources. Inputs are bounded at 16 million
 characters per buffer and 64 million total, with 10,000 matches and 2 MiB of
 rendered output.
+`M-s a C-s` and `M-s a M-C-s` reproduce Evil Collection's
+`ibuffer-do-isearch` and regexp variant over explicit ordinary marks in display
+order, excluding `D`; unlike `define-ibuffer-op` actions, an empty marked set is
+refused rather than implicitly marking the current row. Search starts at the
+beginning of the first marked buffer and pauses there while input fails.
+`C-s`/`C-r` continue and wrap across live marked buffers, pattern edits remain
+incremental after a buffer crossing, Return retains the exact match and records
+the appropriate literal/regexp history, and `C-g` restores the first source's
+starting point while removing transient search modes from every source.
 Like GNU Ibuffer, ordinary bulk operations implicitly mark the current row when
 there are no ordinary marks and exclude `D` deletion marks. Revert failures are
 isolated per buffer so a missing file does not prevent later buffers from being

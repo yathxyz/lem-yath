@@ -241,6 +241,24 @@ Each nonempty group begins with a distinct heading entry."
     ((mode buffer-list-occur-mode))
   (list *buffer-list-occur-mode-keymap*))
 
+(defvar *buffer-list-multi-isearch-mode-keymap*
+  (make-keymap :description '*buffer-list-multi-isearch-mode-keymap*))
+
+(define-minor-mode buffer-list-multi-isearch-mode
+    (:name "M-Isearch"
+     :keymap *buffer-list-multi-isearch-mode-keymap*
+     :hide-from-modeline t))
+
+(defstruct buffer-list-multi-isearch-session
+  buffers
+  start-buffer
+  start-point
+  forward-function
+  backward-function
+  regexp-p)
+
+(defvar *buffer-list-multi-isearch-session* nil)
+
 (declaim (ftype function add-search-history))
 
 (defvar *buffer-list-filter-input-mode-keymap*
@@ -1951,6 +1969,241 @@ mark inside a collapsed group still participates.  Deletion marks never do."
   (when (buffer-list-occur-owned-buffer-p buffer)
     (buffer-list-occur-cleanup-buffer buffer)))
 
+(defun buffer-list-multi-isearch-live-buffer-p (buffer)
+  (and buffer
+       (not (deleted-buffer-p buffer))
+       (eq buffer (get-buffer (buffer-name buffer)))))
+
+(defun buffer-list-multi-isearch-live-buffers (session)
+  (let ((buffers
+          (remove-if-not #'buffer-list-multi-isearch-live-buffer-p
+                         (buffer-list-multi-isearch-session-buffers session))))
+    (setf (buffer-list-multi-isearch-session-buffers session) buffers)
+    buffers))
+
+(defun buffer-list-multi-isearch-marked-buffers (component)
+  "Return visible ordinary marks in GNU Ibuffer's display order."
+  (loop :for item :in (lem/multi-column-list::multi-column-list-items component)
+        :for entry := (buffer-list-item-entry item)
+        :for buffer := (unless (buffer-list-entry-heading-p entry)
+                         (buffer-list-entry-buffer entry))
+        :when (and buffer
+                   (buffer-list-ordinary-marked-item-p component item)
+                   (buffer-list-multi-isearch-live-buffer-p buffer))
+          :collect buffer))
+
+(defun buffer-list-multi-isearch-enable-current-modes ()
+  (unless (mode-active-p (current-buffer) 'lem/isearch:isearch-mode)
+    (lem/isearch:isearch-mode t))
+  (unless (mode-active-p (current-buffer) 'buffer-list-multi-isearch-mode)
+    (buffer-list-multi-isearch-mode t)))
+
+(defun buffer-list-multi-isearch-switch-to-point (point)
+  (let ((buffer (point-buffer point)))
+    (unless (buffer-list-multi-isearch-live-buffer-p buffer)
+      (editor-error "Ibuffer multi-isearch source was killed"))
+    (unless (eq buffer (current-buffer))
+      (switch-to-buffer buffer))
+    (buffer-list-multi-isearch-enable-current-modes)
+    (move-point (current-point) point)
+    t))
+
+(defun buffer-list-multi-isearch-search-from (buffer direction string
+                                              &optional point limit)
+  (let* ((session *buffer-list-multi-isearch-session*)
+         (function
+           (ecase direction
+             (:forward
+              (buffer-list-multi-isearch-session-forward-function session))
+             (:backward
+              (buffer-list-multi-isearch-session-backward-function session))))
+         (point
+           (or point
+               (ecase direction
+                 (:forward (buffer-start-point buffer))
+                 (:backward (buffer-end-point buffer))))))
+    (with-point ((candidate point))
+      (when (funcall function candidate string limit)
+        (copy-point candidate :temporary)))))
+
+(defun buffer-list-multi-isearch-reset-to-start (session)
+  (let ((buffer (buffer-list-multi-isearch-session-start-buffer session))
+        (point (buffer-list-multi-isearch-session-start-point session)))
+    (when (and (buffer-list-multi-isearch-live-buffer-p buffer)
+               (alive-point-p point))
+      (unless (eq buffer (current-buffer))
+        (switch-to-buffer buffer))
+      (buffer-list-multi-isearch-enable-current-modes)
+      (move-point (current-point) point)
+      t)))
+
+(defun buffer-list-multi-isearch-edit-search (_point string)
+  "Find the first current-or-later match after an isearch input edit.
+
+GNU multi-isearch pauses in the initial buffer until an explicit repeat.  Once
+the search has crossed a buffer boundary, refining the input may continue
+through later selected buffers without wrapping."
+  (declare (ignore _point))
+  (let* ((session *buffer-list-multi-isearch-session*)
+         (buffers (and session
+                       (buffer-list-multi-isearch-live-buffers session))))
+    (unless buffers
+      (editor-error "Ibuffer multi-isearch has no live sources"))
+    (when (zerop (length string))
+      (setf (variable-value 'lem/isearch::isearch-next-last :buffer) nil
+            (variable-value 'lem/isearch::isearch-prev-last :buffer) nil)
+      (return-from buffer-list-multi-isearch-edit-search
+        (buffer-list-multi-isearch-reset-to-start session)))
+    (let* ((first (first buffers))
+           (current (if (member (current-buffer) buffers :test #'eq)
+                        (current-buffer)
+                        first))
+           (candidates
+             (if (eq current first)
+                 (list first)
+                 (member current buffers :test #'eq))))
+      (dolist (buffer candidates)
+        (alexandria:when-let
+            ((match (buffer-list-multi-isearch-search-from
+                     buffer :forward string)))
+          (return-from buffer-list-multi-isearch-edit-search
+            (progn
+              (setf (variable-value
+                     'lem/isearch::isearch-next-last :buffer) nil)
+              (buffer-list-multi-isearch-switch-to-point match)))))
+      (setf (variable-value 'lem/isearch::isearch-next-last :buffer) t)
+      (buffer-list-multi-isearch-reset-to-start session)
+      nil)))
+
+(defun buffer-list-multi-isearch-search-step (direction)
+  (let* ((session *buffer-list-multi-isearch-session*)
+         (buffers (and session
+                       (buffer-list-multi-isearch-live-buffers session))))
+    (unless buffers
+      (editor-error "Ibuffer multi-isearch has no live sources"))
+    (when (string= lem/isearch::*isearch-string* "")
+      (setf lem/isearch::*isearch-string*
+            (lem/isearch::isearch-default-string)))
+    (let* ((current
+             (if (member (current-buffer) buffers :test #'eq)
+                 (current-buffer)
+                 (first buffers)))
+           (start-index (or (position current buffers :test #'eq) 0))
+           (count (length buffers))
+           (origin (copy-point (current-point) :temporary)))
+      ;; OFFSET=COUNT revisits the current buffer from its opposite boundary,
+      ;; reproducing isearch's ordinary wrap after every other marked buffer.
+      (loop :for offset :from 0 :to count
+            :for index := (mod (if (eq direction :forward)
+                                  (+ start-index offset)
+                                  (- start-index offset))
+                               count)
+            :for buffer := (nth index buffers)
+            :for wrapped-current-p := (= offset count)
+            :for point := (cond
+                            ((zerop offset) origin)
+                            ((eq direction :forward)
+                             (buffer-start-point buffer))
+                            (t (buffer-end-point buffer)))
+            :for limit := (and wrapped-current-p origin)
+            :for match := (buffer-list-multi-isearch-search-from
+                           buffer direction lem/isearch::*isearch-string*
+                           point limit)
+            :when match
+              :do (buffer-list-multi-isearch-switch-to-point match)
+                  (return t)
+            :finally (return nil)))))
+
+(define-command lem-yath-buffer-list-multi-isearch-next () ()
+  (setf (variable-value 'lem/isearch::isearch-prev-last :buffer) nil)
+  (if (buffer-list-multi-isearch-search-step :forward)
+      (setf (variable-value 'lem/isearch::isearch-next-last :buffer) nil)
+      (setf (variable-value 'lem/isearch::isearch-next-last :buffer) t))
+  (lem/isearch::isearch-update-display))
+
+(define-command lem-yath-buffer-list-multi-isearch-previous () ()
+  (setf (variable-value 'lem/isearch::isearch-next-last :buffer) nil)
+  (if (buffer-list-multi-isearch-search-step :backward)
+      (setf (variable-value 'lem/isearch::isearch-prev-last :buffer) nil)
+      (setf (variable-value 'lem/isearch::isearch-prev-last :buffer) t))
+  (lem/isearch::isearch-update-display))
+
+(defun buffer-list-multi-isearch-cleanup (&key keep-current-highlight)
+  (alexandria:when-let ((session *buffer-list-multi-isearch-session*))
+    (let ((highlight-buffer (and keep-current-highlight (current-buffer))))
+      ;; Clear the global marker before mode disable hooks can run commands that
+      ;; would otherwise see a half-torn-down session.
+      (setf *buffer-list-multi-isearch-session* nil)
+      (dolist (buffer (buffer-list-multi-isearch-live-buffers session))
+        (with-current-buffer buffer
+          (unless (eq buffer highlight-buffer)
+            (lem/isearch::isearch-reset-overlays buffer)
+            (buffer-unbound buffer 'lem/isearch::isearch-redisplay-string)
+            (remove-hook (variable-value 'after-change-functions :buffer)
+                         'lem/isearch::isearch-change-buffer-hook))
+          (when (mode-active-p buffer 'buffer-list-multi-isearch-mode)
+            (buffer-list-multi-isearch-mode nil))
+          (when (mode-active-p buffer 'lem/isearch:isearch-mode)
+            (lem/isearch:isearch-mode nil)))))))
+
+(define-command lem-yath-buffer-list-multi-isearch-abort () ()
+  (let ((session *buffer-list-multi-isearch-session*))
+    (unless session
+      (editor-error "No Ibuffer multi-isearch is active"))
+    (when (null (buffer-fake-cursors (current-buffer)))
+      (buffer-list-multi-isearch-reset-to-start session))
+    (when (mode-active-p (current-buffer) 'lem/isearch:isearch-mode)
+      (lem/isearch::isearch-end))
+    (buffer-list-multi-isearch-cleanup)))
+
+(defun buffer-list-multi-isearch-post-command ()
+  (when *buffer-list-multi-isearch-session*
+    (unless (and (mode-active-p (current-buffer)
+                                'buffer-list-multi-isearch-mode)
+                 (mode-active-p (current-buffer) 'lem/isearch:isearch-mode))
+      (buffer-list-multi-isearch-cleanup
+       :keep-current-highlight
+       (not (null (buffer-value
+                   (current-buffer) 'lem/isearch::isearch-redisplay-string)))))))
+
+(defun buffer-list-multi-isearch-start (regexp-p)
+  (when *buffer-list-multi-isearch-session*
+    (editor-error "An Ibuffer multi-isearch is already active"))
+  (let* ((component (lem/multi-column-list::current-multi-column-list))
+         (buffers (buffer-list-multi-isearch-marked-buffers component)))
+    (unless buffers
+      (editor-error "No ordinarily marked buffers for Ibuffer multi-isearch"))
+    (let* ((first (first buffers))
+           (forward (if regexp-p #'search-forward-regexp #'search-forward))
+           (backward (if regexp-p #'search-backward-regexp #'search-backward)))
+      (lem/multi-column-list:quit component)
+      (switch-to-buffer first)
+      (buffer-start (current-point))
+      (setf *buffer-list-multi-isearch-session*
+            (make-buffer-list-multi-isearch-session
+             :buffers buffers
+             :start-buffer first
+             :start-point (copy-point (current-point) :temporary)
+             :forward-function forward
+             :backward-function backward
+             :regexp-p regexp-p))
+      (handler-case
+          (progn
+            (lem/isearch::isearch-start
+             (if regexp-p "M-ISearch Regexp: " "M-ISearch: ")
+             #'buffer-list-multi-isearch-edit-search
+             forward backward "")
+            (buffer-list-multi-isearch-mode t))
+        (error (condition)
+          (buffer-list-multi-isearch-cleanup)
+          (error condition))))))
+
+(define-command lem-yath-buffer-list-multi-isearch () ()
+  (buffer-list-multi-isearch-start nil))
+
+(define-command lem-yath-buffer-list-multi-isearch-regexp () ()
+  (buffer-list-multi-isearch-start t))
+
 (defun buffer-list-move-to-marked (component direction)
   (let* ((items (lem/multi-column-list::multi-column-list-items component))
          (current (buffer-list-current-item component))
@@ -2466,6 +2719,10 @@ mark inside a collapsed group still participates.  Deletion marks never do."
   'lem-yath-buffer-list-occur)
 (define-key *buffer-list-picker-mode-keymap* "M-s a C-o"
   'lem-yath-buffer-list-occur)
+(define-key *buffer-list-picker-mode-keymap* "M-s a C-s"
+  'lem-yath-buffer-list-multi-isearch)
+(define-key *buffer-list-picker-mode-keymap* "M-s a M-C-s"
+  'lem-yath-buffer-list-multi-isearch-regexp)
 (define-key *buffer-list-picker-mode-keymap* "y b"
   'lem-yath-buffer-list-copy-buffer-name)
 (define-key *buffer-list-picker-mode-keymap* "y f"
@@ -2576,7 +2833,17 @@ mark inside a collapsed group still participates.  Deletion marks never do."
 (define-key *buffer-list-occur-mode-keymap* "Z Q"
   'lem-vi-mode/commands:vi-quit)
 
+(define-key *buffer-list-multi-isearch-mode-keymap* "C-s"
+  'lem-yath-buffer-list-multi-isearch-next)
+(define-key *buffer-list-multi-isearch-mode-keymap* "C-r"
+  'lem-yath-buffer-list-multi-isearch-previous)
+(define-key *buffer-list-multi-isearch-mode-keymap* "C-g"
+  'lem-yath-buffer-list-multi-isearch-abort)
+
 (remove-hook (variable-value 'kill-buffer-hook :global t)
              'buffer-list-occur-kill-buffer-hook)
 (add-hook (variable-value 'kill-buffer-hook :global t)
           'buffer-list-occur-kill-buffer-hook)
+
+(remove-hook *post-command-hook* 'buffer-list-multi-isearch-post-command)
+(add-hook *post-command-hook* 'buffer-list-multi-isearch-post-command)

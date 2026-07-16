@@ -255,7 +255,7 @@
 (define-command lem-yath-test-buffer-list-picker-bindings () ()
   (let ((windows (window-list)))
     (buffer-list-test-log
-     "PICKER-BINDINGS backspace=~a control-h=~a delete=~a diff=~a jump=~a meta-jump=~a group-jump=~a other-noselect=~a one-window=~a view=~a view-g=~a view-horizontal=~a occur=~a occur-meta=~a mode=~a derived=~a starred=~a size-lt=~a size-gt=~a content=~a current-popup=~a ordinary-count=~d ordinary-buffers=~{~a~^,~}"
+     "PICKER-BINDINGS backspace=~a control-h=~a delete=~a diff=~a jump=~a meta-jump=~a group-jump=~a other-noselect=~a one-window=~a view=~a view-g=~a view-horizontal=~a occur=~a occur-meta=~a isearch=~a isearch-regexp=~a mode=~a derived=~a starred=~a size-lt=~a size-gt=~a content=~a current-popup=~a ordinary-count=~d ordinary-buffers=~{~a~^,~}"
      (buffer-list-test-binding "Backspace")
      (buffer-list-test-binding "C-h")
      (buffer-list-test-binding "Delete")
@@ -270,6 +270,8 @@
      (buffer-list-test-binding "g V")
      (buffer-list-test-binding "O")
      (buffer-list-test-binding "M-s a C-o")
+     (buffer-list-test-binding "M-s a C-s")
+     (buffer-list-test-binding "M-s a M-C-s")
      (buffer-list-test-binding "s Return")
      (buffer-list-test-binding "s M")
      (buffer-list-test-binding "s *")
@@ -408,6 +410,81 @@
                             *buffer-list-occur-buffer-name*)))
          "yes"
          "no"))))
+
+(defun buffer-list-test-mode-active-p (buffer mode)
+  (and buffer
+       (not (deleted-buffer-p buffer))
+       (mode-active-p buffer mode)))
+
+(define-command lem-yath-test-buffer-list-multi-isearch-state () ()
+  (let* ((session *buffer-list-multi-isearch-session*)
+         (buffers (and session
+                       (buffer-list-multi-isearch-session-buffers session))))
+    (buffer-list-test-log
+     "M-ISEARCH active=~a native=~a current=~a line=~d column=~d regexp=~a string=~a next=~a previous=~a abort=~a sources=~{~a~^,~} source-modes=~{~a~^,~}"
+     (if session "yes" "no")
+     (if (mode-active-p (current-buffer) 'lem/isearch:isearch-mode)
+         "yes"
+         "no")
+     (completion-path-display-string (buffer-name (current-buffer)))
+     (line-number-at-point (current-point))
+     (point-column (current-point))
+     (if (and session
+              (buffer-list-multi-isearch-session-regexp-p session))
+         "yes"
+         "no")
+     (completion-path-display-string
+      (if (boundp 'lem/isearch::*isearch-string*)
+          lem/isearch::*isearch-string*
+          ""))
+     (buffer-list-test-binding "C-s")
+     (buffer-list-test-binding "C-r")
+     (buffer-list-test-binding "C-g")
+     (mapcar (lambda (buffer)
+               (completion-path-display-string (buffer-name buffer)))
+             buffers)
+     (mapcar
+      (lambda (buffer)
+        (format nil "~a:~a/~a"
+                (completion-path-display-string (buffer-name buffer))
+                (if (buffer-list-test-mode-active-p
+                     buffer 'lem/isearch:isearch-mode)
+                    "native"
+                    "no-native")
+                (if (buffer-list-test-mode-active-p
+                     buffer 'buffer-list-multi-isearch-mode)
+                    "multi"
+                    "no-multi")))
+      buffers))))
+
+(define-command lem-yath-test-buffer-list-multi-isearch-lifecycle () ()
+  (buffer-list-test-log
+   "M-ISEARCH-LIFECYCLE active=~a current=~a line=~d column=~d alpha=~a/~a beta=~a/~a literal-top=~a regexp-recorded=~a"
+   (if *buffer-list-multi-isearch-session* "yes" "no")
+   (completion-path-display-string (buffer-name (current-buffer)))
+   (line-number-at-point (current-point))
+   (point-column (current-point))
+   (if (buffer-list-test-mode-active-p
+        *buffer-list-test-occur-alpha* 'lem/isearch:isearch-mode)
+       "native"
+       "no-native")
+   (if (buffer-list-test-mode-active-p
+        *buffer-list-test-occur-alpha* 'buffer-list-multi-isearch-mode)
+       "multi"
+       "no-multi")
+   (if (buffer-list-test-mode-active-p
+        *buffer-list-test-occur-beta* 'lem/isearch:isearch-mode)
+       "native"
+       "no-native")
+   (if (buffer-list-test-mode-active-p
+        *buffer-list-test-occur-beta* 'buffer-list-multi-isearch-mode)
+       "multi"
+       "no-multi")
+   (completion-path-display-string (or (first *literal-search-history*) ""))
+   (if (member "NEEDLE beta (upper|missing)"
+               *regexp-search-history* :test #'string=)
+       "yes"
+       "no")))
 
 (define-command lem-yath-test-buffer-list-occur-bindings () ()
   (buffer-list-test-log
@@ -687,5 +764,9 @@
   'lem-yath-test-buffer-list-occur-bounds)
 (define-key *buffer-list-occur-mode-keymap* "F9"
   'lem-yath-test-buffer-list-occur-source-zero-match)
+(define-key *buffer-list-multi-isearch-mode-keymap* "F5"
+  'lem-yath-test-buffer-list-multi-isearch-state)
+(define-key *global-keymap* "F12"
+  'lem-yath-test-buffer-list-multi-isearch-lifecycle)
 
 (buffer-list-test-log "READY")

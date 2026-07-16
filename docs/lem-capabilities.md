@@ -954,11 +954,18 @@ through the ncurses editor.
   targets, and killed sources fail closed. Scanning is capped at 16 million
   characters per buffer and 64 million total, 10,000 matches, and 2 MiB of
   output.
+  The effective Evil Collection `M-s a C-s` and `M-s a M-C-s` chords start
+  literal or regexp incremental search over explicit ordinary marks in display
+  order, excluding `D`, and refuse an empty marked set. Input pauses in the
+  first source; `C-s`/`C-r` continue and wrap across live sources. Return keeps
+  the exact match and records same-kind history, while `C-g` restores the first
+  source's starting point; either exit removes transient search modes from all
+  sources.
   Lem has no visited-file locking state;
   Ibuffer's process/directory/predicate filters, compound/saved filter
   operations, mode/age/regexp marking, other-frame, view-and-eval, multi-buffer
-  isearch/query-replace, Occur edit/rename/clone, shell, eval, and print
-  operations are not reproduced.
+  query-replace, Occur edit/rename/clone, shell, eval, and print operations are
+  not reproduced.
   CL-PPCRE regexp syntax can differ from Emacs regexp syntax. Content filters
   skip buffers above 16 million characters, and mode completion uses
   package-qualified labels.
@@ -2810,8 +2817,9 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   Upstream has no dedicated `occur` command. Lem-yath adds the bounded,
   persistent marked-buffer Occur described in §4; grep/peek-source separately
   covers project/file results with immediate source-buffer write-through rather
-  than wgrep's staged finish/abort workflow. True multi-buffer incremental
-  isearch and query-replace remain gaps.
+  than wgrep's staged finish/abort workflow. Lem-yath also adds marked-buffer
+  literal and regexp incremental isearch through the effective Evil Collection
+  chords described in §4. Multi-buffer query-replace remains a gap.
 - **Multiple cursors**: core support. `src/cursors.lisp` + `src/commands/multiple-cursors.lisp`
   (`add-cursors-to-next-line`, bound `M-C`); isearch can add cursors at matches.
 - **Markdown preview**: yes, `preview` generic in markdown-mode (§8), plus literate
