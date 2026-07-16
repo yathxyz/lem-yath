@@ -120,6 +120,13 @@ sleep 0.8
 # Lem prompt behavior against a nonempty initial value.
 if invoke_prompt_command lem-yath-test-prompt-line-editing \
      'Prompt edit: quick-lookup'; then
+  # The third backward word kill starts on the empty editable field.  It must
+  # leave the prompt label intact while the completion provider remains live.
+  lem_keys "$session" C-e
+  lem_keys "$session" M-BSpace
+  lem_keys "$session" M-BSpace
+  lem_keys "$session" M-BSpace
+  tmux_cmd send-keys -t "$session" -l quick-lookup
   lem_keys "$session" C-a
   tmux_cmd send-keys -t "$session" -l X
   lem_keys "$session" C-e
@@ -146,7 +153,7 @@ if invoke_prompt_command lem-yath-test-prompt-line-editing \
     lem_keys "$session" Enter
     if wait_report_count '^PROMPT-EDIT-SELECT value=fixture-preset$' 1; then
       pass prompt-emacs-line-editing \
-        'Emacs line, character, word, kill, yank, and transpose keys stayed live'
+        'Emacs line, character, boundary-safe word-kill, yank, and transpose keys stayed live'
     else
       fail prompt-emacs-line-editing \
         'Return did not accept the physically edited prompt value' "$session"

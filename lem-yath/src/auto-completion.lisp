@@ -49,6 +49,7 @@
     lem/completion-mode::completion-self-insert
     lem/completion-mode::completion-delete-previous-char
     lem/completion-mode::completion-backward-delete-word
+    lem-yath-completion-backward-delete-word
     lem/completion-mode::completion-next-line
     lem/completion-mode::completion-previous-line
     lem/completion-mode::completion-end-of-buffer
@@ -799,7 +800,8 @@ directory already exists."
               '(delete-previous-char
                 lem/completion-mode::completion-self-insert
                 lem/completion-mode::completion-delete-previous-char
-                lem/completion-mode::completion-backward-delete-word))))
+                lem/completion-mode::completion-backward-delete-word
+                lem-yath-completion-backward-delete-word))))
 
 (defun auto-completion-continue-command-p (command)
   (member (command-name command) *auto-completion-continue-commands*))
@@ -944,6 +946,7 @@ directory already exists."
   '(lem/completion-mode::completion-self-insert
     lem/completion-mode::completion-delete-previous-char
     lem/completion-mode::completion-backward-delete-word
+    lem-yath-completion-backward-delete-word
     lem-yath-completion-space))
 
 (defun auto-completion-pre-command ()
@@ -1066,7 +1069,8 @@ directory already exists."
                       command-name
                       '(lem/completion-mode::completion-self-insert
                         lem/completion-mode::completion-delete-previous-char
-                        lem/completion-mode::completion-backward-delete-word))))))
+                        lem/completion-mode::completion-backward-delete-word
+                        lem-yath-completion-backward-delete-word))))))
       (lem/completion-mode:completion-end)))
   (auto-completion-prune-context)
   (when (and (null lem/completion-mode::*completion-context*)

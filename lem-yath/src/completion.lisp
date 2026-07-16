@@ -780,6 +780,24 @@ provider's source-defined order."
   (call-command 'previous-word argument)
   (completion-clamp-point-to-prompt-input))
 
+(define-command lem-yath-prompt-backward-delete-word (&optional (argument 1))
+    (:universal)
+  "Kill words backward without deleting the protected prompt label."
+  (let ((point (current-point))
+        (input-start (lem/prompt-window::current-prompt-start-point)))
+    (with-point ((origin point :left-inserting))
+      (call-command 'previous-word argument)
+      (when (point< point input-start)
+        (move-point point input-start))
+      (cond
+        ((point< point origin)
+         (lem/common/killring:with-killring-context (:before-inserting t)
+           (kill-region point origin)))
+        ((point< origin point)
+         (kill-region origin point)
+         (move-point point origin))))
+    (lem/completion-mode:completion-refresh)))
+
 (define-command lem-yath-prompt-delete-next-char (argument) (:universal-nil)
   "Delete forward and refresh visible prompt completion."
   (call-command 'delete-next-char argument)
@@ -836,6 +854,26 @@ provider's source-defined order."
   (alexandria:when-let ((prompt
                          (lem/prompt-window:current-prompt-window)))
     (eq (current-buffer) (window-buffer prompt))))
+
+(define-command lem-yath-completion-backward-delete-word
+    (&optional (argument 1))
+    (:universal)
+  "Delete words through the active prompt or in-buffer completion context."
+  (if (completion-prompt-active-p)
+      (call-command 'lem-yath-prompt-backward-delete-word argument)
+      (call-command 'lem/completion-mode::completion-backward-delete-word
+                    argument)))
+
+(dolist (keymap (list lem/prompt-window::*prompt-mode-keymap*
+                      lem/completion-mode::*completion-mode-keymap*))
+  (define-key keymap "M-Backspace"
+    'lem-yath-completion-backward-delete-word)
+  (define-key keymap "C-Backspace"
+    'lem-yath-completion-backward-delete-word)
+  (define-key keymap "C-M-h" 'lem-yath-completion-backward-delete-word))
+
+(define-key lem/completion-mode::*completion-mode-keymap*
+  'backward-delete-word 'lem-yath-completion-backward-delete-word)
 
 (defun completion-prescient-state-or-error ()
   (or (completion-prompt-prescient-state t)

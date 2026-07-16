@@ -471,6 +471,26 @@ fi
 if setup_corfu_popup; then
   accept_before=$(grep -c '^CORFU ACCEPT ' "$LEM_YATH_AUTO_COMPLETION_REPORT" 2>/dev/null || true)
   lem_keys "$session" C-n
+  lem_keys "$session" M-BSpace
+  if wait_report_count '^CORFU ACCEPT ' $((accept_before + 1)) 5; then
+    sleep 0.05
+    word_kill_state=$(report_corfu_state || true)
+    if [ "$(grep '^CORFU ACCEPT ' "$LEM_YATH_AUTO_COMPLETION_REPORT" | tail -n 1)" = 'CORFU ACCEPT previewBeta count=1 buffer=previewBeta' ] &&
+       grep -q 'buffer=""' <<<"$word_kill_state"; then
+      pass corfu-backward-word-kill "M-Backspace retained Corfu preview and edit semantics"
+    else
+      fail corfu-backward-word-kill "M-Backspace diverged in ordinary completion: $word_kill_state"
+    fi
+  else
+    fail corfu-backward-word-kill "M-Backspace did not commit the selected candidate"
+  fi
+else
+  fail corfu-backward-word-setup "could not prepare the M-Backspace scenario"
+fi
+
+if setup_corfu_popup; then
+  accept_before=$(grep -c '^CORFU ACCEPT ' "$LEM_YATH_AUTO_COMPLETION_REPORT" 2>/dev/null || true)
+  lem_keys "$session" C-n
   lem_keys "$session" Space
   if wait_report_count '^CORFU ACCEPT ' $((accept_before + 1)) 5; then
     sleep 0.2
