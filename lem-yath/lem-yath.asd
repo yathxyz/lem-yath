@@ -89,6 +89,7 @@
                              (:file "salta")
                              (:file "timemachine")
                              (:file "llm-cli")
+                             (:file "llm-http")
                              (:file "llm-presets")
                              (:file "claude-bridge")
                              (:file "claude-code")))

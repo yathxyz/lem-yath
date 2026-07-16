@@ -99,7 +99,7 @@
 (defun llm-sse-payload (line)
   "Return an SSE data payload and whether LINE was a data record."
   (when (> (length line) *llm-stream-line-limit*)
-    (error "OpenRouter emitted an oversized SSE line"))
+    (error "LLM provider emitted an oversized SSE line"))
   (if (and (>= (length line) 5)
            (string= "data:" line :end2 5))
       (values (string-left-trim '(#\Space #\Tab) (subseq line 5)) t)
@@ -114,7 +114,7 @@
       (t
        (handler-case
            (values (yason:parse payload) t nil)
-         (error () (error "OpenRouter emitted malformed SSE JSON")))))))
+         (error () (error "LLM provider emitted malformed SSE JSON")))))))
 
 (defun llm-delta-content (line)
   "Extract the streamed content delta from one SSE LINE, or NIL."

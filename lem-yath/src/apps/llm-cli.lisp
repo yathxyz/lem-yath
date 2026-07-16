@@ -19,6 +19,14 @@
     (:codex . lem-yath-llm-codex-session-id)
     (:grok . lem-yath-llm-grok-session-id)))
 
+(defparameter *llm-backend-default-models*
+  '((:openrouter . "openrouter/auto")
+    (:perplexity . "sonar")
+    (:copilot . "gpt-4.1")
+    (:claude-code . "claude-code")
+    (:codex . "codex")
+    (:grok . "grok-build")))
+
 (defun llm-cli-spec (backend)
   "Return BACKEND's executable name, or NIL."
   (cdr (assoc backend *llm-cli-commands*)))
@@ -57,8 +65,9 @@
 
 (define-command lem-yath-llm-new-session () ()
   "Start a fresh conversation the next time the active CLI backend is used."
-  (if (eq *llm-backend* :openrouter)
-      (message "OpenRouter requests do not currently carry a session id")
+  (if (not (llm-cli-spec *llm-backend*))
+      (message "~:(~a~) requests do not currently carry a session id"
+               *llm-backend*)
       (let ((buffer (llm-output-buffer)))
         (if (llm-active-request buffer)
             (message "Wait for or abort the active LLM request first")
@@ -313,8 +322,8 @@
   (llm-cli-stream backend prompt))
 
 (defun llm-available-backends ()
-  "Backends usable now: always OpenRouter, plus CLIs found on PATH."
-  (cons :openrouter
+  "Configured HTTP backends, plus agent CLIs found on PATH."
+  (append '(:openrouter :perplexity :copilot)
         (loop :for (backend . executable) :in *llm-cli-commands*
               :when (executable-find executable)
                 :collect backend)))
@@ -337,6 +346,10 @@
                         :test #'string-equal)))
     (if backend
         (progn
+          (unless (eq backend *llm-backend*)
+            (setf *llm-model*
+                  (or (cdr (assoc backend *llm-backend-default-models*))
+                      *llm-model*)))
           (setf *llm-backend* backend)
-          (message "LLM backend: ~(~a~)" backend))
+          (message "LLM backend: ~(~a~) (~a)" backend *llm-model*))
         (message "Unknown or unavailable backend: ~a" choice))))

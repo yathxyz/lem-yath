@@ -2573,8 +2573,9 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
 - **Markdown preview**: yes, `preview` generic in markdown-mode (§8), plus literate
   eval-block.
 - **AI / shipped in-tree (all in the image):**
-  Lem-yath adds a shared Markdown conversation buffer for OpenRouter and the
-  Claude Code, Codex, and Grok CLIs. The CLI adapters consume their native
+  Lem-yath adds a shared Markdown conversation buffer for OpenRouter,
+  Perplexity, GitHub Copilot Chat, and the Claude Code, Codex, and Grok CLIs.
+  The CLI adapters consume their native
   JSON event streams, retain a separate session ID for each backend for the
   lifetime of that buffer, render text/thinking/tool/command/file activity,
   and pass the native resume argument on later prompts. `SPC g b` selects a
@@ -2583,6 +2584,22 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   Codex and Grok deliberately use read-only sandboxes. The hermetic
   `scripts/llm-backend-test.sh` drives these transports through real ncurses
   Lem with fake executables and no credentials.
+
+  `SPC g b` also selects **Perplexity** (`sonar` by default) and **Copilot**
+  (`gpt-4.1` by default). Perplexity reads `PERPLEXITY_API_KEY`, streams its
+  OpenAI-compatible response, and appends bounded final citations. Copilot is
+  authorized explicitly with `M-x lem-yath-copilot-login`: Lem shows and
+  copies GitHub's device code, opens the verification URI only in a local GUI
+  session, polls according to the device-flow response, then exchanges the
+  GitHub token for a short-lived Copilot token on demand. Native tokens live
+  below `$XDG_CACHE_HOME/lem-yath/copilot/` in an owner-only directory and are
+  atomically replaced as mode-0600 regular files. API keys, tokens, URLs,
+  headers, prompts, and bodies are supplied through curl's stdin config rather
+  than argv. `scripts/llm-http-test.sh` proves both fragmented SSE transports,
+  citation rendering, pending device authorization, token expiry renewal,
+  private persistence, provider presets, reload safety, and the argv boundary
+  without network access or real credentials. This is text-chat parity;
+  Copilot Responses API models, media, tools, and model discovery remain open.
 
   `SPC g l` and `SPC g L` open the compact preset/handoff menu used by the
   Emacs configuration. It loads or saves named presets, selects a model, and

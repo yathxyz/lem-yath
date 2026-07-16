@@ -161,6 +161,8 @@
   (and (stringp value)
        (cdr (assoc value
                    '(("openrouter" . :openrouter)
+                     ("perplexity" . :perplexity)
+                     ("copilot" . :copilot)
                      ("claude-code" . :claude-code)
                      ("codex" . :codex)
                      ("grok" . :grok))
@@ -180,7 +182,8 @@
 
 (defun llm-preset-valid-p (name preset)
   (and (llm-preset-name-valid-p name)
-       (member (getf preset :backend) '(:openrouter :claude-code :codex :grok))
+       (member (getf preset :backend)
+               '(:openrouter :perplexity :copilot :claude-code :codex :grok))
        (stringp (getf preset :model))
        (<= (length (getf preset :model)) *llm-preset-string-limit*)
        (stringp (getf preset :system))
@@ -191,6 +194,8 @@
          (or (null maximum)
              (and (integerp maximum) (<= 1 maximum 1000000))))
        (member (getf preset :use-tools) '(nil t))
+       (or (null (getf preset :use-tools))
+           (eq (getf preset :backend) :openrouter))
        (let ((servers (getf preset :mcp-servers)))
          (and (listp servers)
               (= (length servers)
