@@ -123,6 +123,56 @@
     (same '("ae") "ae" '("æ" "ae") "no invented ae expansion")
     (same '("ss") "ss" '("ß" "ss") "no invented ss expansion")))
 
+(defun lem-yath-test-prescient-method-match-p
+    (method query candidate &key (case-folding :smart)
+                              (character-folding-p t))
+  "Evaluate one pinned Prescient METHOD without requiring a live prompt."
+  (let ((case-sensitive-p
+          (prescient-case-sensitive-p query case-folding)))
+    (loop :for component :in (prescient-split-query query)
+          :for component-index :from 0
+          :always
+            (funcall
+             (prescient-method-matcher
+              method component component-index case-sensitive-p
+              character-folding-p)
+             candidate))))
+
+(defun lem-yath-test-prescient-method-oracle ()
+  "Check the pinned filter-method corpus captured from Prescient.el."
+  (flet ((check (expected method query candidate name &rest settings)
+           (let ((actual
+                   (apply #'lem-yath-test-prescient-method-match-p
+                          method query candidate settings)))
+             (unless (eql expected (not (null actual)))
+               (error "~a: expected ~s for ~s/~s, got ~s"
+                      name expected query candidate actual)))))
+    (check t :literal "cafe" "café" "literal character folding")
+    (check nil :literal "café" "cafe" "literal folding direction")
+    (check nil :literal-prefix "pha" "alpha" "literal interior prefix")
+    (check t :literal-prefix "pha" "phantom" "literal candidate prefix")
+    (check t :literal-prefix "al be" "alpha beta" "later word prefix")
+    (check t :initialism "fa" "find-file-at-point" "initialism")
+    (check nil :initialism "fp" "find-file-at-point"
+           "nonadjacent initialism")
+    (check t :fuzzy "ayc" "axbyc" "fuzzy subsequence")
+    (check t :prefix "str-r" "string-repeat" "partial word prefix")
+    (check t :prefix "re" "repertoire" "single word prefix")
+    (check nil :prefix "ring-r" "string-repeat" "interior word prefix")
+    (check t :anchored "FiFiAt" "find-file-at-point"
+           "capital anchors")
+    (check t :anchored "fi-fi-at" "find-file-at-point"
+           "symbol anchors")
+    (check t :anchored "FFA" "find-file-at-point"
+           "abbreviated capital anchors")
+    (check t :regexp "^needle$" "needle" "regular expression")
+    (check t :literal "alpha" "Alpha" "smart case folding")
+    (check nil :literal "Alpha" "alpha" "smart case sensitivity")
+    (check nil :literal "cafe" "café" "disabled character folding"
+           :character-folding-p nil)
+    (check nil :literal "alpha" "Alpha" "disabled case folding"
+           :case-folding nil)))
+
 (defun lem-yath-test-grouped-prompt-item (label group)
   "Return a grouped completion item spanning the live prompt input."
   (with-point ((start (lem/prompt-window::current-prompt-start-point))
@@ -148,3 +198,4 @@
       (lem-yath-test-grouped-prompt-item "group-delta" "Second Group")))))
 
 (lem-yath-test-prescient-character-fold-oracle)
+(lem-yath-test-prescient-method-oracle)

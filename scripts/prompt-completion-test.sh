@@ -63,6 +63,48 @@ invoke_prompt_command() {
   lem_wait_for "$session" "$prompt" 10 >/dev/null
 }
 
+screen_has_toggle_candidate() {
+  local screen=$1 candidate=$2
+  grep -F "$candidate" <<<"$screen" | grep -Fq 'toggle-candidate'
+}
+
+close_prompt() {
+  lem_keys "$session" Escape
+  sleep 0.2
+  lem_keys "$session" Escape
+  sleep 0.2
+}
+
+prescient_toggle_test() {
+  local name=$1 query=$2 candidate=$3 before=$4 after=$5
+  shift 5
+  if ! invoke_prompt_command lem-yath-test-prescient-toggle-prompt \
+       'Prescient fixture:'; then
+    fail "$name" 'the Prescient fixture prompt did not open' "$session"
+    return
+  fi
+  tmux_cmd send-keys -t "$session" -l "$query"
+  sleep 0.7
+  local screen
+  screen=$(lem_capture "$session")
+  if { [ "$before" = present ] && ! screen_has_toggle_candidate "$screen" "$candidate"; } ||
+     { [ "$before" = absent ] && screen_has_toggle_candidate "$screen" "$candidate"; }; then
+    fail "$name" "the baseline candidate was not $before" "$session"
+    close_prompt
+    return
+  fi
+  lem_keys "$session" "$@"
+  sleep 0.7
+  screen=$(lem_capture "$session")
+  if { [ "$after" = present ] && screen_has_toggle_candidate "$screen" "$candidate"; } ||
+     { [ "$after" = absent ] && ! screen_has_toggle_candidate "$screen" "$candidate"; }; then
+    pass "$name" "the prompt-local toggle changed $candidate from $before to $after"
+  else
+    fail "$name" "the candidate did not become $after" "$session"
+  fi
+  close_prompt
+}
+
 fixture="$(lem-yath_lisp_string "$here/scripts/prompt-completion-fixture.lisp")"
 lem_start_lem-yath_eval "$session" "(load #P$fixture)"
 if ! lem_wait_for "$session" 'NORMAL|Dashboard' 40 >/dev/null ||
@@ -71,6 +113,7 @@ if ! lem_wait_for "$session" 'NORMAL|Dashboard' 40 >/dev/null ||
 else
   pass boot "configured Lem opened both file-backed fixture buffers"
 fi
+sleep 0.8
 
 # Vertico keeps the prompt editable after a zero-result query and repopulates
 # candidates as soon as the query becomes valid again.  Exercise the actual
@@ -80,7 +123,8 @@ sleep 0.2
 lem_keys "$session" M-x
 if lem_wait_for "$session" 'Command:' 10 >/dev/null; then
   tmux_cmd send-keys -t "$session" -l 'lem-yath-test-buffer-promptx'
-  sleep 0.8
+  lem_wait_for "$session" 'Command: lem-yath-test-buffer-promptx' 10 \
+    >/dev/null || true
   screen=$(lem_capture "$session")
   if grep -Fq 'Command: lem-yath-test-buffer-promptx' <<<"$screen" &&
      ! grep -Fq 'Open the configured buffer prompt over the fixture buffers.' \
@@ -90,7 +134,8 @@ if lem_wait_for "$session" 'Command:' 10 >/dev/null; then
     fail command-zero-results 'M-x did not settle on a clean zero-result prompt' "$session"
   fi
   lem_keys "$session" BSpace
-  sleep 0.8
+  lem_wait_for "$session" 'Command: lem-yath-test-buffer-prompt([^x]|$)' 10 \
+    >/dev/null || true
   screen=$(lem_capture "$session")
   if grep -Fq 'Command: lem-yath-test-buffer-prompt' <<<"$screen" &&
      grep -Fq 'Open the configured buffer prompt over the fixture buffers.' \
@@ -300,6 +345,96 @@ if [ -n "$selected_buffer_path" ] &&
   lem_keys "$session" Escape
   sleep 0.2
   lem_keys "$session" Escape
+fi
+
+# vertico-prescient-mode installs this exact prompt-local map at M-s.  Exercise
+# every method plus both folding variables through real terminal key events.
+prescient_toggle_test prescient-anchored FiFiAt find-file-at-point \
+  absent present M-s a
+prescient_toggle_test prescient-fuzzy ayc axbyc absent present M-s f
+prescient_toggle_test prescient-initialism sr string-repeat \
+  present absent M-s i
+prescient_toggle_test prescient-literal cafe café present absent M-s l
+prescient_toggle_test prescient-prefix str-r string-repeat \
+  absent present M-s p
+prescient_toggle_test prescient-regexp '^needle$' needle \
+  present absent M-s r
+prescient_toggle_test prescient-character-fold cafe café \
+  present absent M-s "'"
+prescient_toggle_test prescient-case-fold alpha Alpha \
+  present absent M-s c
+
+# A prefix argument makes one method exclusive.  Literal-prefix then rejects
+# an interior literal while retaining a true candidate prefix, and refusing to
+# toggle off the sole method leaves the prompt usable.
+if invoke_prompt_command lem-yath-test-prescient-toggle-prompt \
+     'Prescient fixture:'; then
+  tmux_cmd send-keys -t "$session" -l pha
+  sleep 0.7
+  screen=$(lem_capture "$session")
+  if screen_has_toggle_candidate "$screen" alpha; then
+    # Lem's universal-argument command enters its own key reader.  Give that
+    # reader one terminal turn before delivering the M-s chord, as a person
+    # naturally does when pressing the keys.
+    lem_keys "$session" C-u
+    sleep 0.2
+    lem_keys "$session" M-s P
+    sleep 0.7
+    screen=$(lem_capture "$session")
+    if ! screen_has_toggle_candidate "$screen" alpha &&
+       grep -Fq 'phantom' <<<"$screen" &&
+       grep -Eq 'PRESCIENT-STATE command=LEM-YATH-PRESCIENT-TOGGLE-LITERAL-PREFIX argument=4 methods=LITERAL-PREFIX' \
+         "$LEM_YATH_PROMPT_COMPLETION_REPORT"; then
+      pass prescient-literal-prefix \
+        'C-u M-s P selected only candidate/word-prefix matching'
+    else
+      fail prescient-literal-prefix \
+        'exclusive literal-prefix filtering returned the wrong candidates' \
+        "$session"
+    fi
+    lem_keys "$session" M-s P
+    sleep 0.5
+    screen=$(lem_capture "$session")
+    guard_state=$(grep \
+      '^PRESCIENT-STATE command=LEM-YATH-PRESCIENT-TOGGLE-LITERAL-PREFIX ' \
+      "$LEM_YATH_PROMPT_COMPLETION_REPORT" | tail -1)
+    if grep -Fq 'phantom' <<<"$screen" &&
+       grep -Fq 'argument=NIL methods=LITERAL-PREFIX' <<<"$guard_state" &&
+       grep -Fq 'Prescient fixture:' <<<"$screen"; then
+      pass prescient-only-method-guard \
+        'the sole active filter could not be disabled accidentally'
+    else
+      fail prescient-only-method-guard \
+        'the sole-method guard did not preserve the prompt' "$session"
+    fi
+  else
+    fail prescient-literal-prefix \
+      'the default literal baseline did not contain alpha' "$session"
+  fi
+  close_prompt
+else
+  fail prescient-literal-prefix 'the Prescient fixture prompt did not open' \
+    "$session"
+fi
+
+# The preceding folding changes lived on deleted prompt buffers.  A fresh
+# prompt must start from smart-case, character-folded defaults again.
+if invoke_prompt_command lem-yath-test-prescient-toggle-prompt \
+     'Prescient fixture:'; then
+  tmux_cmd send-keys -t "$session" -l cafe
+  sleep 0.7
+  screen=$(lem_capture "$session")
+  if screen_has_toggle_candidate "$screen" café; then
+    pass prescient-prompt-local-state \
+      'a fresh prompt restored the configured Prescient defaults'
+  else
+    fail prescient-prompt-local-state \
+      'a previous prompt leaked its matching state' "$session"
+  fi
+  close_prompt
+else
+  fail prescient-prompt-local-state 'the fresh fixture prompt did not open' \
+    "$session"
 fi
 
 # File prompt: narrow the first path component, use Vertico-style Tab to insert

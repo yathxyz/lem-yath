@@ -24,6 +24,26 @@
 (defvar *completion-ranking-dirty-p* nil)
 (defvar *completion-current-category* nil)
 
+(defparameter *prescient-default-filter-methods*
+  '(:literal :regexp :initialism))
+(defparameter *prescient-default-case-folding* :smart)
+(defparameter *prescient-default-character-folding-p* t)
+
+(defstruct (completion-prescient-state
+             (:constructor make-completion-prescient-state
+                 (&key
+                    (methods (copy-list *prescient-default-filter-methods*))
+                    (case-folding *prescient-default-case-folding*)
+                    (character-folding-p
+                     *prescient-default-character-folding-p*))))
+  "Prompt-local equivalents of Prescient's three toggle variables."
+  methods
+  case-folding
+  character-folding-p)
+
+(defparameter +completion-prescient-state-key+
+  'lem-yath-prescient-filter-state)
+
 (defun completion-ranking-pathname ()
   "Persistent Prescient-compatible usage data for prompt candidates."
   (or (alexandria:when-let ((override
@@ -179,8 +199,12 @@
            (finish-component)
            (nreverse components)))))))
 
-(defun prescient-case-sensitive-p (query)
-  (some #'upper-case-p query))
+(defun prescient-case-sensitive-p
+    (query &optional (case-folding *prescient-default-case-folding*))
+  (case case-folding
+    (:smart (not (null (some #'upper-case-p query))))
+    ((nil) t)
+    (otherwise nil)))
 
 (defun completion-character-test (case-sensitive-p)
   (if case-sensitive-p #'char= #'char-equal))
@@ -327,7 +351,7 @@
     :finally (return t)))
 
 (defun completion-fold-form-match-p
-    (query candidate case-sensitive-p)
+    (query candidate case-sensitive-p &optional start-predicate)
   "Search CANDIDATE for QUERY without splitting compatibility characters."
   (let* ((query-text (completion-fold-form-text query))
          (candidate-text (completion-fold-form-text candidate))
@@ -338,6 +362,8 @@
           :for end := (+ start query-length)
           :when (and (= 1 (sbit boundaries start))
                      (= 1 (sbit boundaries end))
+                     (or (null start-predicate)
+                         (funcall start-predicate candidate-text start))
                      (loop :for query-index :from 0 :below query-length
                            :always
                              (completion-fold-character-match-p
@@ -366,6 +392,180 @@ variants.  A non-ASCII component is not silently simplified."
             (completion-fold-form-match-p
              query form case-sensitive-p))))))
 
+(defun completion-word-character-p (character)
+  (and character
+       (or (alphanumericp character)
+           (char= character #\_))))
+
+(defun completion-word-boundary-p (text index)
+  "Whether INDEX is an Emacs-style word boundary within TEXT."
+  (and (< index (length text))
+       (not (eql (completion-word-character-p
+                  (and (plusp index) (char text (1- index))))
+                 (completion-word-character-p (char text index))))))
+
+(defun completion-character-fold-prefix-matcher
+    (component case-sensitive-p first-component-p character-folding-p)
+  "Match COMPONENT at the candidate or word prefix used by literal-prefix."
+  (let ((start-predicate
+          (if first-component-p
+              (lambda (text index)
+                (declare (ignore text))
+                (zerop index))
+              #'completion-word-boundary-p)))
+    (if character-folding-p
+        (let ((query (completion-build-fold-form component))
+              (cache (make-hash-table :test 'equal)))
+          (lambda (candidate)
+            (multiple-value-bind (form present-p) (gethash candidate cache)
+              (unless present-p
+                (setf form (completion-build-fold-form candidate)
+                      (gethash candidate cache) form))
+              (completion-fold-form-match-p
+               query form case-sensitive-p start-predicate))))
+        (let ((test (completion-character-test case-sensitive-p)))
+          (lambda (candidate)
+            (loop :with start := 0
+                  :for position := (search component candidate
+                                           :start2 start :test test)
+                  :while position
+                  :when (funcall start-predicate candidate position)
+                    :do (return t)
+                  :do (setf start (1+ position))
+                  :finally (return nil)))))))
+
+(defun completion-fuzzy-match-p (component candidate case-sensitive-p)
+  "Whether COMPONENT is a character subsequence of CANDIDATE."
+  (let ((test (completion-character-test case-sensitive-p))
+        (candidate-index 0))
+    (loop :for query-character :across component
+          :do (setf candidate-index
+                     (or (position query-character candidate
+                                   :start candidate-index :test test)
+                         (return-from completion-fuzzy-match-p nil)))
+              (incf candidate-index)
+          :finally (return t))))
+
+(defun completion-word-run-end (text start word-p)
+  (loop :for index :from start :below (length text)
+        :while (eql word-p
+                    (not (null
+                          (completion-word-character-p (char text index)))))
+        :finally (return index)))
+
+(defun completion-prefix-match-at-p
+    (query candidate query-index candidate-index case-sensitive-p)
+  "Match Prescient's prefix QUERY at CANDIDATE-INDEX."
+  (let ((test (completion-character-test case-sensitive-p)))
+    (loop :while (< query-index (length query))
+          :for word-p := (not (null
+                               (completion-word-character-p
+                                (char query query-index))))
+          :for query-end := (completion-word-run-end
+                             query query-index word-p)
+          :for run-length := (- query-end query-index)
+          :do (when (> (+ candidate-index run-length)
+                       (length candidate))
+                (return-from completion-prefix-match-at-p nil))
+              (unless (loop :for offset :from 0 :below run-length
+                            :always
+                              (and (eql word-p
+                                        (not (null
+                                              (completion-word-character-p
+                                               (char candidate
+                                                     (+ candidate-index
+                                                        offset))))))
+                                   (funcall test
+                                            (char query (+ query-index offset))
+                                            (char candidate
+                                                  (+ candidate-index offset)))))
+                (return-from completion-prefix-match-at-p nil))
+              (incf candidate-index run-length)
+              (setf query-index query-end)
+              (when (and word-p (< query-index (length query)))
+                (loop :while (and (< candidate-index (length candidate))
+                                  (completion-word-character-p
+                                   (char candidate candidate-index)))
+                      :do (incf candidate-index)))
+          :finally (return t))))
+
+(defun completion-prefix-match-p (query candidate case-sensitive-p)
+  "Whether QUERY matches Prescient's word-prefix method in CANDIDATE."
+  (when (plusp (length query))
+    (let ((query-starts-with-word-p
+            (completion-word-character-p (char query 0))))
+      (loop :for index :from 0 :below (length candidate)
+            :when (and (if query-starts-with-word-p
+                           (completion-word-boundary-p candidate index)
+                           t)
+                       (completion-prefix-match-at-p
+                        query candidate 0 index case-sensitive-p))
+              :do (return t)
+            :finally (return nil)))))
+
+(defun completion-anchored-query-segments (query)
+  "Split QUERY at capitals and symbols like Prescient's anchored method."
+  (let ((segments '())
+        (index 0))
+    (loop :while (< index (length query))
+          :for start := index
+          :for character := (char query index)
+          :do (cond
+                ((upper-case-p character)
+                 (incf index)
+                 (loop :while (and (< index (length query))
+                                   (lower-case-p (char query index)))
+                       :do (incf index)))
+                ((lower-case-p character)
+                 (incf index)
+                 (loop :while (and (< index (length query))
+                                   (lower-case-p (char query index)))
+                       :do (incf index)))
+                ((not (completion-word-character-p character))
+                 (incf index)
+                 (loop :while (and (< index (length query))
+                                   (lower-case-p (char query index)))
+                       :do (incf index)))
+                (t
+                 (incf index)
+                 (loop :while (and (< index (length query))
+                                   (completion-word-character-p
+                                    (char query index))
+                                   (not (upper-case-p (char query index))))
+                       :do (incf index))))
+              (push (string-downcase (subseq query start index)) segments))
+    (nreverse segments)))
+
+(defun completion-string-match-at-p
+    (needle haystack index case-sensitive-p)
+  (and (<= (+ index (length needle)) (length haystack))
+       (loop :for needle-character :across needle
+             :for haystack-index :from index
+             :always (funcall (completion-character-test case-sensitive-p)
+                              needle-character
+                              (char haystack haystack-index)))))
+
+(defun completion-anchored-match-p (query candidate case-sensitive-p)
+  "Whether QUERY matches Prescient's capital/symbol anchored method."
+  (let ((cursor 0))
+    (loop :for segment :in (completion-anchored-query-segments query)
+          :for first-segment-p := t :then nil
+          :do
+      (let ((position
+              (loop :for index :from cursor :below (length candidate)
+                    :when (and (not first-segment-p)
+                               (char= (char candidate index) #\/))
+                      :do (return nil)
+                    :when (and (completion-word-boundary-p candidate index)
+                               (completion-string-match-at-p
+                                segment candidate index case-sensitive-p))
+                      :do (return index)
+                    :finally (return nil))))
+        (unless position
+          (return-from completion-anchored-match-p nil))
+        (setf cursor (+ position (length segment))))
+          :finally (return t))))
+
 (defun prescient-regexp-scanner (component case-sensitive-p)
   "Compile COMPONENT once for a candidate batch, or return NIL if invalid."
   (handler-case
@@ -387,47 +587,107 @@ variants.  A non-ASCII component is not silently simplified."
   (search component (prescient-initials label)
           :test (if case-sensitive-p #'char= #'char-equal)))
 
-(defun prescient-component-matcher (component case-sensitive-p)
-  "Compile Prescient's literal, regexp, and initialism methods for COMPONENT."
-  (let ((literal
-          (completion-character-fold-matcher component case-sensitive-p))
-        (regexp (prescient-regexp-scanner component case-sensitive-p)))
+(defun prescient-method-matcher
+    (method component component-index case-sensitive-p character-folding-p)
+  "Compile one Prescient METHOD for COMPONENT."
+  (case method
+    (:literal
+     (if character-folding-p
+         (completion-character-fold-matcher component case-sensitive-p)
+         (completion-literal-matcher component case-sensitive-p)))
+    (:literal-prefix
+     (completion-character-fold-prefix-matcher
+      component case-sensitive-p (zerop component-index)
+      character-folding-p))
+    (:regexp
+     (alexandria:when-let
+         ((scanner (prescient-regexp-scanner component case-sensitive-p)))
+       (lambda (candidate) (not (null (ppcre:scan scanner candidate))))))
+    (:initialism
+     (lambda (candidate)
+       (prescient-initialism-match-p component candidate case-sensitive-p)))
+    (:fuzzy
+     (lambda (candidate)
+       (completion-fuzzy-match-p component candidate case-sensitive-p)))
+    (:prefix
+     (lambda (candidate)
+       (completion-prefix-match-p component candidate case-sensitive-p)))
+    (:anchored
+     (lambda (candidate)
+       (completion-anchored-match-p component candidate case-sensitive-p)))))
+
+(defun prescient-component-matcher
+    (component component-index case-sensitive-p methods character-folding-p)
+  "Compile active Prescient METHODS for one query COMPONENT."
+  (let ((matchers
+          (remove nil
+                  (mapcar (lambda (method)
+                            (prescient-method-matcher
+                             method component component-index case-sensitive-p
+                             character-folding-p))
+                          methods))))
     (lambda (label)
-      (or (funcall literal label)
-          (and regexp (ppcre:scan regexp label))
-          (prescient-initialism-match-p
-           component label case-sensitive-p)))))
+      (some (lambda (matcher) (funcall matcher label)) matchers))))
+
+(defun completion-prompt-prescient-state (&optional create-p)
+  "Return the active prompt's Prescient state, optionally creating it."
+  (alexandria:when-let ((prompt
+                         (lem/prompt-window:current-prompt-window)))
+    (let ((buffer (window-buffer prompt)))
+      (when (eq buffer (current-buffer))
+        (or (buffer-value buffer +completion-prescient-state-key+)
+            (when create-p
+              (setf (buffer-value buffer +completion-prescient-state-key+)
+                    (make-completion-prescient-state))))))))
+
+(defun completion-prescient-settings ()
+  "Return active prompt settings or the configured global defaults."
+  (let ((state (completion-prompt-prescient-state)))
+    (values (if state
+                (completion-prescient-state-methods state)
+                *prescient-default-filter-methods*)
+            (if state
+                (completion-prescient-state-case-folding state)
+                *prescient-default-case-folding*)
+            (if state
+                (completion-prescient-state-character-folding-p state)
+                *prescient-default-character-folding-p*))))
 
 (defun prescient-filter (input candidates
                          &key (key #'identity) (category :generic)
                            (rank-p t))
   "Filter and rank CANDIDATES like the active Vertico-Prescient setup.
 
-Every query component may match as a character-folded literal, regexp, or
-initialism; all components must match.  Character folding is directional and
-uppercase input makes matching case-sensitive.  When RANK-P is false, preserve
-the provider's source-defined order."
+By default, every query component may match as a character-folded literal,
+regexp, or initialism; prompt-local M-s controls can change that method set.
+All components must match.  Character folding is directional and uppercase
+input makes smart matching case-sensitive.  When RANK-P is false, preserve the
+provider's source-defined order."
   (setf *completion-current-category* category)
-  (let* ((components (prescient-split-query input))
-         (case-sensitive-p (prescient-case-sensitive-p (or input "")))
-         (matchers
-           (mapcar (lambda (component)
-                     (prescient-component-matcher
-                      component case-sensitive-p))
-                   components))
-         (filtered
-           (if (null matchers)
-               candidates
-               (remove-if-not
-                (lambda (candidate)
-                  (let ((label (funcall key candidate)))
-                    (every (lambda (matcher)
-                             (funcall matcher label))
-                           matchers)))
-                candidates))))
-    (if rank-p
-        (completion-sort-candidates filtered :key key)
-        filtered)))
+  (multiple-value-bind (methods case-folding character-folding-p)
+      (completion-prescient-settings)
+    (let* ((components (prescient-split-query input))
+           (case-sensitive-p
+             (prescient-case-sensitive-p (or input "") case-folding))
+           (matchers
+             (loop :for component :in components
+                   :for component-index :from 0
+                   :collect (prescient-component-matcher
+                             component component-index case-sensitive-p
+                             methods character-folding-p)))
+           (filtered
+             (if (null matchers)
+                 candidates
+                 (remove-if-not
+                  (lambda (candidate)
+                    (let ((label (funcall key candidate)))
+                      (every (lambda (matcher)
+                               (funcall matcher label))
+                             matchers)))
+                  candidates))))
+      (if rank-p
+          (completion-sort-candidates filtered :key key)
+          filtered))))
 
 (defvar *default-command-completion* *prompt-command-completion-function*)
 (defvar *default-buffer-completion* *prompt-buffer-completion-function*)
@@ -492,6 +752,121 @@ the provider's source-defined order."
   (alexandria:when-let ((prompt
                          (lem/prompt-window:current-prompt-window)))
     (eq (current-buffer) (window-buffer prompt))))
+
+(defun completion-prescient-state-or-error ()
+  (or (completion-prompt-prescient-state t)
+      (editor-error "Prescient toggles are only available in prompts")))
+
+(defun completion-prescient-methods-description (methods)
+  (format nil "~{~a~^ ~}"
+          (mapcar (lambda (method)
+                    (string-downcase (symbol-name method)))
+                  methods)))
+
+(defun completion-refresh-prescient-prompt ()
+  "Refresh or reopen the current prompt completion after a toggle."
+  (if lem/completion-mode::*completion-context*
+      (lem/completion-mode:completion-refresh)
+      (lem/prompt-window::open-prompt-completion)))
+
+(defun completion-toggle-prescient-method (method exclusive-p)
+  "Toggle METHOD prompt-locally, or make it exclusive when EXCLUSIVE-P."
+  (let* ((state (completion-prescient-state-or-error))
+         (methods (completion-prescient-state-methods state)))
+    (cond
+      (exclusive-p
+       (setf (completion-prescient-state-methods state) (list method)))
+      ((equal methods (list method))
+       (editor-error "Cannot toggle off the only active Prescient method: ~a"
+                     (string-downcase (symbol-name method))))
+      ((member method methods)
+       (setf (completion-prescient-state-methods state)
+             (remove method methods)))
+      (t
+       (push method (completion-prescient-state-methods state))))
+    (message "Prescient filter is now ~a"
+             (completion-prescient-methods-description
+              (completion-prescient-state-methods state)))
+    (completion-refresh-prescient-prompt)))
+
+(define-command lem-yath-prescient-toggle-anchored (argument)
+    (:universal-nil)
+  (completion-toggle-prescient-method :anchored (not (null argument))))
+
+(define-command lem-yath-prescient-toggle-fuzzy (argument)
+    (:universal-nil)
+  (completion-toggle-prescient-method :fuzzy (not (null argument))))
+
+(define-command lem-yath-prescient-toggle-initialism (argument)
+    (:universal-nil)
+  (completion-toggle-prescient-method :initialism (not (null argument))))
+
+(define-command lem-yath-prescient-toggle-literal (argument)
+    (:universal-nil)
+  (completion-toggle-prescient-method :literal (not (null argument))))
+
+(define-command lem-yath-prescient-toggle-literal-prefix (argument)
+    (:universal-nil)
+  (completion-toggle-prescient-method :literal-prefix (not (null argument))))
+
+(define-command lem-yath-prescient-toggle-prefix (argument)
+    (:universal-nil)
+  (completion-toggle-prescient-method :prefix (not (null argument))))
+
+(define-command lem-yath-prescient-toggle-regexp (argument)
+    (:universal-nil)
+  (completion-toggle-prescient-method :regexp (not (null argument))))
+
+(define-command lem-yath-prescient-toggle-character-folding () ()
+  (let ((state (completion-prescient-state-or-error)))
+    (setf (completion-prescient-state-character-folding-p state)
+          (not (completion-prescient-state-character-folding-p state)))
+    (message "Character folding toggled ~:[off~;on~]"
+             (completion-prescient-state-character-folding-p state))
+    (completion-refresh-prescient-prompt)))
+
+(define-command lem-yath-prescient-toggle-case-folding () ()
+  (let ((state (completion-prescient-state-or-error)))
+    (setf (completion-prescient-state-case-folding state)
+          (if (completion-prescient-state-case-folding state)
+              nil
+              *prescient-default-case-folding*))
+    (message "~:[Case folding toggled off~;Smart case folding toggled on~]"
+             (completion-prescient-state-case-folding state))
+    (completion-refresh-prescient-prompt)))
+
+(defun completion-bind-prescient-toggle-map (keymap)
+  (define-key keymap "M-s a" 'lem-yath-prescient-toggle-anchored)
+  (define-key keymap "M-s f" 'lem-yath-prescient-toggle-fuzzy)
+  (define-key keymap "M-s i" 'lem-yath-prescient-toggle-initialism)
+  (define-key keymap "M-s l" 'lem-yath-prescient-toggle-literal)
+  (define-key keymap "M-s P" 'lem-yath-prescient-toggle-literal-prefix)
+  (define-key keymap "M-s p" 'lem-yath-prescient-toggle-prefix)
+  (define-key keymap "M-s r" 'lem-yath-prescient-toggle-regexp)
+  (define-key keymap "M-s '" 'lem-yath-prescient-toggle-character-folding)
+  (define-key keymap "M-s c" 'lem-yath-prescient-toggle-case-folding))
+
+(completion-bind-prescient-toggle-map
+ lem/prompt-window::*prompt-mode-keymap*)
+(completion-bind-prescient-toggle-map
+ lem/completion-mode::*completion-mode-keymap*)
+
+;; Completion mode's fallback self-insert consumes C-u before prompt or global
+;; keymaps see it.  Dispatch it explicitly so Prescient's documented
+;; C-u M-s KEY exclusive form reaches Lem's universal-argument reader.  Outside
+;; a prompt, close the popup and replay C-u so ordinary Evil editing retains its
+;; configured delete-to-indentation behavior.
+(define-command lem-yath-completion-control-u () ()
+  (if (completion-prompt-active-p)
+      (call-command 'lem/universal-argument:universal-argument nil)
+      (progn
+        (lem/completion-mode:completion-end)
+        (unread-key-sequence (last-read-key-sequence)))))
+
+(define-key lem/prompt-window::*prompt-mode-keymap*
+  "C-u" 'lem/universal-argument:universal-argument)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "C-u" 'lem-yath-completion-control-u)
 
 (defun completion-prompt-context ()
   "Return the current, fully presented prompt completion context."

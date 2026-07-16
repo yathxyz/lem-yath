@@ -147,8 +147,11 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   `?` shows the action keys. The flake-packaged `en_US` Aspell backend offers
   Prescient-filtered corrections for a selected word or every word on a
   selected line, including a free-text fallback when Aspell has no proposal
-- Prescient-style literal/regexp/initialism filtering and persistent learned
-  ranking in command, buffer, and custom prompts; file prompts retain Lem's
+- Prescient-style filtering and persistent learned ranking in command, buffer,
+  and custom prompts; `M-s a/f/i/l/P/p/r/'/c` changes anchored, fuzzy,
+  initialism, literal, literal-prefix, prefix, regexp, character-fold, and
+  smart-case behavior for the current Prescient-backed prompt, while
+  `C-u M-s KEY` selects one filter exclusively. File prompts retain Lem's
   path-aware matching and gain the same ranking
 - bounded, display-only Marginalia-style context for commands, Lisp symbols,
   buffers, files, loadable Lisp libraries, themes, and bookmarks; metadata

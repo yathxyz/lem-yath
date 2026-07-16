@@ -258,6 +258,28 @@ else
   fail corfu-preview-setup "could not prepare the Corfu preview scenario"
 fi
 
+# Prompt completion reserves C-u for a universal argument, but an ordinary
+# Corfu popup must still fall through to the configured Evil insert action.
+if setup_corfu_popup; then
+  control_u_before=$(grep -c '^STATE none buffer= timer=NIL$' \
+    "$LEM_YATH_AUTO_COMPLETION_REPORT" 2>/dev/null || true)
+  lem_keys "$session" C-u
+  sleep 0.4
+  lem_keys "$session" F7
+  screen=$(lem_capture "$session")
+  if wait_report_count '^STATE none buffer= timer=NIL$' \
+       $((control_u_before + 1)) 5 &&
+     grep -Fq 'INSERT' <<<"$screen"; then
+    pass corfu-control-u-fallthrough \
+      'C-u closed the popup, deleted to indentation, and retained Insert state'
+  else
+    fail corfu-control-u-fallthrough \
+      'prompt universal-argument routing leaked into ordinary completion'
+  fi
+else
+  fail corfu-control-u-setup "could not prepare the C-u fallthrough scenario"
+fi
+
 if setup_corfu_popup; then
   accept_before=$(grep -c '^CORFU ACCEPT ' "$LEM_YATH_AUTO_COMPLETION_REPORT" 2>/dev/null || true)
   lem_keys "$session" Tab

@@ -192,7 +192,7 @@ Live name filtering temporarily presents only matching selectable buffer rows
 | **cape** | deferred providers | prepends `cape-file` and `cape-dabbrev` to `completion-at-point-functions`; no Cape snippet provider |
 | **yasnippet** | active (`after-init`, `yas-global-mode`) | snippet dir = `user-emacs-directory/snippets/`; it currently contains only the Org `jjs` source-block snippet described below |
 | **yasnippet-snippets** | active if installed | 2,387 community definitions at commit `606ee926df6839243098de6d71332a697518cb86` |
-| **prescient / vertico-prescient** | active | persistent usage data; Vertico locally uses Prescient's default directional character-folded literal/regexp/initialism filtering, smart case, and learned sorting instead of the global Orderless style |
+| **prescient / vertico-prescient** | active | persistent usage data; Vertico locally uses Prescient's default directional character-folded literal/regexp/initialism filtering, smart case, and learned sorting instead of the global Orderless style; filtering also installs Prescient's prompt-local `M-s` toggle map (`a/f/i/l/P/p/r/'/c`), with a prefix argument selecting one method exclusively |
 | **consult** | deferred/autoloaded | `consult-project-buffer` (`SPC SPC`); `consult-outline` is bound by `.dir-locals.el` but has a cold-start autoload defect in Emacs that Lem should not reproduce |
 | **consult-eglot** | deferred/autoloaded | `consult-eglot-symbols` (`SPC p s`) performs workspace-symbol search |
 | **embark** | deferred/autoloaded | only `embark-act` is exposed (`SPC e a` and `M-x`); no minibuffer binding or custom action maps |

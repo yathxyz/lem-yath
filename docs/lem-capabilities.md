@@ -335,6 +335,17 @@ the fixture oracle also covers directionality, smart case, compatibility forms,
 quote variants, and Prescient's deliberate lack of `ae`/`ss` expansions for
 `æ`/`ß`.
 
+While any non-file prompt is active, `M-s` exposes the pinned
+Vertico-Prescient toggle map: `a` anchored, `f` fuzzy, `i` initialism, `l`
+literal, `P` literal-prefix, `p` prefix, `r` regexp, `'` character folding, and
+`c` case folding. A method key adds or removes that method, `C-u M-s KEY`
+selects it exclusively, and the sole active method cannot be removed. The
+candidate list refreshes immediately, including from zero results. Settings
+live on the prompt buffer and disappear on accept or abort, so the next prompt
+starts with literal/regexp/initialism, smart case, and character folding again.
+Prompt-local `C-u` deliberately uses minibuffer universal-argument semantics;
+outside prompts the configured Evil delete-to-indentation behavior is unchanged.
+
 Lem-yath gives prompt contexts Vertico-style display-only startup: presenting
 candidates neither inserts a shared prefix nor automatically accepts a
 synchronous singleton. `Tab` inserts the focused candidate and refreshes

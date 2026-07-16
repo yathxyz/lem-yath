@@ -7,6 +7,16 @@
 (defvar *prompt-completion-fixture-report*
   (uiop:getenv "LEM_YATH_PROMPT_COMPLETION_REPORT"))
 
+(defparameter *prompt-completion-prescient-candidates*
+  '("Alpha"
+    "alpha"
+    "axbyc"
+    "café"
+    "find-file-at-point"
+    "needle"
+    "phantom"
+    "string-repeat"))
+
 (defun prompt-completion-fixture-path (relative)
   (merge-pathnames relative *prompt-completion-fixture-root*))
 
@@ -17,6 +27,24 @@
                           :if-does-not-exist :create)
     (apply #'format stream control arguments)
     (terpri stream)))
+
+(defun prompt-completion-fixture-log-prescient-state ()
+  "Record physical toggle dispatch, including Lem's raw prefix argument."
+  (let* ((command (this-command))
+         (name (and command
+                    (string-upcase (string (command-name command))))))
+    (when (and name
+               (completion-prompt-active-p)
+               (search "LEM-YATH-PRESCIENT-TOGGLE-" name))
+      (let ((state (completion-prompt-prescient-state)))
+        (prompt-completion-fixture-log
+         "PRESCIENT-STATE command=~a argument=~s methods=~{~a~^,~} case=~s char=~s"
+         name
+         (universal-argument-of-this-command)
+         (and state (completion-prescient-state-methods state))
+         (and state (completion-prescient-state-case-folding state))
+         (and state
+              (completion-prescient-state-character-folding-p state)))))))
 
 (defun prompt-completion-fixture-write (relative contents)
   (let ((path (prompt-completion-fixture-path relative)))
@@ -134,6 +162,29 @@
        choice
        (not (null (uiop:directory-pathname-p (pathname choice))))))))
 
+(define-command lem-yath-test-prescient-toggle-prompt () ()
+  "Open a stable candidate corpus for physical Prescient toggle tests."
+  (let ((choice
+          (prompt-for-string
+           "Prescient fixture: "
+           :completion-function
+           (lambda (input)
+             (mapcar
+              (lambda (label)
+                (lem/completion-mode:make-completion-item
+                 :label label :detail "toggle-candidate"))
+              (prescient-filter
+               input *prompt-completion-prescient-candidates* :rank-p nil)))
+           :test-function
+           (lambda (input)
+             (member input *prompt-completion-prescient-candidates*
+                     :test #'string=)))))
+    (prompt-completion-fixture-log "PRESCIENT-SELECT value=~a" choice)))
+
 (prompt-completion-fixture-check-wrapper-installation)
 (prompt-completion-fixture-check-size-cache)
+(remove-hook *post-command-hook*
+             'prompt-completion-fixture-log-prescient-state)
+(add-hook *post-command-hook*
+          'prompt-completion-fixture-log-prescient-state)
 (prompt-completion-fixture-setup)

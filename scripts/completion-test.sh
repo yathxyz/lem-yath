@@ -54,9 +54,16 @@ open_query() {
   lem_keys "$session" M-x
   lem_wait_for "$session" 'Command:' 10 >/dev/null || return 1
   tmux_cmd send-keys -t "$session" -l "$query"
-  # The empty prompt already contains ranked candidates.  Let Lem consume the
-  # literal tmux input before a candidate-based assertion can match stale rows.
-  sleep 0.5
+  # The empty prompt already contains ranked candidates.  Wait for the prompt
+  # input itself rather than allowing a candidate assertion to match stale rows
+  # while Lem is still consuming a long literal tmux input burst.
+  for _ in $(seq 1 100); do
+    if lem_capture "$session" | grep -Fq "Command: $query"; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  return 1
 }
 
 open_command_prompt() {
