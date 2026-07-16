@@ -262,7 +262,7 @@ if [ -n "${ORG_SESSION:-}" ]; then
   tmux_cmd send-keys -t "$ORG_SESSION" Tab
   sleep 0.3
   children_ok=0
-  if screen_has "$ORG_SESSION" '\*\* NEXT Child' &&
+  if screen_has "$ORG_SESSION" 'NEXT Child' &&
      screen_lacks "$ORG_SESSION" 'Parent body sentinel' &&
      screen_lacks "$ORG_SESSION" 'Grand body sentinel'; then
     children_ok=1
@@ -290,17 +290,17 @@ if [ -n "${ORG_SESSION:-}" ]; then
   tmux_cmd send-keys -t "$ORG_SESSION" BTab
   sleep 0.3
   overview_ok=0
-  if screen_has "$ORG_SESSION" '\* TODO Parent' &&
-     screen_has "$ORG_SESSION" '\* Sibling' &&
-     screen_lacks "$ORG_SESSION" '\*\* NEXT Child' &&
+  if screen_has "$ORG_SESSION" 'TODO Parent' &&
+     screen_has "$ORG_SESSION" 'Sibling' &&
+     screen_lacks "$ORG_SESSION" 'NEXT Child' &&
      screen_lacks "$ORG_SESSION" 'Parent body sentinel'; then
     overview_ok=1
   fi
   tmux_cmd send-keys -t "$ORG_SESSION" BTab
   sleep 0.3
   contents_ok=0
-  if screen_has "$ORG_SESSION" '\*\* NEXT Child' &&
-     screen_has "$ORG_SESSION" '\*\*\* Grandchild' &&
+  if screen_has "$ORG_SESSION" 'NEXT Child' &&
+     screen_has "$ORG_SESSION" 'Grandchild' &&
      screen_lacks "$ORG_SESSION" 'Parent body sentinel' &&
      screen_lacks "$ORG_SESSION" 'Grand body sentinel'; then
     contents_ok=1
@@ -326,12 +326,12 @@ if [ -n "${ORG_SESSION:-}" ]; then
   tmux_cmd send-keys -t "$ORG_SESSION" -l 'Inserted'
   tmux_cmd send-keys -t "$ORG_SESSION" Escape
   sleep 0.3
-  inserted_line=$(lem_capture "$ORG_SESSION" | grep -n '\* Inserted' | head -n1 | cut -d: -f1)
-  sibling_heading_line=$(lem_capture "$ORG_SESSION" | grep -n '\* Sibling' | head -n1 | cut -d: -f1)
+  inserted_line=$(lem_capture "$ORG_SESSION" | grep -n 'Inserted$' | head -n1 | cut -d: -f1)
+  sibling_heading_line=$(lem_capture "$ORG_SESSION" | grep -n 'Sibling$' | head -n1 | cut -d: -f1)
   before_sibling_ok=0
   [ -n "$inserted_line" ] && [ -n "$sibling_heading_line" ] &&
     [ "$inserted_line" -lt "$sibling_heading_line" ] &&
-    screen_lacks "$ORG_SESSION" 'Inserted.*\* Sibling' && before_sibling_ok=1
+    screen_lacks "$ORG_SESSION" 'Inserted.*Sibling' && before_sibling_ok=1
   mx "$ORG_SESSION" lem-yath-test-org-eof-heading-report
   eof_ok=0
   wait_report '^EOF text="\* Tail\|\* After"$' && eof_ok=1
@@ -398,8 +398,8 @@ if start_org lists; then
   tmux_cmd send-keys -t "$ORG_SESSION" -l 'above item'
   tmux_cmd send-keys -t "$ORG_SESSION" Escape
   sleep 0.3
-  above_line=$(lem_capture "$ORG_SESSION" | grep -n '\- \[ \] above item' | head -n1 | cut -d: -f1)
-  first_line=$(lem_capture "$ORG_SESSION" | grep -n '\- \[ \] first' | head -n1 | cut -d: -f1)
+  above_line=$(lem_capture "$ORG_SESSION" | grep -n 'above item$' | head -n1 | cut -d: -f1)
+  first_line=$(lem_capture "$ORG_SESSION" | grep -n 'first$' | head -n1 | cut -d: -f1)
   above_ok=0
   [ -n "$above_line" ] && [ -n "$first_line" ] &&
     [ "$above_line" -lt "$first_line" ] && above_ok=1
@@ -410,12 +410,12 @@ if start_org lists; then
   tmux_cmd send-keys -t "$ORG_SESSION" Escape
   sleep 0.3
   continuation_ok=0
-  screen_has "$ORG_SESSION" '\- \[ \] new child' && continuation_ok=1
+  screen_has "$ORG_SESSION" 'new child$' && continuation_ok=1
   mx "$ORG_SESSION" lem-yath-test-org-goto-list
   tmux_cmd send-keys -t "$ORG_SESSION" C-c C-x C-b
   sleep 0.3
   toggle_ok=0
-  screen_has "$ORG_SESSION" '\- \[X\] first' && toggle_ok=1
+  screen_has "$ORG_SESSION" '☑.*first$' && toggle_ok=1
   if [ "$above_ok" = 1 ] && [ "$continuation_ok" = 1 ] &&
      [ "$toggle_ok" = 1 ]; then
     pass lists "O/o edit the new checklist item and C-c C-x C-b toggles it"
@@ -432,8 +432,8 @@ if [ -n "${ORG_SESSION:-}" ]; then
   tmux_cmd send-keys -t "$ORG_SESSION" -l gamma
   tmux_cmd send-keys -t "$ORG_SESSION" Escape
   sleep 0.3
-  gamma_line=$(lem_capture "$ORG_SESSION" | grep -n '| gamma' | head -n1 | cut -d: -f1)
-  alpha_line=$(lem_capture "$ORG_SESSION" | grep -n '| alpha' | head -n1 | cut -d: -f1)
+  gamma_line=$(lem_capture "$ORG_SESSION" | grep -n 'gamma' | head -n1 | cut -d: -f1)
+  alpha_line=$(lem_capture "$ORG_SESSION" | grep -n 'alpha' | head -n1 | cut -d: -f1)
   above_row_ok=0
   [ -n "$gamma_line" ] && [ -n "$alpha_line" ] &&
     [ "$gamma_line" -lt "$alpha_line" ] && above_row_ok=1
@@ -445,7 +445,7 @@ if [ -n "${ORG_SESSION:-}" ]; then
   tmux_cmd send-keys -t "$ORG_SESSION" Escape
   sleep 0.3
   advance_ok=0
-  screen_has "$ORG_SESSION" '\| alpha[[:space:]]+\| Xbeta[[:space:]]+\|' &&
+  screen_has "$ORG_SESSION" 'alpha[[:space:]]+│ Xbeta[[:space:]]+│' &&
     advance_ok=1
   mx "$ORG_SESSION" lem-yath-test-org-goto-indented-table
   tmux_cmd send-keys -t "$ORG_SESSION" C-c C-c

@@ -50,6 +50,7 @@
                 :components ((:file "parser")
                              (:file "folding")
                              (:file "mode")
+                             (:file "modern")
                              (:file "babel")
                              (:file "source-editing")
                              (:file "planning")

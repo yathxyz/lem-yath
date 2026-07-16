@@ -307,6 +307,11 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   double universal prefix. `Shift-Left`/`Shift-Right` and the terminal-safe
   `C-c Left`/`C-c Right` move a timestamp by days or cycle a heading's TODO
   state according to context
+- the active `org-modern-mode` hook as a display-only terminal projection:
+  fold-state heading symbols, TODO/priority/tag labels, list bullets and
+  checkboxes, tables and rules, block/keyword markers, timestamps, and targets
+  render without changing source bytes or cursor cells. Source-block bodies
+  remain literal, and `M-x org-modern-mode` toggles the presentation per buffer
 - GNU Org source-block editing on `C-c '`. The block body opens without its
   delimiters in the configured language mode while preserving indentation and
   Org's protective-comma convention. `C-c '` writes back and exits, `C-c C-k`
@@ -454,7 +459,8 @@ credential-free backend streaming/resume, private preset persistence, web
 handoff, read-only fetch/GitHub MCP client sessions, integrated Claude Code
 interaction, and authenticated MCP diff review,
 cursor/state parity, evil-snipe and Avy parity, screen-line/Evil parity, notes,
-roam, roam backlinks, native Org, Org planning/timestamps, agenda, agenda-clock, and
+roam, roam backlinks, native Org and Org-modern projection, Org
+planning/timestamps, agenda, agenda-clock, and
 parity-ledger checks. The ledger can also be
 validated directly, and the
 interactive TUI checks are exposed as flake apps:
@@ -520,6 +526,7 @@ nix run .#notes-test
 nix run .#roam-test
 nix run .#roam-backlink-test
 nix run .#org-test
+nix run .#org-modern-test
 nix run .#org-planning-test
 nix run .#org-timestamp-test
 nix run .#org-source-edit-test
@@ -545,7 +552,7 @@ Pass `check`, `compile`, `compilation`, `terminal`, `server`, `boot`, `completio
 `daily-workflows`, `direnv`, `llm-keybinding`, `llm-backend`, `llm-workflow`, `llm-tools`, `claude-code`, `lisp-eval`, `orderless-completion`, `snippets`, `lsp-snippets`,
 `lsp-project`, `real-lsp`, `tree-sitter`, `dap`, `project-navigation`, `project-outline`, `persistence`, `bookmarks`,
 `vundo`, `electric-editing`, `ui-parity`, `business-visual`, `cursor-state`, `snipe`, `avy`,
-`documents`, `notmuch`, `interactive`, `structural`, `roam`, `roam-backlinks`, or
-`notes` to run only that gate.
+`documents`, `notmuch`, `interactive`, `structural`, `roam`, `roam-backlinks`,
+`org-modern`, or `notes` to run only that gate.
 `LEM_YATH_TEST_HOST` and `LEM_YATH_REMOTE_ROOT` override the SSH host and remote
 cache directory.

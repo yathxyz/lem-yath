@@ -1956,6 +1956,24 @@ cycles the first global overview/contents/all implementation. Changes clear
 folds, arbitrary movement into hidden text reveals it, and hidden rows are not
 written to disk.
 
+`src/org/modern.lisp` reproduces the active `org-modern-mode` hook as a
+display-only terminal projection. Folded and expanded headings use distinct,
+depth-sensitive one-cell symbols; TODO keywords, priorities, and terminal tag
+groups receive compact labels; bullets, checkboxes, tables, horizontal rules,
+block/keyword markers, timestamps, and internal/radio targets receive the
+corresponding modern glyphs. The transformer skips source-block bodies,
+composes with the existing indent-guide/Dirvish display path, and preserves
+the source character count and terminal-cell width on every row. It therefore
+does not modify the buffer, saves, undo history, or source-relative cursor
+geometry. `M-x org-modern-mode` provides the buffer-local toggle.
+
+`scripts/org-modern-test.sh` verifies all replacement glyph widths, logical
+and real-ncurses projection, source-block exclusions, fold-state updates,
+toggle and reload ownership, exact cursor position, and unchanged buffer and
+disk bytes. Graphical font scaling, pixel spacing, fringe markers, dynamic
+progress-cookie sizing, and exact `org-modern-agenda` decoration are outside
+the ncurses/custom-agenda presentation model.
+
 The bounded editing layer supplies visible-row `j/k`, GNU-style
 `gh/gl/gk/gj/gH` element-tree navigation, Org-aware `o/O`, heading insertion,
 and context-dispatched Meta editing. `M-h/l` changes one heading or list item
@@ -2218,10 +2236,11 @@ consecutive-command timestamp-range creation, warning and delay cookies,
 region-wide planning, and wider timestamp variants; prefixed live Babel-session
 source editing, variables/sessions and the rest of Babel's
 backend/header/result matrix; in-editor LaTeX preview, non-HTML export
-backends, and exact `ox-html` output; org-modern
-glyph composition in the terminal; and an initial Org
-scratch buffer remain explicit gaps. Agenda scanning and capture/roam workflows
-are separate bounded implementations rather than services of this major mode.
+backends, and exact `ox-html` output remain explicit gaps. The display-only
+org-modern terminal subset and initial empty Org scratch are implemented;
+exact graphical org-modern and agenda presentation remain limitations. Agenda
+scanning and capture/roam workflows are separate bounded implementations
+rather than services of this major mode.
 
 ### Native agenda summary — `lem-yath/src/apps/agenda.lisp`
 

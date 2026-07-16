@@ -138,6 +138,9 @@ case "$test_name" in
   org)
     remote_command='nix run path:$PWD#org-test'
     ;;
+  org-modern)
+    remote_command='nix run path:$PWD#org-modern-test --option max-jobs 2'
+    ;;
   org-nodes-sync)
     remote_command='nix run path:$PWD#org-nodes-sync-test --option max-jobs 2'
     ;;

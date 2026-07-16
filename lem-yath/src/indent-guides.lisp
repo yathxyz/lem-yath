@@ -179,6 +179,7 @@
 
 (defun transform-lem-yath-display-line (buffer point logical-line window)
   "Apply every lem-yath display-only line transformation in load order."
+  (transform-org-modern-display-line buffer point logical-line window)
   (transform-indent-guide-line buffer point logical-line window)
   (transform-dirvish-display-line buffer point logical-line window))
 

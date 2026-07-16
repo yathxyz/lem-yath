@@ -695,6 +695,9 @@
             roam-test = mkTestApp "lem-yath-roam-test" "roam-test.sh";
             roam-backlink-test = mkTestAppWithLem lemYath "lem-yath-roam-backlink-test" "roam-backlink-test.sh";
             org-test = mkTestAppWithLem lemYath "lem-yath-org-test" "org-test.sh";
+            org-modern-test =
+              mkTestAppWithLem lemYath "lem-yath-org-modern-test"
+                "org-modern-test.sh";
             org-planning-test = mkTestAppWithLem lemYath "lem-yath-org-planning-test" "org-planning-test.sh";
             org-timestamp-test = mkTestAppWithLem lemYath "lem-yath-org-timestamp-test" "org-timestamp-test.sh";
             org-source-edit-test =
@@ -804,6 +807,7 @@
             roam = mkCheck "roam" "roam-test.sh";
             roam-backlinks = mkCheckWithLem lemYath "roam-backlinks" "roam-backlink-test.sh";
             org = mkCheckWithLem lemYath "org" "org-test.sh";
+            org-modern = mkCheckWithLem lemYath "org-modern" "org-modern-test.sh";
             org-planning = mkCheckWithLem lemYath "org-planning" "org-planning-test.sh";
             org-timestamp = mkCheckWithLem lemYath "org-timestamp" "org-timestamp-test.sh";
             org-source-edit = mkCheckWithLem lemYath "org-source-edit" "org-source-edit-test.sh";
