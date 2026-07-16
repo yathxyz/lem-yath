@@ -212,35 +212,113 @@
               (insert-string planning (concatenate 'string indent body))))
         t))))
 
+(defun org-planning-region-active-p ()
+  "Whether planning should map over an active Vi or Emacs-state region."
+  (or (lem-vi-mode/visual:visual-p)
+      (and (lem-yath-emacs-state-p)
+           (buffer-mark-p (current-buffer))
+           (not (point= (buffer-mark (current-buffer))
+                        (current-point))))))
+
+(defun org-planning-emacs-region-linewise-p ()
+  "Whether Emacs state was entered from a linewise Visual selection."
+  (and (lem-yath-emacs-state-p)
+       (typep (buffer-value (current-buffer) :lem-yath-emacs-return-state)
+              'lem-vi-mode/visual::visual-line)))
+
+(defun org-planning-region-range ()
+  "Return copied, ordered bounds for the active planning region."
+  (when (org-planning-region-active-p)
+    (multiple-value-bind (first second)
+        (if (lem-vi-mode/visual:visual-p)
+            (values-list (lem-vi-mode/visual:visual-range))
+            (values (buffer-mark (current-buffer)) (current-point)))
+      (let ((start (copy-point first :temporary))
+            (end (copy-point second :temporary)))
+        (when (point< end start)
+          (rotatef start end))
+        ;; C-z preserves the raw Visual endpoints while changing state.  Recover
+        ;; the linewise geometry recorded as its return state for C-u commands.
+        (when (org-planning-emacs-region-linewise-p)
+          (line-start start)
+          (line-start end)
+          (or (line-offset end 1 0)
+              (line-end end)))
+        (values start end)))))
+
+(defun org-planning-region-headings ()
+  "Return headline starts contained in the active planning region.
+
+Like GNU Org's active-region mapping, a headline is selected only when its
+line start lies within the region.  Body text before the next headline may
+therefore begin a useful region, while a partially selected initial headline
+is not changed."
+  (multiple-value-bind (start end) (org-planning-region-range)
+    (when (and start end (point< start end))
+      (with-point ((point start))
+        (line-start point)
+        (loop :with headings := nil
+              :while (point< point end)
+              :when (and (not (point< point start))
+                         (org-heading-line-p point))
+                :do (push (copy-point point :right-inserting) headings)
+              :unless (line-offset point 1)
+                :do (return (nreverse headings))
+              :finally (return (nreverse headings)))))))
+
+(defun org-planning-target-headings ()
+  "Return the active region's headlines, or the headline at point."
+  (if (org-planning-region-active-p)
+      (org-planning-region-headings)
+      (alexandria:when-let ((heading (org-current-heading-point)))
+        (list heading))))
+
 (defun org-change-planning (kind label argument)
-  (alexandria:if-let ((heading (org-current-heading-point)))
-    (let ((magnitude (org-prefix-magnitude argument)))
-      (cond
-        ((buffer-read-only-p (current-buffer))
-         (editor-error "Org buffer is read-only"))
-        ((= magnitude 4)
-         (org-clear-folds (current-buffer))
-         (message (if (org-remove-planning-field heading kind)
-                      "Removed ~a" "No ~a to remove")
-                  kind))
-        ((= magnitude 16)
-         (alexandria:when-let ((timestamp
-                                (org-update-planning-delay
-                                 heading kind label)))
-           (org-clear-folds (current-buffer))
-           (message "~a" timestamp)))
-        (t
-         (let ((date (org-read-planning-date heading kind label)))
-           (org-clear-folds (current-buffer))
-           (message "~a" (org-set-planning-field heading kind date))))))
-    (message "No Org heading at point")))
+  (when (buffer-read-only-p (current-buffer))
+    (editor-error "Org buffer is read-only"))
+  (let ((headings (org-planning-target-headings))
+        (magnitude (org-prefix-magnitude argument))
+        (changed-p nil)
+        (last-message nil))
+    (unless headings
+      (message (if (org-planning-region-active-p)
+                   "No Org headings in selection"
+                   "No Org heading at point"))
+      (return-from org-change-planning nil))
+    ;; GNU Org maps the complete operation over each region headline.  In
+    ;; particular, ordinary and double-prefix forms prompt once per headline;
+    ;; cancelling a later prompt retains any earlier edits.
+    (unwind-protect
+         (dolist (heading headings)
+           (cond
+             ((= magnitude 4)
+              (if (org-remove-planning-field heading kind)
+                  (progn
+                    (setf changed-p t)
+                    (setf last-message (format nil "Removed ~a" kind)))
+                  (setf last-message (format nil "No ~a to remove" kind))))
+             ((= magnitude 16)
+              (alexandria:when-let ((timestamp
+                                     (org-update-planning-delay
+                                      heading kind label)))
+                (setf changed-p t
+                      last-message timestamp)))
+             (t
+              (let ((date (org-read-planning-date heading kind label)))
+                (setf changed-p t
+                      last-message
+                      (org-set-planning-field heading kind date))))))
+      (when changed-p
+        (org-clear-folds (current-buffer))))
+    (when last-message
+      (message "~a" last-message))))
 
 (define-command lem-yath-org-schedule (argument) (:universal-nil)
-  "Set this heading's SCHEDULED date; a prefix removes it."
+  "Set SCHEDULED on this heading or every headline in an active region."
   (org-change-planning "SCHEDULED" "Schedule" argument))
 
 (define-command lem-yath-org-deadline (argument) (:universal-nil)
-  "Set this heading's DEADLINE date; a prefix removes it."
+  "Set DEADLINE on this heading or every headline in an active region."
   (org-change-planning "DEADLINE" "Deadline" argument))
 
 ;;; --- ordinary timestamps ------------------------------------------------

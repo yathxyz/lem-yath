@@ -18,6 +18,27 @@
 (define-command lem-yath-test-org-planning-goto-planned () ()
   (move-point (current-point) (org-planning-test-find "Planned task")))
 
+(define-command lem-yath-test-org-planning-goto-region () ()
+  (move-point (current-point) (org-planning-test-find "Region parent"))
+  (message "Planning region ready"))
+
+(define-command lem-yath-test-org-planning-region-targets () ()
+  (with-open-file
+      (stream (merge-pathnames "region-targets"
+                               (org-planning-test-directory))
+              :direction :output
+              :if-does-not-exist :create
+              :if-exists :supersede)
+    (format stream "visual=~a line=~a~%"
+            (lem-vi-mode/visual:visual-p)
+            (lem-vi-mode/visual:visual-line-p))
+    (dolist (heading (org-planning-target-headings))
+      (format stream "~a~%" (line-string heading))))
+  (message "Planning region targets recorded"))
+
+(define-key *global-keymap* "F8"
+  'lem-yath-test-org-planning-region-targets)
+
 (defun org-planning-test-directory ()
   (uiop:ensure-directory-pathname
    (or (uiop:getenv "LEM_YATH_ORG_PLANNING_SNAPSHOTS")

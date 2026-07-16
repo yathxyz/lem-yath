@@ -18,6 +18,12 @@ cat >"$fixture" <<'EOF'
 Body remains here.
 * TODO Cookie task
 DEADLINE: <2026-07-22 Wed +1w -3d> SCHEDULED: <2026-07-17 Fri +1w --2d>
+* TODO Region parent
+Region parent body.
+** TODO Region child
+Region child body.
+* TODO Region sibling
+* TODO Region outside
 EOF
 cp "$fixture" "$root/original.org"
 
@@ -273,6 +279,133 @@ else
   fail read-only 'read-only planning did not fail closed'
 fi
 mx lem-yath-test-org-planning-writable
+
+# GNU Org maps planning commands over every headline in an active region,
+# including nested headings, and prompts independently for each one.
+tmux_cmd send-keys -t "$session" C-z
+sleep 0.3
+mx lem-yath-test-org-planning-goto-region
+lem_wait_for "$session" 'Planning region ready' 10 >/dev/null ||
+  fail region-ready 'region setup command did not settle'
+tmux_cmd send-keys -t "$session" Escape
+sleep 0.3
+tmux_cmd send-keys -t "$session" -l v
+tmux_cmd send-keys -t "$session" -l a
+tmux_cmd send-keys -t "$session" -l R
+tmux_cmd send-keys -t "$session" F8
+lem_wait_for "$session" 'Planning region targets recorded' 10 >/dev/null ||
+  fail region-targets-probe 'Visual target probe did not run'
+if grep -q '^visual=T line=T$' "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/region-targets" &&
+   grep -q '^\* TODO Region parent$' "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/region-targets" &&
+   grep -q '^\*\* TODO Region child$' "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/region-targets" &&
+   ! grep -q 'Region sibling' "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/region-targets"; then
+  pass region-targets 'the Evil-Org subtree object exposes parent and child headlines'
+else
+  fail region-targets \
+    "Visual subtree targets diverged: $(tr '\n' '|' < "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/region-targets" 2>/dev/null)"
+fi
+tmux_cmd send-keys -t "$session" C-c C-s
+if lem_wait_for "$session" 'Schedule date \[2026-07-15\]' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l '+1d'
+  tmux_cmd send-keys -t "$session" Enter
+else
+  fail region-first-prompt 'Visual scheduling did not prompt for the parent'
+fi
+if lem_wait_for "$session" 'Schedule date \[2026-07-15\]' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l '+2d'
+  tmux_cmd send-keys -t "$session" Enter
+else
+  fail region-second-prompt 'Visual scheduling did not prompt for the child'
+fi
+sleep 0.5
+if snapshot 13 &&
+   grep -A1 '^\* TODO Region parent$' "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/state-13" |
+     grep -q '^SCHEDULED: <2026-07-16 Thu>$' &&
+   grep -A1 '^\*\* TODO Region child$' "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/state-13" |
+     grep -q '^SCHEDULED: <2026-07-17 Fri>$' &&
+   ! grep -A1 '^\* TODO Region sibling$' "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/state-13" |
+     grep -q 'SCHEDULED:' &&
+   ! grep -A1 '^\* TODO Region outside$' "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/state-13" |
+     grep -q 'SCHEDULED:'; then
+  pass region-schedule 'Visual scheduling prompts for selected nested headlines only'
+else
+  fail region-schedule \
+    "Visual scheduling changed the wrong headline set; targets: $(tr '\n' '|' < "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/region-targets" 2>/dev/null)"
+fi
+
+# Pinned GNU Org keeps earlier region edits when a later per-heading prompt is
+# cancelled.  Exercise that non-atomic edge explicitly rather than promising a
+# stronger cancellation boundary than the source configuration provides.
+tmux_cmd send-keys -t "$session" Escape
+sleep 0.3
+mx lem-yath-test-org-planning-goto-region
+lem_wait_for "$session" 'Planning region ready' 10 >/dev/null ||
+  fail region-cancel-ready 'cancellation region setup did not settle'
+tmux_cmd send-keys -t "$session" Escape
+sleep 0.3
+tmux_cmd send-keys -t "$session" -l v
+tmux_cmd send-keys -t "$session" -l a
+tmux_cmd send-keys -t "$session" -l R
+tmux_cmd send-keys -t "$session" C-c C-d
+if lem_wait_for "$session" 'Deadline date \[2026-07-15\]' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l '+4d'
+  tmux_cmd send-keys -t "$session" Enter
+else
+  fail region-cancel-first 'Visual deadline did not prompt for the parent'
+fi
+if lem_wait_for "$session" 'Deadline date \[2026-07-15\]' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" C-g
+else
+  fail region-cancel-second 'Visual deadline did not reach the child prompt'
+fi
+sleep 0.5
+if snapshot 14 &&
+   grep -A1 '^\* TODO Region parent$' "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/state-14" |
+     grep -q '^DEADLINE: <2026-07-19 Sun> SCHEDULED:' &&
+   ! grep -A1 '^\*\* TODO Region child$' "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/state-14" |
+     grep -q 'DEADLINE:' &&
+   ! grep -A1 '^\* TODO Region sibling$' "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/state-14" |
+     grep -q 'DEADLINE:'; then
+  pass region-cancel 'later cancellation retains only the earlier GNU Org edit'
+else
+  fail region-cancel 'region cancellation did not match GNU Org partial progress'
+fi
+
+# A Visual subtree object supplies an exact parent/child region.  One prefix
+# removes scheduling from both headings and one Emacs-state undo restores the
+# complete multi-heading command.
+tmux_cmd send-keys -t "$session" Escape
+sleep 0.3
+mx lem-yath-test-org-planning-goto-region
+lem_wait_for "$session" 'Planning region ready' 10 >/dev/null ||
+  fail region-remove-ready 'removal region setup did not settle'
+tmux_cmd send-keys -t "$session" Escape
+sleep 0.3
+tmux_cmd send-keys -t "$session" -l v
+tmux_cmd send-keys -t "$session" -l a
+tmux_cmd send-keys -t "$session" -l R
+tmux_cmd send-keys -t "$session" C-z
+sleep 0.3
+tmux_cmd send-keys -t "$session" C-u C-c C-s
+sleep 0.5
+if snapshot 15 &&
+   ! grep -A2 '^\* TODO Region parent$' "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/state-15" |
+     grep -q 'SCHEDULED:' &&
+   ! grep -A2 '^\*\* TODO Region child$' "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/state-15" |
+     grep -q 'SCHEDULED:'; then
+  pass region-remove 'a prefix removes the field across a Visual subtree only'
+else
+  fail region-remove 'Visual prefix removal escaped or missed the subtree'
+fi
+tmux_cmd send-keys -t "$session" C-/
+sleep 0.5
+if snapshot 16 &&
+   cmp -s "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/state-16" \
+          "$LEM_YATH_ORG_PLANNING_SNAPSHOTS/state-14"; then
+  pass region-undo 'one undo restores every field removed by the region command'
+else
+  fail region-undo 'region planning split into multiple undo steps'
+fi
 
 if [ "$failed" -ne 0 ]; then
   exit 1

@@ -2476,6 +2476,12 @@ matching the active Emacs terminal profile.")
 (configure-org-vi-common-map *org-vi-normal-keymap*)
 (configure-org-vi-common-map *org-vi-visual-keymap*)
 
+;; Keep the selection live while the planning commands collect region
+;; headlines.  Falling through to the major-mode map first exits Visual state
+;; and would reduce the operation to the headline under the moving endpoint.
+(define-key *org-vi-visual-keymap* "C-c C-s" 'lem-yath-org-schedule)
+(define-key *org-vi-visual-keymap* "C-c C-d" 'lem-yath-org-deadline)
+
 (define-command lem-yath-org-visual-structural-unsupported () ()
   (message "Region-aware Evil-Org Meta editing is not implemented; selection unchanged"))
 

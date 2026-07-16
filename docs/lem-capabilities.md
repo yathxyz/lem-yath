@@ -2147,10 +2147,14 @@ warning/delay syntax. One universal prefix removes only the requested field
 prompt for `Warn starting from` or `Delay until`, compute the absolute day
 distance from the planning date, and replace the final `-Nd`/`--Nd` cookie
 without changing an earlier repeater. A missing field refuses the double-prefix
-operation before prompting. Ordinary Org-buffer edits remain modified but
-unsaved, matching the current Emacs configuration; agenda mutations retain
-their separate immediate-save policy. Cancellation and read-only refusal occur
-before mutation, and each successful command is one undo step.
+operation before prompting. In a Visual region the same commands map over all
+selected headlines, including nested ones, and prompt once per headline. Like
+pinned GNU Org, cancelling a later prompt retains earlier region edits; `C-z`
+keeps the linewise selection active in Emacs state for `C-u` removal. Ordinary
+Org-buffer edits remain modified but unsaved, matching the current Emacs
+configuration; agenda mutations retain their separate immediate-save policy.
+Read-only refusal occurs before prompting, and each completed command is one
+undo step.
 `scripts/org-planning-test.sh` drives both physical chords through the packaged
 ncurses editor and proves those boundaries.
 
@@ -2285,7 +2289,7 @@ footnote, nested-special, and malformed text-object contexts; structural
 repairs beyond the bounded `d/x/X/< />` behavior; region-aware Meta operations,
 generic Org-element movement, unimplemented list/table Shift-control contexts,
 and richer list/table semantics; mouse calendar selection and Org's exact live
-echo overlay, region-wide planning, and wider timestamp variants; prefixed live Babel-session
+echo overlay and wider timestamp variants; prefixed live Babel-session
 source editing, variables/sessions and the rest of Babel's
 backend/header/result matrix; in-editor LaTeX preview, non-HTML export
 backends, and exact `ox-html` output remain explicit gaps. The display-only

@@ -308,7 +308,10 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   `C-c C-d`. The prompt shows the existing date or today as its default,
   accepts absolute dates plus signed day/week/month/year offsets, and uses a
   doubled sign relative to the existing field. A universal prefix removes the
-  selected field; edits remain unsaved like the current Emacs Org-buffer path
+  selected field. An active Visual region applies the command to every nested
+  headline with one prompt per headline; `C-z` preserves that region for
+  universal-prefix removal. Edits remain unsaved like the current Emacs
+  Org-buffer path
 - ordinary active and inactive Org timestamps on GNU Org's `C-c .` and
   `C-c !`. They insert or replace ISO/relative dates, optional times and time
   ranges, preserve repeater/warning suffixes, accept a universal prefix to
