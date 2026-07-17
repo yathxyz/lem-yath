@@ -725,6 +725,11 @@ beginning/end commands, and
 `M-n`/`M-p` navigate without cycling. Moving off the preselection draws a
 source-aligned, display-only preview: source text, point, modified tick, dirty
 state, and retained undo history remain unchanged.
+`C-a`/`Home` and `C-e`/`End` first restore the configured preselection at the
+completion range boundary, then retain ordinary source-line motion when
+already at that boundary. `C-v`/`PageDown` and `M-v`/`PageUp` move forward or
+backward by the configured ten-row Corfu page without wrapping; the shared
+prompt path uses Vertico's configured twenty-row page.
 Typing, deletion, movement, ordinary Space, and electric/Paredit commands commit
 that semantic selection before the command runs.  `M-Space` instead clears the
 selection, inserts one separator, and refilters without accepting it.
@@ -762,8 +767,9 @@ verified for deterministic ASCII word boundaries rather than every Emacs syntax
 table.
 
 `scripts/auto-completion-test.sh` drives all of this through the ncurses editor,
-including the delay boundary, 12-candidate scrolling through a 10-row window,
-both non-cycling edges, rapid-typing debounce, provider exclusivity, singleton
+including the delay boundary, physical prompt-boundary and ten-row page
+controls, 12-candidate scrolling through a 10-row window, both non-cycling
+edges, rapid-typing debounce, provider exclusivity, singleton
 acceptance, whole-token and file-prefix replacement, non-mutating preview and
 commit-before-command behavior (including movement and Paredit), exact-valid and
 zero-match prompt rows, staged Escape and one-stage `C-g`, a real normal-state

@@ -258,6 +258,37 @@ else
   fail corfu-preview-setup "could not prepare the Corfu preview scenario"
 fi
 
+# Corfu remaps ordinary line motion while its popup is active.  A selected
+# row returns to the configured preselection at the completion boundary; a
+# second boundary motion retains the source buffer's ordinary line command.
+if setup_corfu_popup; then
+  lem_keys "$session" C-n C-a
+  sleep 0.2
+  control_a=$(report_corfu_state || true)
+  lem_keys "$session" C-e
+  sleep 0.2
+  control_e=$(report_corfu_state || true)
+  lem_keys "$session" C-n Home
+  sleep 0.2
+  home_state=$(report_corfu_state || true)
+  lem_keys "$session" End
+  sleep 0.2
+  end_state=$(report_corfu_state || true)
+  if grep -q 'context=T buffer="pre".*point=1 .*preselect="previewAlpha" selected="previewAlpha" preview=NIL' <<<"$control_a" &&
+     grep -q 'context=T buffer="pre".*point=4 .*preselect="previewAlpha" selected="previewAlpha" preview=NIL' <<<"$control_e" &&
+     grep -q 'context=T buffer="pre".*point=1 .*preselect="previewAlpha" selected="previewAlpha" preview=NIL' <<<"$home_state" &&
+     grep -q 'context=T buffer="pre".*point=4 .*preselect="previewAlpha" selected="previewAlpha" preview=NIL' <<<"$end_state"; then
+    pass corfu-prompt-boundaries \
+      'C-a/Home and C-e/End matched Corfu prompt-row boundary motion'
+  else
+    fail corfu-prompt-boundaries \
+      "boundary motion diverged: $control_a / $control_e / $home_state / $end_state"
+  fi
+else
+  fail corfu-prompt-boundaries-setup \
+    "could not prepare the Corfu boundary scenario"
+fi
+
 # Prompt completion reserves C-u for a universal argument, but an ordinary
 # Corfu popup must still fall through to the configured Evil insert action.
 if setup_corfu_popup; then
@@ -708,6 +739,29 @@ if run_fixture_command lem-yath-test-auto-dabbrev-setup &&
     pass same-mode-scope "a candidate from another major mode was excluded"
   else
     fail same-mode-scope "dabbrev leaked a different-major-mode candidate"
+  fi
+
+  lem_keys "$session" C-v
+  sleep 0.2
+  control_v=$(report_corfu_state || true)
+  lem_keys "$session" M-v
+  sleep 0.2
+  meta_v=$(report_corfu_state || true)
+  lem_keys "$session" PageDown
+  sleep 0.2
+  page_down=$(report_corfu_state || true)
+  lem_keys "$session" PageUp
+  sleep 0.2
+  page_up=$(report_corfu_state || true)
+  if grep -q 'selected="alphaCandidate10" preview=T' <<<"$control_v" &&
+     grep -q 'selected="alphaCandidate00" preview=NIL' <<<"$meta_v" &&
+     grep -q 'selected="alphaCandidate10" preview=T' <<<"$page_down" &&
+     grep -q 'selected="alphaCandidate00" preview=NIL' <<<"$page_up"; then
+    pass corfu-page-navigation \
+      'C-v/PageDown and M-v/PageUp moved by the configured ten-row page'
+  else
+    fail corfu-page-navigation \
+      "page motion diverged: $control_v / $meta_v / $page_down / $page_up"
   fi
 
   before=$(grep -c '^FOCUS ' "$LEM_YATH_AUTO_COMPLETION_REPORT" 2>/dev/null || true)

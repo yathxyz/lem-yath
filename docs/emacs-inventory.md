@@ -364,7 +364,9 @@ another candidate displays a
 non-mutating preview which is committed before subsequent ordinary input.
 `TAB` completes, `RET` inserts the selection, `Escape` resets selection/input in
 stages, `C-g` quits while retaining typed input, and `M-Space` inserts the
-Orderless separator without accepting a preview.
+Orderless separator without accepting a preview. The default Corfu map also
+uses `C-a`/`Home` and `C-e`/`End` for prompt-boundary motion, and moves by its
+ten-row page with `C-v`/`PageDown` and `M-v`/`PageUp`.
 
 An isolated live-Vertico probe confirmed that opening candidates does not insert
 a common prefix or accept a singleton. `TAB` inserts the focused candidate while

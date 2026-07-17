@@ -64,6 +64,10 @@
     lem-yath-corfu-previous
     lem-yath-corfu-first
     lem-yath-corfu-last
+    lem-yath-corfu-prompt-beginning
+    lem-yath-corfu-prompt-end
+    lem-yath-corfu-scroll-forward
+    lem-yath-corfu-scroll-backward
     lem-yath-corfu-meta-next
     lem-yath-corfu-meta-previous
     lem-yath-corfu-reset
@@ -932,6 +936,89 @@ directory already exists."
 (define-command lem-yath-corfu-last () ()
   (auto-completion-navigate :last))
 
+(defun auto-completion-live-range-point (context accessor)
+  "Return CONTEXT's live completion boundary selected by ACCESSOR."
+  (alexandria:when-let ((point (funcall accessor context)))
+    (when (and (alive-point-p point)
+               (eq (point-buffer point) (current-buffer)))
+      point)))
+
+(defun auto-completion-return-to-boundary (boundary line-command)
+  "Implement Corfu's prompt-row BOUNDARY motion.
+
+The first invocation returns from a selected candidate to BOUNDARY.  At an
+already active prompt boundary, LINE-COMMAND retains ordinary line motion."
+  (alexandria:if-let ((session
+                       (and (auto-completion-session-owned-p)
+                            (auto-completion-live-session))))
+    (let* ((context (auto-completion-session-context session))
+           (point (funcall boundary context))
+           (selected (auto-completion-session-selected-item session))
+           (preselect (auto-completion-session-preselect-item session)))
+      (if (and point
+               (eq selected preselect)
+               (point= point (current-point)))
+          (call-command line-command nil)
+          (progn
+            (auto-completion-reset-selection session)
+            (when point
+              (move-point (current-point) point)))))
+    (call-command line-command nil)))
+
+(define-command lem-yath-corfu-prompt-beginning () ()
+  "Return to Corfu's input start, then retain ordinary line-beginning motion."
+  (if (auto-completion-prompt-active-p)
+      (lem-yath-prompt-beginning-of-line)
+      (auto-completion-return-to-boundary
+       (lambda (context)
+         (auto-completion-live-range-point
+          context #'lem/completion-mode::context-range-start))
+       'move-to-beginning-of-line)))
+
+(define-command lem-yath-corfu-prompt-end () ()
+  "Return to Corfu's input end, then retain ordinary line-end motion."
+  (if (auto-completion-prompt-active-p)
+      (call-command 'move-to-end-of-line nil)
+      (auto-completion-return-to-boundary
+       (lambda (context)
+         (auto-completion-live-range-point
+          context #'lem/completion-mode::context-range-end))
+       'move-to-end-of-line)))
+
+(defun auto-completion-scroll-page (direction)
+  "Move one completion popup page in DIRECTION without cycling."
+  (alexandria:when-let*
+      ((context lem/completion-mode::*completion-context*)
+       (popup (lem/completion-mode::context-popup-menu context)))
+    (let ((count (or (lem/completion-mode::context-max-display-items context)
+                     20)))
+      (lem/completion-mode::clear-context-focus-message context)
+      (ecase direction
+        (:forward
+         (dotimes (index count)
+           (declare (ignore index))
+           (when (and (lem/popup-menu:popup-menu-focus-active-p popup)
+                      (lem/completion-mode::popup-focus-at-last-item-p popup))
+             (return))
+           (popup-menu-down popup)))
+        (:backward
+         (if (not (lem/popup-menu:popup-menu-focus-active-p popup))
+             (popup-menu-first popup)
+             (dotimes (index count)
+               (declare (ignore index))
+               (when (lem/completion-mode::popup-focus-at-first-item-p popup)
+                 (return))
+               (popup-menu-up popup)))))
+      (lem/completion-mode::call-focus-action))))
+
+(define-command lem-yath-corfu-scroll-forward () ()
+  "Move forward by one configured Corfu or Vertico page."
+  (auto-completion-scroll-page :forward))
+
+(define-command lem-yath-corfu-scroll-backward () ()
+  "Move backward by one configured Corfu or Vertico page."
+  (auto-completion-scroll-page :backward))
+
 (define-command lem-yath-corfu-meta-next () ()
   (if (completion-prompt-active-p)
       (lem-yath-completion-next-history)
@@ -1136,6 +1223,22 @@ directory already exists."
   "M-n" 'lem-yath-corfu-meta-next)
 (define-key lem/completion-mode::*completion-mode-keymap*
   "M-p" 'lem-yath-corfu-meta-previous)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "C-a" 'lem-yath-corfu-prompt-beginning)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "Home" 'lem-yath-corfu-prompt-beginning)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "C-e" 'lem-yath-corfu-prompt-end)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "End" 'lem-yath-corfu-prompt-end)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "C-v" 'lem-yath-corfu-scroll-forward)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "PageDown" 'lem-yath-corfu-scroll-forward)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "M-v" 'lem-yath-corfu-scroll-backward)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "PageUp" 'lem-yath-corfu-scroll-backward)
 (define-key lem/completion-mode::*completion-mode-keymap*
   'move-to-end-of-buffer 'lem-yath-corfu-last)
 (define-key lem/completion-mode::*completion-mode-keymap*

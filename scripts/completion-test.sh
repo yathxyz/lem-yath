@@ -505,6 +505,43 @@ if start_session "$s1"; then
   fi
   close_prompt "$s1"
 
+  if open_query "$s1" '' &&
+     lem_wait_for "$s1" 'Command:' 10 >/dev/null; then
+    state=$(capture_prompt_state "$s1" || true)
+    page_initial=$(sed -n 's/^FOCUS=\([^ ]*\).*/\1/p' <<<"$state")
+    lem_keys "$s1" C-v
+    sleep 0.3
+    state=$(capture_prompt_state "$s1" || true)
+    control_v_focus=$(sed -n 's/^FOCUS=\([^ ]*\).*/\1/p' <<<"$state")
+    lem_keys "$s1" M-v
+    sleep 0.3
+    state=$(capture_prompt_state "$s1" || true)
+    meta_v_focus=$(sed -n 's/^FOCUS=\([^ ]*\).*/\1/p' <<<"$state")
+    lem_keys "$s1" PageDown
+    sleep 0.3
+    state=$(capture_prompt_state "$s1" || true)
+    page_down_focus=$(sed -n 's/^FOCUS=\([^ ]*\).*/\1/p' <<<"$state")
+    lem_keys "$s1" PageUp
+    sleep 0.3
+    state=$(capture_prompt_state "$s1" || true)
+    page_up_focus=$(sed -n 's/^FOCUS=\([^ ]*\).*/\1/p' <<<"$state")
+    if [ -n "$page_initial" ] &&
+       [ "$control_v_focus" != "$page_initial" ] &&
+       [ "$meta_v_focus" = "$page_initial" ] &&
+       [ "$page_down_focus" = "$control_v_focus" ] &&
+       [ "$page_up_focus" = "$page_initial" ]; then
+      pass page-navigation \
+        'C-v/PageDown and M-v/PageUp moved and restored one Vertico page'
+    else
+      fail page-navigation \
+        "prompt page motion diverged: $page_initial / $control_v_focus / $meta_v_focus / $page_down_focus / $page_up_focus" \
+        "$s1"
+    fi
+  else
+    fail page-navigation 'could not open the full M-x candidate set' "$s1"
+  fi
+  close_prompt "$s1"
+
   if open_query "$s1" 'lem-yath-roam-' &&
      lem_wait_for "$s1" 'lem-yath-roam-(find|insert|random)' 10 >/dev/null; then
     lem_keys "$s1" C-n
