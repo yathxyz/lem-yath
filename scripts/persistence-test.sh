@@ -27,6 +27,7 @@ export LEM_YATH_PERSISTENCE_SOURCE="$here/lem-yath/src/persistence.lisp"
 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$WORKDIR" \
   "$LEM_HOME" "$(dirname "$LEM_YATH_PERSISTENCE_STATE_FILE")" \
   "$LEM_YATH_PERSISTENCE_TEST_ROOT/auto" \
+  "$LEM_YATH_PERSISTENCE_TEST_ROOT/directory-auto" \
   "$LEM_YATH_PERSISTENCE_TEST_ROOT/directory-place" \
   "$LEM_YATH_PERSISTENCE_TEST_ROOT/concurrent"
 chmod 700 "$(dirname "$LEM_YATH_PERSISTENCE_STATE_FILE")"
@@ -1133,6 +1134,57 @@ else
     'fresh directory visit did not restore the selected entry' "$directory_reader"
 fi
 lem_stop "$directory_reader"
+
+# ---------------------------------------------------------------------------
+# Global auto-revert refreshes Dired-style buffers without losing live state.
+
+export LEM_YATH_PERSISTENCE_STATE_FILE="$root/directory-auto/persistence.sexp"
+rm -rf -- "$(dirname "$LEM_YATH_PERSISTENCE_STATE_FILE")"
+mkdir -m 700 -p "$(dirname "$LEM_YATH_PERSISTENCE_STATE_FILE")"
+printf 'MARKED\n' >"$LEM_YATH_PERSISTENCE_TEST_ROOT/directory-auto/marked.txt"
+printf 'SELECTED\n' >"$LEM_YATH_PERSISTENCE_TEST_ROOT/directory-auto/selected.txt"
+
+directory_auto="lem-yath-persistence-directory-auto-$id"
+if start_phase "$directory_auto" directory-auto &&
+   invoke_mx "$directory_auto" \
+     lem-yath-test-persistence-directory-auto-setup \
+     '^DIRECTORY-AUTO-SETUP ' &&
+   grep -q \
+     '^DIRECTORY-AUTO-SETUP selected=selected\.txt column=5 marked=yes modified=yes adapter=yes$' \
+     "$LEM_YATH_PERSISTENCE_TEST_REPORT"; then
+  pass directory-auto-setup \
+    'the directory adapter tracked a selected row and a live mark'
+else
+  fail directory-auto-setup \
+    'the Dired-style auto-revert adapter did not initialize' "$directory_auto"
+fi
+
+# Create immediately: stock SB-POSIX exposes only whole-second directory mtimes,
+# so this also exercises the direct-entry-name fallback. Capture-pane only
+# observes output and cannot trigger the pre-command scanner.
+printf 'ADDED\n' >"$LEM_YATH_PERSISTENCE_TEST_ROOT/directory-auto/added.txt"
+if lem_wait_for "$directory_auto" 'added\.txt' "$((WAIT_TIMEOUT + 5))" \
+     >/dev/null; then
+  pass directory-periodic-no-input \
+    'an external create appeared in the idle directory buffer'
+else
+  fail directory-periodic-no-input \
+    'the idle directory listing did not observe an external create' \
+    "$directory_auto"
+fi
+
+if invoke_mx "$directory_auto" \
+     lem-yath-test-persistence-directory-auto-report '^DIRECTORY-AUTO ' &&
+   grep -q \
+     '^DIRECTORY-AUTO selected=selected\.txt column=5 marked=yes added=yes modified=no$' \
+     "$LEM_YATH_PERSISTENCE_TEST_REPORT"; then
+  pass directory-refresh-state \
+    'refresh preserved exact selection, column, and surviving marks'
+else
+  fail directory-refresh-state \
+    'directory refresh lost Dired-style live state' "$directory_auto"
+fi
+lem_stop "$directory_auto"
 
 # ---------------------------------------------------------------------------
 # Prompt allowlisting, live caps, kill-ring physical MRU, and file security.

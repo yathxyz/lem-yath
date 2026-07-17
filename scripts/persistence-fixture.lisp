@@ -142,14 +142,55 @@
          (lem/directory-mode/internal:get-pathname (current-point))))
     (file-namestring pathname)))
 
+(defun persistence-test-directory-marked-p (buffer basename)
+  (some (lambda (pathname)
+          (string= basename (file-namestring pathname)))
+        (lem/directory-mode/internal:marked-files (buffer-point buffer))))
+
+(define-command lem-yath-test-persistence-directory-auto-setup () ()
+  (let* ((directory (persistence-test-path "directory-auto/"))
+         (buffer (lem/directory-mode/internal:directory-buffer directory)))
+    (switch-to-buffer buffer)
+    (let ((marked (persistence-test-directory-row buffer "marked.txt"))
+          (selected (persistence-test-directory-row buffer "selected.txt")))
+      (unless (and marked selected)
+        (editor-error "Directory auto-revert fixture rows are missing"))
+      (lem/directory-mode/internal:set-mark marked t)
+      (move-point (current-point) selected)
+      (move-to-column (current-point) 5)
+      (persistence-test-log
+       "DIRECTORY-AUTO-SETUP selected=~a column=~d marked=~a modified=~a adapter=~a"
+       (persistence-test-current-directory-entry)
+       (point-column (current-point))
+       (persistence-test-yes-no
+        (persistence-test-directory-marked-p buffer "marked.txt"))
+       (persistence-test-yes-no (buffer-modified-p buffer))
+       (persistence-test-yes-no
+        (eq (buffer-value buffer 'lem-yath-auto-revert-function)
+            'directory-auto-revert))))))
+
+(define-command lem-yath-test-persistence-directory-auto-report () ()
+  (let ((buffer (current-buffer)))
+    (persistence-test-log
+     "DIRECTORY-AUTO selected=~a column=~d marked=~a added=~a modified=~a"
+     (or (persistence-test-current-directory-entry) "none")
+     (point-column (current-point))
+     (persistence-test-yes-no
+      (persistence-test-directory-marked-p buffer "marked.txt"))
+     (persistence-test-yes-no
+      (persistence-test-directory-row buffer "added.txt"))
+     (persistence-test-yes-no (buffer-modified-p buffer)))))
+
 (define-command lem-yath-test-persistence-directory-write () ()
   (let* ((directory (persistence-test-path "directory-place/"))
-         (buffer (lem/directory-mode/internal:directory-buffer directory))
-         (row (persistence-test-directory-row buffer "selected.txt")))
-    (unless row
-      (editor-error "Directory place fixture row is missing"))
+         (buffer (lem/directory-mode/internal:directory-buffer directory)))
     (switch-to-buffer buffer)
-    (move-point (current-point) row)
+    ;; The production switch hook may refresh an existing directory buffer;
+    ;; acquire a row marker only after that refresh has replaced its lines.
+    (alexandria:if-let
+        (row (persistence-test-directory-row buffer "selected.txt"))
+      (move-point (current-point) row)
+      (editor-error "Directory place fixture row is missing"))
     (record-buffer-place buffer)
     (flush-persistence-state)
     (let* ((path (persistent-buffer-path buffer))

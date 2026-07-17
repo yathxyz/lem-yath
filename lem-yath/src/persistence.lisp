@@ -919,6 +919,119 @@
         (sb-posix:stat-mtime stat)
         (sb-posix:stat-ctime stat)))
 
+(defun stat-optional-value (stat accessor-name)
+  (let ((accessor (find-symbol accessor-name :sb-posix)))
+    (and accessor (fboundp accessor) (funcall accessor stat))))
+
+(defun directory-entry-name-signature (directory)
+  "Hash direct entry names when SB-POSIX cannot expose subsecond mtimes."
+  (let ((hash #xcbf29ce484222325)
+        (count 0))
+    (dolist (pathname (list-directory directory :sort-method :pathname))
+      (incf count)
+      (loop :for character :across (uiop:native-namestring pathname)
+            :do (setf hash
+                      (logand #xffffffffffffffff
+                              (* (logxor hash (char-code character))
+                                 #x100000001b3))))
+      (setf hash
+            (logand #xffffffffffffffff
+                    (* (logxor hash #xff) #x100000001b3))))
+    (list count hash)))
+
+(defun directory-state-signature (buffer)
+  "Return Dired-style identity and modification time for BUFFER's directory."
+  (handler-case
+      (let* ((directory
+               (uiop:ensure-directory-pathname (buffer-directory buffer)))
+             (stat (sb-posix:stat (uiop:native-namestring directory)))
+             (mtime-nsec
+               (stat-optional-value stat "STAT-MTIME-NSEC")))
+        (if (= (logand (sb-posix:stat-mode stat) sb-posix:s-ifmt)
+               sb-posix:s-ifdir)
+            (list :present
+                  (sb-posix:stat-dev stat)
+                  (sb-posix:stat-ino stat)
+                  (sb-posix:stat-mtime stat)
+                  mtime-nsec
+                  ;; Emacs receives a high-resolution file attribute.  Stock
+                  ;; SB-POSIX exposes only whole seconds, so hash names there
+                  ;; to avoid missing a create/delete in the baseline second.
+                  (unless mtime-nsec
+                    (directory-entry-name-signature directory)))
+            (list :missing)))
+    (sb-posix:syscall-error () (list :unreadable))
+    (error () (list :unreadable))))
+
+(defun directory-buffer-path-keys (buffer &key marked-only)
+  (with-point ((row (buffer-start-point buffer)))
+    (loop
+      :for pathname = (lem/directory-mode/internal:get-pathname row)
+      :when (and pathname
+                 (or (not marked-only)
+                     (lem/directory-mode/internal:get-mark row)))
+        :collect (uiop:native-namestring pathname)
+      :while (line-offset row 1))))
+
+(defun restore-directory-marks (buffer marked-paths)
+  (let ((marked (make-hash-table :test #'equal)))
+    (dolist (path marked-paths)
+      (setf (gethash path marked) t))
+    (with-point ((row (buffer-start-point buffer)))
+      (loop
+        (alexandria:when-let
+            ((pathname (lem/directory-mode/internal:get-pathname row)))
+          (when (gethash (uiop:native-namestring pathname) marked)
+            (lem/directory-mode/internal:set-mark row t)))
+        (unless (line-offset row 1)
+          (return))))))
+
+(defun directory-auto-revert-stale-p (buffer)
+  (let ((baseline
+          (buffer-value buffer 'lem-yath-directory-state-signature))
+        (current (directory-state-signature buffer)))
+    (and (eq (first baseline) :present)
+         (eq (first current) :present)
+         (not (equal baseline current)))))
+
+(defun directory-auto-revert (buffer)
+  "Refresh BUFFER while retaining Dired's selected entry, column, and marks."
+  (let* ((point (buffer-point buffer))
+         (selected
+           (alexandria:when-let
+               ((pathname
+                  (lem/directory-mode/internal:get-pathname point)))
+             (uiop:native-namestring pathname)))
+         (column (point-column point))
+         (marked (directory-buffer-path-keys buffer :marked-only t))
+         (sort-method
+           (or (buffer-value buffer :sort-method)
+               lem/directory-mode/internal:*default-sort-method*)))
+    (lem/directory-mode/internal:update-buffer
+     buffer :sort-method sort-method)
+    (restore-directory-marks buffer marked)
+    (when (and selected (restore-directory-place buffer selected))
+      (move-to-column (buffer-point buffer) column))
+    (buffer-unmark buffer)
+    (setf (buffer-value buffer 'lem-yath-directory-state-signature)
+          (directory-state-signature buffer))))
+
+(defun initialize-directory-auto-revert-adapter (buffer)
+  "Install the local-directory adapter without replacing another adapter."
+  (when (and (mode-active-p buffer 'lem/directory-mode/mode:directory-mode)
+             (null (buffer-value
+                    buffer 'lem-yath-auto-revert-stale-function))
+             (null (buffer-value
+                    buffer 'lem-yath-auto-revert-function)))
+    ;; Refresh once on installation so an existing buffer and its baseline
+    ;; cannot disagree after a configuration reload.
+    (setf (buffer-value buffer 'lem-yath-auto-revert-stale-function)
+          'directory-auto-revert-stale-p
+          (buffer-value buffer 'lem-yath-auto-revert-function)
+          'directory-auto-revert
+          (buffer-value buffer 'lem-yath-auto-revert-ignore-modified-p) t)
+    (directory-auto-revert buffer)))
+
 (defun bounded-stream-content-digest (stream byte-limit)
   "Hash no more than BYTE-LIMIT bytes and report whether EOF was stable."
   (let ((hash #xcbf29ce484222325)
@@ -1156,7 +1269,9 @@ the visited file byte-for-byte."
   (let ((stale (buffer-value buffer 'lem-yath-auto-revert-stale-function))
         (revert (buffer-value buffer 'lem-yath-auto-revert-function)))
     (when (and stale revert
-               (not (buffer-modified-p buffer))
+               (or (not (buffer-modified-p buffer))
+                   (buffer-value
+                    buffer 'lem-yath-auto-revert-ignore-modified-p))
                (funcall stale buffer))
       (with-current-buffer buffer
         (funcall revert buffer))
@@ -1166,6 +1281,7 @@ the visited file byte-for-byte."
   "Refresh one clean stale BUFFER, never replacing dirty or missing content."
   (when (or (deleted-buffer-p buffer) (buffer-temporary-p buffer))
     (return-from safe-auto-revert-check-buffer :skipped))
+  (initialize-directory-auto-revert-adapter buffer)
   (initialize-buffer-file-state buffer)
   (unless (buffer-filename buffer)
     (return-from safe-auto-revert-check-buffer

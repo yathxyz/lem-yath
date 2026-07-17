@@ -1113,17 +1113,18 @@ It provides:
   memory-only.
 
 `scripts/persistence-test.sh` drives real ncurses processes and external file
-writers. Its 48 checks include a no-input periodic refresh and a fresh-process
-selected-directory-entry round trip, and cover clean and
+writers. Its 51 checks include no-input periodic file and directory refresh,
+retention of a directory selection, cursor column, and marks, and a fresh-process
+selected-directory-entry round trip. They cover clean and
 dirty reload behavior,
 deletion/recreation, stale-save refusal including a same-metadata 17 MiB file,
 first-save and late-target Save As races, modified quit refusal, fresh-process
 restoration and Vi paste behavior, prompt privacy/live caps, bounded malformed
 and dispatch/evaluation-free state reads, private file modes, failure-safe
-commands/exit, reload-safe timer ownership, and stale concurrent writers. Filesystem
-notifications and registered adapters for Lem's
-non-file list buffers remain gaps; the module exposes a buffer-local stale/revert
-adapter contract for later use.
+commands/exit, reload-safe timer ownership, and stale concurrent writers.
+Filesystem notifications and adapters for Lem's other non-file list buffers
+remain gaps; the module exposes a buffer-local stale/revert adapter contract for
+those modes.
 
 ### Retained undo tree and Vundo — `patches/lem-undo-tree.patch`, `patches/lem-undo-state-point.patch`, `lem-yath/src/vundo.lisp` (verified approximation)
 

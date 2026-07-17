@@ -229,8 +229,9 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   direnv-allow`; `.envrc` files are never allowed automatically. `$WORKDIR`
   remains a separately initialized, startup-cached notes root in
   `src/workspace.lisp` (`scripts/direnv-test.sh`).
-- five-second global refresh of externally changed clean files without requiring
-  a keypress, stale-save protection
+- five-second global refresh of externally changed clean files and directory
+  listings without requiring a keypress; directory refresh retains the exact
+  selected entry, cursor column, and surviving marks. Stale-save protection
   for dirty buffers, and private cross-process persistence for file positions,
   selected directory entries,
   bookmarks, reviewed non-secret prompt histories, Vi-aware kills, and separate
