@@ -642,6 +642,19 @@ if invoke_mx lem-yath-workspace-symbol 'LSP Symbols:'; then
       "$LEM_YATH_LSP_TEST_REPORT" | tail -1)
     if lem_wait_for "$session" 'PeerAlphaSymbol' 10 >/dev/null &&
        lem_wait_for "$session" 'peer-symbols.fixture' 10 >/dev/null; then
+      scored_screen=$(lem_capture "$session")
+      peer_score_line=$(grep -n 'PeerAlphaSymbol' <<<"$scored_screen" |
+        head -1 | cut -d: -f1)
+      primary_score_line=$(grep -nE '(^|[[:space:]])AlphaSymbol[[:space:]]' \
+        <<<"$scored_screen" | head -1 | cut -d: -f1)
+      if [ -n "$peer_score_line" ] && [ -n "$primary_score_line" ] &&
+         [ "$peer_score_line" -lt "$primary_score_line" ]; then
+        pass workspace-symbol-score-sort \
+          'a delayed high-score result moves ahead of earlier zero-score rows'
+      else
+        fail workspace-symbol-score-sort \
+          'Consult-Eglot score order was not visible in the completion rows'
+      fi
       b_alpha_after_multi=$(grep -E '^WORKSPACE_SYMBOL[[:space:]]' \
         "$LEM_YATH_LSP_TEST_EVENTS" 2>/dev/null |
         grep -F "root_path=${LEM_YATH_LSP_TEST_PROJECT_B%/}" |

@@ -101,6 +101,7 @@
   :command (lsp-project-test-server-command
             "--symbol-prefix" "Peer"
             "--symbol-file" "peer-symbols.fixture"
+            "--symbol-score-base" "100"
             "--workspace-symbol-delay-ms" "700"
             "--workspace-symbol-failure-query" "never")
   :connection-mode :stdio)

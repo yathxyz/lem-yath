@@ -37,6 +37,7 @@
               ./patches/lem-lsp-buffer-lifecycle-hooks.patch
               ./patches/lem-lsp-pipe-stdio.patch
               ./patches/lem-lsp-json-type-error.patch
+              ./patches/lem-lsp-workspace-symbol-score.patch
               ./patches/lem-grep-writeback.patch
               ./patches/lem-peek-source-timer.patch
               ./patches/lem-safe-revert.patch

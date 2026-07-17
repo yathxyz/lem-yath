@@ -307,11 +307,12 @@ narrow-prefix binding (`src/workspace-symbol.lisp`,
 
 Lem mirrors the pinned multi-server source: an invoking project fans each
 debounced query out to all of its ready symbol providers, appends responses as
-they arrive, isolates server failures, and cancels every outstanding request
-when input changes. Servers belonging to another open project are excluded,
-and each result retains its source workspace for position conversion, preview,
-and the final jump. Outside a recognized project, both implementations fall
-back to the invoking language server.
+they arrive, re-sorts the cumulative list by the optional numeric server score
+(missing scores are zero), isolates server failures, and cancels every
+outstanding request when input changes. Servers belonging to another open
+project are excluded, and each result retains its source workspace for position
+conversion, preview, and the final jump. Outside a recognized project, both
+implementations fall back to the invoking language server.
 
 The Lem port now covers the effective directory-local `consult-outline` path
 without reproducing the Emacs cold-start defect: the exact declaration is read

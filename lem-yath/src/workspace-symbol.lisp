@@ -46,7 +46,8 @@
   detail
   filter-text
   group
-  narrow-key)
+  narrow-key
+  (score 0))
 
 (defstruct workspace-symbol-pending-request
   workspace
@@ -115,6 +116,12 @@
         (lsp:base-symbol-information-kind symbol)))
       "Symbol"))
 
+(defun workspace-symbol-score (symbol)
+  "Return Consult-Eglot's optional server ranking score for SYMBOL."
+  (handler-case
+      (or (lsp:base-symbol-information-score symbol) 0)
+    (unbound-slot () 0)))
+
 (defun workspace-symbol-kind-narrow-key (symbol)
   "Return Consult-Eglot's narrowing key for SYMBOL's LSP kind."
   (let ((kind (lsp:base-symbol-information-kind symbol)))
@@ -165,7 +172,8 @@
      :filter-text (format nil "~a ~a~@[ ~a~]~@[ ~a~]"
                           name kind container location)
      :group kind
-     :narrow-key (workspace-symbol-kind-narrow-key symbol))))
+     :narrow-key (workspace-symbol-kind-narrow-key symbol)
+     :score (workspace-symbol-score symbol))))
 
 (defun workspace-symbol-response-candidates
     (workspace response &optional project-root)
@@ -422,8 +430,11 @@
                     (workspace-symbol-session-requests session)
                     :test #'eq)
             (workspace-symbol-session-candidates session)
-            (append (workspace-symbol-session-candidates session)
-                    candidates))
+            (stable-sort
+             (append (workspace-symbol-session-candidates session)
+                     candidates)
+             #'>
+             :key #'workspace-symbol-candidate-score))
       (workspace-symbol-refresh-completion session))))
 
 (defun workspace-symbol-finish-error

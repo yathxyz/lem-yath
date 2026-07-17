@@ -31,6 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--publish-diagnostics", action="store_true")
     parser.add_argument("--symbol-prefix")
     parser.add_argument("--symbol-file", default="symbols.fixture")
+    parser.add_argument("--symbol-score-base", type=float)
     parser.add_argument("--workspace-symbol-delay-ms", type=int, default=0)
     parser.add_argument("--workspace-symbol-failure-query", default="explode")
     parser.add_argument("--tcp-port", type=int)
@@ -92,6 +93,7 @@ class FixtureServer:
         publish_diagnostics: bool,
         symbol_prefix: str | None,
         symbol_file: str,
+        symbol_score_base: float | None,
         workspace_symbol_delay_ms: int,
         workspace_symbol_failure_query: str,
     ) -> None:
@@ -102,6 +104,7 @@ class FixtureServer:
         self.publish_diagnostics = publish_diagnostics
         self.symbol_prefix = symbol_prefix
         self.symbol_file = symbol_file
+        self.symbol_score_base = symbol_score_base
         self.workspace_symbol_delay = workspace_symbol_delay_ms / 1000
         self.workspace_symbol_delay_ms = workspace_symbol_delay_ms
         self.workspace_symbol_failure_query = workspace_symbol_failure_query
@@ -150,7 +153,7 @@ class FixtureServer:
         else:
             query_prefix = "Alpha"
         prefix = f"{self.symbol_prefix or ''}{query_prefix}"
-        return [
+        symbols = [
             {
                 "name": f"{prefix}Symbol",
                 "kind": 12,
@@ -176,6 +179,10 @@ class FixtureServer:
                 "containerName": container,
             },
         ]
+        if self.symbol_score_base is not None:
+            for offset, symbol in enumerate(symbols):
+                symbol["score"] = self.symbol_score_base - offset
+        return symbols
 
     def handle(self, message: dict[str, Any]) -> dict[str, Any] | None:
         method = message.get("method")
@@ -320,6 +327,7 @@ def main() -> int:
         args.publish_diagnostics,
         args.symbol_prefix,
         args.symbol_file,
+        args.symbol_score_base,
         args.workspace_symbol_delay_ms,
         args.workspace_symbol_failure_query,
     )
