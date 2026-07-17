@@ -1950,7 +1950,11 @@ motions or operators. It also repairs pinned Legit's hunk path: `s` and `u`
 construct a complete Git patch in a private temporary file, apply only the
 selected hunk to the index, and refresh status after success. Validating the
 transient commit buffer no longer asks whether to save or kill it after Git has
-already committed.
+already committed. Interactive rebase uses Git's dedicated sequence-editor
+override, embeds and refreshes its signal-waiting helper independently of
+frontend reader features, and resolves `bash` through the packaged runtime
+`PATH`; this avoids both recursive `lemclient` launches and `/bin/bash`
+assumptions.
 
 ### Porcelain coverage vs magit — `legit/README.md`
 Covered: status, stage/unstage (file + hunk), discard, commit, branches (checkout/
@@ -1966,8 +1970,11 @@ The installed-wrapper acceptance gate in `scripts/vcs-test.sh` uses real
 keystrokes and three isolated repositories. It verifies selective hunk
 stage/unstage, tracked and untracked file staging, commit editing and
 validation, push to a bare remote, branch creation and checkout, stash
-push/pop, and a pull from an independent peer clone. Interactive rebase is
-currently source-verified rather than exercised by that gate.
+push/pop, and a pull from an independent peer clone. It then selects an older
+status commit, opens a real two-row interactive-rebase todo with `r i`, moves
+to the second row with `n`, saves `f` as `fixup`, continues with `C-c C-c`, and
+verifies the rewritten two-commit history, clean index/worktree, retained
+commit subject, and retained content from both commits.
 
 ### Configured VCS dispatch and time travel — `lem-yath/src/git.lisp`, `src/apps/timemachine.lisp`
 
