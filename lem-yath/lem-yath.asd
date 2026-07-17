@@ -87,6 +87,7 @@
                (:file "centered-view")
                (:file "window-history")
                (:file "ui")
+               (:file "llm-visuals")
                (:module "apps"
                 :components ((:file "documents")
                              (:file "agenda-undo")

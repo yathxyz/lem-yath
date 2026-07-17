@@ -42,7 +42,9 @@
 
 (define-minor-mode lem-yath-llm-conversation-mode
     (:name "LLM"
-     :keymap *lem-yath-llm-conversation-mode-keymap*)
+     :keymap *lem-yath-llm-conversation-mode-keymap*
+     :enable-hook 'llm-role-visuals-mode-enable
+     :disable-hook 'llm-role-visuals-mode-disable)
   "Insert streamed LLM replies into this buffer at the send position.")
 
 (defparameter *llm-max-tool-rounds* 4)
@@ -78,10 +80,28 @@
   insertion-point
   tool-context
   tools-p
+  visual-state
   (aborted-p nil)
   (lock (bt2:make-lock :name "lem-yath/llm-request")))
 
 (defparameter *llm-active-request-key* 'lem-yath-llm-active-request)
+
+(defvar *llm-request-start-functions* nil
+  "Editor-thread callbacks run after a request acquires its buffer.")
+
+(defvar *llm-request-insert-functions* nil
+  "Editor-thread callbacks run after one request chunk is inserted.")
+
+(defvar *llm-request-finish-functions* nil
+  "Editor-thread callbacks run before a request releases display state.")
+
+(defun llm-run-request-functions (functions request &rest arguments)
+  "Run request lifecycle FUNCTIONS without letting presentation break I/O."
+  (dolist (function functions)
+    (handler-case
+        (apply function request arguments)
+      (error (condition)
+        (log:error "LLM request callback ~S failed: ~A" function condition)))))
 
 (defun llm-api-key ()
   (or (uiop:getenv "OPENROUTER_API_KEY")
@@ -490,8 +510,13 @@ SHARED-HEADING is rendered only for the traditional shared transcript."
       (progn
         (llm-response-insert-now (llm-request-insertion-point request)
                                  string :assistant-p t)
+        (llm-run-request-functions
+         *llm-request-insert-functions* request string)
         (redraw-display))
-      (llm-buffer-append-now (llm-request-buffer request) string)))
+      (progn
+        (llm-buffer-append-now (llm-request-buffer request) string)
+        (llm-run-request-functions
+         *llm-request-insert-functions* request string))))
 
 (defun llm-request-release-insertion-point (request)
   (alexandria:when-let ((point (llm-request-insertion-point request)))
@@ -507,6 +532,8 @@ SHARED-HEADING is rendered only for the traditional shared transcript."
                       final-text)))
         (when (plusp (length text))
           (llm-request-insert-now request text))))
+    (llm-run-request-functions
+     *llm-request-finish-functions* request :complete)
     (when (llm-request-conversation-p request)
       (llm-response-close-now (llm-request-insertion-point request))
       (setf (llm-request-insertion-point request) nil)
@@ -549,6 +576,7 @@ SHARED-HEADING is rendered only for the traditional shared transcript."
                                    :tool-context tool-context
                                    :tools-p tools-p)))
     (setf (buffer-value buffer *llm-active-request-key*) request)
+    (llm-run-request-functions *llm-request-start-functions* request)
     request))
 
 (defun llm-request-aborted-now-p (request)
@@ -609,6 +637,8 @@ SHARED-HEADING is rendered only for the traditional shared transcript."
 (defun llm-kill-buffer-hook (buffer)
   "Abort asynchronous state owned by BUFFER before BUFFER is deleted."
   (alexandria:when-let ((request (llm-active-request buffer)))
+    (llm-run-request-functions
+     *llm-request-finish-functions* request :kill)
     (setf (buffer-value buffer *llm-active-request-key*) nil)
     (alexandria:when-let ((process (llm-request-abort-now request)))
       (ignore-errors (uiop:terminate-process process :urgent t))

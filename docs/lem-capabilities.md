@@ -3324,7 +3324,13 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   and the Claude Code, Codex, and Grok CLIs; read-only conversation buffers use
   that transcript without source mutation. Killing a request-bearing buffer
   aborts its tools/process, releases its response marker, and rejects late
-  callbacks.
+  callbacks. `src/llm-visuals.lisp` projects the same semantic properties into
+  fixed-width User/Assistant turn badges, an active-role modeline badge, and a
+  terminal-safe assistant tint. A synthetic cursor highlights the exact
+  mid-line insertion cell or renders `▌` at end of line while streaming, then
+  disappears on completion, abort, mode disable, or buffer deletion. These
+  overlays never enter conversation reconstruction; role presentation toggles
+  with `M-x lem-yath-llm-role-visuals-toggle` and composes with other gutters.
   The CLI adapters consume their native
   JSON event streams, retain a separate session ID for each backend for the
   lifetime of that buffer, render text/thinking/tool/command/file activity,

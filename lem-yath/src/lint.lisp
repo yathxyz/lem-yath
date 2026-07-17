@@ -1175,18 +1175,19 @@
 
 (defun lint-modeline-status (window)
   (let ((buffer (window-buffer window)))
-    (when (or (mode-active-p buffer 'lem-yath-lint-mode)
-              (buffer-value buffer 'lem-yath-lint-was-enabled))
-      (case (buffer-value buffer 'lem-yath-lint-status)
-        (:running " FlyC*")
-        (:pending " FlyC-")
-        (:failed " FlyC!")
-        (:no-checker " FlyC?")
-        (:finished
-         (format nil " FlyC:~d/~d"
-                 (lint-diagnostic-count buffer :error)
-                 (lint-diagnostic-count buffer :warning)))
-        (t " FlyC")))))
+    (if (or (mode-active-p buffer 'lem-yath-lint-mode)
+            (buffer-value buffer 'lem-yath-lint-was-enabled))
+        (case (buffer-value buffer 'lem-yath-lint-status)
+          (:running " FlyC*")
+          (:pending " FlyC-")
+          (:failed " FlyC!")
+          (:no-checker " FlyC?")
+          (:finished
+           (format nil " FlyC:~d/~d"
+                   (lint-diagnostic-count buffer :error)
+                   (lint-diagnostic-count buffer :warning)))
+          (t " FlyC"))
+        "")))
 
 (define-command lem-yath-lint-buffer () ()
   "Run the configured non-LSP checker immediately."

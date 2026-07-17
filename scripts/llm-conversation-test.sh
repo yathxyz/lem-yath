@@ -74,6 +74,18 @@ send_conversation() {
   send_key Enter
 }
 
+run_mx() {
+  local command=$1
+  send_key C-g
+  send_key Escape
+  lem_wait_for "$session" 'NORMAL' 5 >/dev/null || return 1
+  send_key M-x
+  lem_wait_for "$session" 'Command:' 10 >/dev/null || return 1
+  tmux_cmd send-keys -t "$session" -l "$command"
+  sleep 0.5
+  send_key Enter
+}
+
 hex_text() {
   printf '%s' "$1" | od -An -tx1 | tr -d ' \n' | tr '[:lower:]' '[:upper:]'
 }
@@ -90,7 +102,7 @@ pass boot 'configured Lem loaded the isolated conversation fixture'
 
 send_key F3
 if ! wait_report_count \
-  '^PASS STATIC buffer=\*scratch\* org=yes conversation=yes key=LEM-YATH-LLM-SEND shared=no$' 1; then
+  '^PASS STATIC buffer=\*scratch\* org=yes conversation=yes key=LEM-YATH-LLM-SEND shared=no gutter=none$' 1; then
   die startup-mode 'startup scratch, mode, or C-c Return binding differed'
 fi
 pass startup-mode 'startup is an Org LLM conversation with C-c Return'
@@ -125,10 +137,13 @@ if ! grep -qE \
   "$LEM_YATH_LLM_CONVERSATION_REPORT"; then
   die typed-conversation 'typed contents or bounded Org-to-Markdown prompt differed'
 fi
+if ! lem_wait_for "$session" '▌' "$WAIT_TIMEOUT" >/dev/null; then
+  die stream-cursor 'the explicit end-of-line streaming cursor was absent'
+fi
 if ! wait_report_count '^DONE label=typed$' 1; then
   die typed-conversation 'the typed response did not finish before buffer reuse'
 fi
-pass typed-conversation 'typed roles and Org-to-Markdown prompt reached the backend intact'
+pass typed-conversation 'typed roles, prompt transform, and stream cursor reached the UI intact'
 
 send_key F9
 if ! wait_report_count '^SETUP-REGION mark=yes$' 1; then
@@ -157,6 +172,20 @@ send_conversation
 if ! wait_report_count '^FIRST label=origin$' 1; then
   die origin-send 'C-c Return did not stream the first local chunk'
 fi
+if ! lem_wait_for "$session" '\[User\]' "$WAIT_TIMEOUT" >/dev/null ||
+   ! lem_wait_for "$session" '\[Assistant\]' "$WAIT_TIMEOUT" >/dev/null ||
+   ! lem_wait_for "$session" 'Editing User' "$WAIT_TIMEOUT" >/dev/null; then
+  die role-visuals 'streaming role badges, cursor, or active-role status was absent'
+fi
+if lem_capture "$session" | grep -q 'Editing User NIL'; then
+  die role-visuals 'an absent global status leaked a literal NIL into the modeline'
+fi
+send_key F10
+if ! wait_report_count \
+  '^VISUAL enabled=yes active=yes state=live cursor=1 active-overlay=1 static=0 user-gutter="\[User\]      " assistant-gutter="\[Assistant\] " composed="T\[User\]      " modeline=" User " callbacks=1,1,1 ' 1; then
+  die role-visuals 'render state or cooperative gutter composition differed'
+fi
+pass role-visuals 'display-only badges, status, tint, and cursor track the live request'
 send_key F4
 if ! wait_report_count '^EDIT label=origin active=yes$' 1; then
   die tracked-marker 'the interleaved user edit did not occur during the request'
@@ -172,6 +201,39 @@ if ! grep -qE \
   die tracked-marker 'response placement, roles, prompt, or buffer isolation differed'
 fi
 pass tracked-marker 'streaming stayed at the send marker across an interleaved edit'
+
+if lem_capture "$session" | grep -q '▌'; then
+  die visual-cleanup 'the synthetic cursor remained after request completion'
+fi
+send_key F10
+if ! wait_report_count \
+  '^VISUAL enabled=yes active=no state=none cursor=0 active-overlay=0 static=1 user-gutter="            " assistant-gutter="\[Assistant\] " composed="T            " modeline=" User " callbacks=1,1,1 ' 1; then
+  die visual-cleanup 'completed request visuals were not frozen and released'
+fi
+if ! run_mx lem-yath-llm-role-visuals-toggle ||
+   ! lem_wait_for "$session" 'LLM role visuals disabled' 5 >/dev/null; then
+  die visual-toggle 'M-x could not disable role visuals'
+fi
+send_key F10
+if ! wait_report_count \
+  '^VISUAL enabled=no active=no state=none cursor=0 active-overlay=0 static=0 user-gutter="none" assistant-gutter="none" composed="T" modeline="" callbacks=1,1,1 ' 1; then
+  die visual-toggle 'disabling visuals left display state behind'
+fi
+if ! run_mx lem-yath-llm-role-visuals-toggle ||
+   ! lem_wait_for "$session" 'LLM role visuals enabled' 5 >/dev/null; then
+  die visual-toggle 'M-x could not restore role visuals'
+fi
+send_key F10
+if ! wait_report_count \
+  '^VISUAL enabled=yes active=no state=none cursor=0 active-overlay=0 static=1 .*callbacks=1,1,1 ' 1; then
+  die visual-toggle 'restoring visuals duplicated callbacks or lost assistant tint'
+fi
+send_key F1
+if ! wait_report_count \
+  "^MODE-CYCLE disabled-overlays=0 enabled-overlays=1 text-hex=$origin_expected$" 1; then
+  die visual-toggle 'conversation-mode disable/enable did not cleanly rebuild visuals'
+fi
+pass visual-cleanup 'completion, toggle, mode cycle, and reload-owned callbacks are clean'
 
 send_key F5
 if ! wait_report_count '^SETUP label=abort ' 1; then
@@ -199,6 +261,11 @@ for _ in $(seq 1 $((WAIT_TIMEOUT * 4))); do
 done
 if [ "$abort_ok" -ne 1 ]; then
   die local-abort 'abort did not finalize and release the local request'
+fi
+send_key F10
+if ! wait_report_count \
+  '^VISUAL enabled=yes active=no state=none cursor=0 active-overlay=0 static=1 ' 1; then
+  die local-abort 'abort left the streaming cursor or active tint alive'
 fi
 pass local-abort 'SPC g a finalized the originating conversation safely'
 
@@ -240,7 +307,7 @@ kill_ok=0
 for _ in $(seq 1 $((WAIT_TIMEOUT * 4))); do
   send_key F11
   if grep -qE \
-    '^KILL buffer=deleted active=no aborted=yes insertion=none process=nil saved-process=dead shared-active=no hook=1$' \
+    '^KILL buffer=deleted active=no aborted=yes insertion=none process=nil saved-process=dead shared-active=no visual=none hook=1$' \
     "$LEM_YATH_LLM_CONVERSATION_REPORT"; then
     kill_ok=1
     break

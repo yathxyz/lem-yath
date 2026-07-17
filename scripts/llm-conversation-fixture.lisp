@@ -38,6 +38,51 @@
       (when (search-forward point text)
         (text-property-at point 'lem-yath-llm-role -1)))))
 
+(defun llm-conversation-test-overlay-count (buffer key &optional value value-p)
+  (if (llm-buffer-live-p buffer)
+      (count-if
+       (lambda (overlay)
+         (let ((found (overlay-get overlay key)))
+           (if value-p (eq found value) (not (null found)))))
+       (lem-core::buffer-overlays buffer))
+      0))
+
+(defun llm-conversation-test-gutter-at (buffer text)
+  (when (llm-buffer-live-p buffer)
+    (with-point ((point (buffer-start-point buffer)))
+      (when (search-forward point text)
+        (character-offset point (- (length text)))
+        (line-start point)
+        (alexandria:when-let ((content
+                               (llm-role-gutter-content buffer point)))
+          (lem/buffer/line:content-string content))))))
+
+(define-minor-mode llm-conversation-test-gutter-mode
+    (:name nil :hide-from-modeline t)
+  "Test-only gutter provider used to prove cooperative composition.")
+
+(defmethod compute-left-display-area-content
+    ((mode llm-conversation-test-gutter-mode) buffer point)
+  (declare (ignore mode buffer point))
+  (join-left-display-content
+   (lem/buffer/line:make-content :string "T")
+   (call-next-method)))
+
+(defun llm-conversation-test-composed-gutter-at (buffer text)
+  (when (llm-buffer-live-p buffer)
+    (with-current-buffer buffer
+      (llm-conversation-test-gutter-mode t)
+      (unwind-protect
+           (with-point ((point (buffer-start-point buffer)))
+             (when (search-forward point text)
+               (character-offset point (- (length text)))
+               (line-start point)
+               (lem/buffer/line:content-string
+                (compute-left-display-area-content
+                 (lem-core::get-active-modes-class-instance buffer)
+                 buffer point))))
+        (llm-conversation-test-gutter-mode nil)))))
+
 (defun llm-conversation-test-log-messages (messages)
   (llm-conversation-test-log "MESSAGES count=~d roles=~{~a~^,~}"
                              (length messages)
@@ -112,7 +157,9 @@
           (send-event
            (lambda ()
              (llm-conversation-test-log "FIRST label=~a" label)))
-          (sleep 0.6)
+          (sleep (if (member label '("origin" "typed") :test #'string=)
+                     2
+                     0.6))
           (llm-request-append request "beta")
           (llm-request-finish request (string #\Newline))
           (send-event
@@ -209,15 +256,18 @@
                   (mode-active-p buffer 'org-mode)
                   (llm-conversation-buffer-p buffer)
                   (eq command 'lem-yath-llm-send)
-                  (null (get-buffer *llm-buffer-name*)))))
+                  (null (get-buffer *llm-buffer-name*))))
+         (gutter
+           (llm-role-gutter-content buffer (buffer-start-point buffer))))
     (llm-conversation-test-log
-     "~a STATIC buffer=~a org=~a conversation=~a key=~a shared=~a"
+     "~a STATIC buffer=~a org=~a conversation=~a key=~a shared=~a gutter=~a"
      (if ok "PASS" "FAIL")
      (buffer-name buffer)
      (if (mode-active-p buffer 'org-mode) "yes" "no")
      (if (llm-conversation-buffer-p buffer) "yes" "no")
      (or command "none")
-     (if (get-buffer *llm-buffer-name*) "yes" "no"))))
+     (if (get-buffer *llm-buffer-name*) "yes" "no")
+     (if gutter "reserved" "none"))))
 
 (define-command lem-yath-test-llm-conversation-record () ()
   (let* ((scratch (get-buffer "*scratch*"))
@@ -238,6 +288,53 @@
      (or (llm-conversation-test-role-at scratch "alpha") "none")
      (or (llm-conversation-test-role-at scratch "* ") "none"))))
 
+(define-command lem-yath-test-llm-conversation-visuals-record () ()
+  (let* ((buffer (current-buffer))
+         (request (llm-active-request buffer))
+         (state (and request (llm-request-visual-state request))))
+    (llm-conversation-test-log
+     (concatenate
+      'string
+      "VISUAL enabled=~a active=~a state=~a cursor=~d active-overlay=~d "
+      "static=~d user-gutter=~s assistant-gutter=~s composed=~s "
+      "modeline=~s callbacks=~d,~d,~d text-hex=~a")
+     (if *llm-role-visuals-enabled* "yes" "no")
+     (if request "yes" "no")
+     (if state "live" "none")
+     (llm-conversation-test-overlay-count
+      buffer :lem-yath-llm-stream-cursor)
+     (llm-conversation-test-overlay-count
+      buffer :lem-yath-llm-role-visual :active-assistant t)
+     (llm-conversation-test-overlay-count
+      buffer :lem-yath-llm-role-visual :assistant t)
+     (or (llm-conversation-test-gutter-at buffer "hello") "none")
+     (or (llm-conversation-test-gutter-at buffer "alpha") "none")
+     (or (llm-conversation-test-composed-gutter-at buffer "hello") "none")
+     (multiple-value-bind (text attribute)
+         (llm-role-modeline-role (current-window))
+       (declare (ignore attribute))
+       text)
+     (count 'llm-visual-request-start *llm-request-start-functions*)
+     (count 'llm-visual-request-insert *llm-request-insert-functions*)
+     (count 'llm-visual-request-finish *llm-request-finish-functions*)
+     (llm-conversation-test-hex
+      (llm-conversation-test-buffer-text buffer)))))
+
+(define-command lem-yath-test-llm-conversation-mode-cycle () ()
+  (let ((buffer (current-buffer)))
+    (lem-yath-llm-conversation-mode nil)
+    (let ((disabled
+            (llm-conversation-test-overlay-count
+             buffer :lem-yath-llm-role-visual)))
+      (lem-yath-llm-conversation-mode t)
+      (llm-conversation-test-log
+       "MODE-CYCLE disabled-overlays=~d enabled-overlays=~d text-hex=~a"
+       disabled
+       (llm-conversation-test-overlay-count
+        buffer :lem-yath-llm-role-visual)
+       (llm-conversation-test-hex
+        (llm-conversation-test-buffer-text buffer))))))
+
 (define-command lem-yath-test-llm-conversation-kill-record () ()
   (let ((buffer *llm-conversation-test-killed-buffer*)
         (request *llm-conversation-test-killed-request*)
@@ -247,7 +344,7 @@
      (concatenate
       'string
       "KILL buffer=~a active=~a aborted=~a insertion=~a process=~a "
-      "saved-process=~a shared-active=~a hook=~d")
+      "saved-process=~a shared-active=~a visual=~a hook=~d")
      (if (and buffer (deleted-buffer-p buffer)) "deleted" "live")
      (if (and buffer (llm-active-request buffer)) "yes" "no")
      (if (and request (llm-request-aborted-now-p request)) "yes" "no")
@@ -256,6 +353,7 @@
      (if (and process (ignore-errors (uiop:process-alive-p process)))
          "live" "dead")
      (if (llm-active-request shared) "yes" "no")
+     (if (and request (llm-request-visual-state request)) "live" "none")
      (count 'llm-kill-buffer-hook
             (variable-value 'kill-buffer-hook :global t)
             :key #'car :test #'eq))))
@@ -272,8 +370,10 @@
   (define-key keymap "F7" 'lem-yath-test-llm-conversation-kill)
   (define-key keymap "F8" 'lem-yath-test-llm-conversation-typed)
   (define-key keymap "F9" 'lem-yath-test-llm-conversation-region)
+  (define-key keymap "F10" 'lem-yath-test-llm-conversation-visuals-record)
   (define-key keymap "F11" 'lem-yath-test-llm-conversation-kill-record)
-  (define-key keymap "F12" 'lem-yath-test-llm-conversation-record))
+  (define-key keymap "F12" 'lem-yath-test-llm-conversation-record)
+  (define-key keymap "F1" 'lem-yath-test-llm-conversation-mode-cycle))
 
 (setf *llm-backend* :lem-yath-conversation-test)
 (llm-conversation-test-log "READY")
