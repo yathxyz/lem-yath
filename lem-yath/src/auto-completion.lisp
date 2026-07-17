@@ -22,6 +22,8 @@
           (ignore-errors (auto-completion-teardown-session session))))))
 (when (fboundp 'auto-completion-cancel-timer)
   (ignore-errors (auto-completion-cancel-timer)))
+(when (fboundp 'auto-completion-close-info)
+  (ignore-errors (auto-completion-close-info)))
 
 (defparameter *auto-completion-prefix-length* 3)
 (defparameter *auto-completion-delay-ms* 200)
@@ -30,6 +32,10 @@
 (defvar *auto-completion-timer* nil)
 (defvar *auto-completion-generation* 0)
 (defvar *auto-completion-context* nil)
+(defvar *auto-completion-info-window* nil)
+(defvar *auto-completion-info-buffer* nil)
+(defvar *auto-completion-info-buffer-owned-p* nil)
+(defvar *auto-completion-file-locations* (make-hash-table :test #'eq))
 
 (defstruct auto-completion-session
   context
@@ -68,6 +74,9 @@
     lem-yath-corfu-prompt-end
     lem-yath-corfu-scroll-forward
     lem-yath-corfu-scroll-backward
+    lem-yath-corfu-expand
+    lem-yath-corfu-info-location
+    lem-yath-corfu-info-documentation
     lem-yath-corfu-meta-next
     lem-yath-corfu-meta-previous
     lem-yath-corfu-reset
@@ -240,19 +249,23 @@ directory already exists."
   (multiple-value-bind (input start end)
       (auto-completion-file-context point)
     (when input
+      (clrhash *auto-completion-file-locations*)
       (auto-completion-corfu-order-items
        input
        (stable-sort
         (mapcar
          (lambda (filename)
-           (let ((label (tail-of-pathname filename)))
-             (lem/completion-mode:make-completion-item
-              :label label
-              :filter-text label
-              :insert-text label
-              :detail "File"
-              :start start
-              :end end)))
+           (let* ((label (tail-of-pathname filename))
+                  (item
+                    (lem/completion-mode:make-completion-item
+                     :label label
+                     :filter-text label
+                     :insert-text label
+                     :detail "File"
+                     :start start
+                     :end end)))
+             (setf (gethash item *auto-completion-file-locations*) filename)
+             item))
          (ignore-errors
            (completion-file input (buffer-directory))))
        #'auto-completion-corfu-item-before-p)
@@ -656,6 +669,7 @@ directory already exists."
           (remove-hook (window-delete-hook window)
                        'auto-completion-window-delete-hook))))
     (auto-completion-clear-preview session nil)
+    (auto-completion-close-info)
     (auto-completion-accept-session-change-group session)
     (when lem-core::*in-the-editor*
       (redraw-display :force t))))
@@ -850,6 +864,112 @@ directory already exists."
           (lem/completion-mode::narrowing-down
            (auto-completion-session-context session) items)))
     (lem/completion-mode::completion-narrowing-down-or-next-line)))
+
+(defun auto-completion-expand ()
+  "Implement Corfu expand without accepting its implicit preselection."
+  (alexandria:if-let ((session
+                       (and (auto-completion-session-owned-p)
+                            (auto-completion-live-session))))
+    (if (auto-completion-selected-preview-p session)
+        (auto-completion-accept-selected session)
+        (alexandria:when-let
+            ((items
+               (lem/completion-mode::context-last-items
+                (auto-completion-session-context session))))
+          (lem/completion-mode::narrowing-down
+           (auto-completion-session-context session) items)))
+    (lem/completion-mode::completion-narrowing-down-or-next-line)))
+
+(defun auto-completion-close-info ()
+  "Close the transient Corfu information window, if this module owns it."
+  (let ((window *auto-completion-info-window*)
+        (buffer *auto-completion-info-buffer*)
+        (owned-p *auto-completion-info-buffer-owned-p*))
+    (setf *auto-completion-info-window* nil
+          *auto-completion-info-buffer* nil
+          *auto-completion-info-buffer-owned-p* nil)
+    (when (and window (not (deleted-window-p window)))
+      (ignore-errors (quit-window window :kill-buffer owned-p)))
+    (when (and owned-p buffer (not (deleted-buffer-p buffer)))
+      (ignore-errors (delete-buffer buffer)))
+    (when (and lem-core::*in-the-editor* window)
+      (redraw-display :force t))))
+
+(defun auto-completion-display-info-buffer (buffer &key owned-p)
+  "Display BUFFER transiently without moving focus away from completion."
+  (auto-completion-close-info)
+  (let* ((source-window (current-window))
+         (info-window (pop-to-buffer buffer :split-action :sensibly)))
+    (unless (eq info-window source-window)
+      (setf *auto-completion-info-window* info-window
+            *auto-completion-info-buffer* buffer
+            *auto-completion-info-buffer-owned-p* owned-p))
+    (redraw-display :force t)
+    info-window))
+
+(defun auto-completion-selected-item-or-error ()
+  (or (alexandria:when-let ((session
+                             (and (auto-completion-session-owned-p)
+                                  (auto-completion-live-session))))
+        (auto-completion-current-selected-item session))
+      (editor-error "No completion candidate is selected")))
+
+(defun auto-completion-documentation-buffer (item)
+  "Run ITEM's provider documentation action and capture its rendered buffer."
+  (let ((action
+          (lem/completion-mode::completion-item-focus-action item))
+        (context lem/completion-mode::*completion-context*))
+    (unless action
+      (editor-error "No documentation available for `~a'"
+                    (auto-completion-item-label item)))
+    ;; Focus actions render provider-owned Markdown through Lem's message
+    ;; window. Promote that exact buffer into Corfu's explicit information
+    ;; split instead of trying to reconstruct provider documentation here.
+    (clear-message)
+    (funcall action context)
+    (let ((window (frame-message-window (current-frame))))
+      (unless (and window (not (deleted-window-p window)))
+        (editor-error "No documentation available for `~a'"
+                      (auto-completion-item-label item)))
+      (let ((buffer (window-buffer window)))
+        (setf (frame-message-window (current-frame)) nil)
+        (delete-window window)
+        ;; Markdown rendering constructs this owned temporary buffer through
+        ;; ordinary insertion.  It has no user edits to confirm on teardown.
+        (buffer-unmark buffer)
+        buffer))))
+
+(defun auto-completion-info-pre-command ()
+  "Restore the layout before the command following Corfu information."
+  (when *auto-completion-info-window*
+    (auto-completion-close-info)))
+
+(define-command lem-yath-corfu-expand () ()
+  "Expand the common candidate prefix like Corfu's default M-Tab."
+  (if (auto-completion-prompt-active-p)
+      (editor-error "M-Tab is not bound in completion prompts")
+      (auto-completion-expand)))
+
+(define-command lem-yath-corfu-info-documentation () ()
+  "Show the selected Corfu candidate's provider documentation."
+  (if (auto-completion-prompt-active-p)
+      (call-command 'show-context-menu nil)
+      (let* ((item (auto-completion-selected-item-or-error))
+             (buffer (auto-completion-documentation-buffer item)))
+        (auto-completion-display-info-buffer buffer :owned-p t))))
+
+(define-command lem-yath-corfu-info-location () ()
+  "Show the selected Corfu file candidate without accepting it."
+  (if (auto-completion-prompt-active-p)
+      (call-command 'goto-line nil)
+      (let* ((item (auto-completion-selected-item-or-error))
+             (location (gethash item *auto-completion-file-locations*))
+             (pathname
+               (and location (ignore-errors (uiop:probe-file* location)))))
+        (unless pathname
+          (editor-error "No location available for `~a'"
+                        (auto-completion-item-label item)))
+        (auto-completion-display-info-buffer (find-file-buffer pathname)))))
 
 (defun auto-completion-return ()
   "Implement Corfu insert: selected candidate, or quit at the prompt row."
@@ -1165,6 +1285,7 @@ already active prompt boundary, LINE-COMMAND retains ordinary line motion."
     (auto-completion-schedule)))
 
 (remove-hook *pre-command-hook* 'auto-completion-pre-command)
+(remove-hook *pre-command-hook* 'auto-completion-info-pre-command)
 (remove-hook *post-command-hook* 'auto-completion-post-command)
 (remove-hook *window-size-change-functions*
              'auto-completion-window-size-change)
@@ -1173,6 +1294,7 @@ already active prompt boundary, LINE-COMMAND retains ordinary line motion."
 (remove-hook *exit-editor-hook* 'auto-completion-shutdown)
 (remove-hook *exit-editor-hook* 'auto-completion-cancel-timer)
 
+(add-hook *pre-command-hook* 'auto-completion-info-pre-command 900)
 (add-hook *pre-command-hook* 'auto-completion-pre-command 1000)
 (add-hook *post-command-hook* 'auto-completion-post-command -100)
 (add-hook *window-size-change-functions*
@@ -1239,6 +1361,14 @@ already active prompt boundary, LINE-COMMAND retains ordinary line motion."
   "M-v" 'lem-yath-corfu-scroll-backward)
 (define-key lem/completion-mode::*completion-mode-keymap*
   "PageUp" 'lem-yath-corfu-scroll-backward)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "M-Tab" 'lem-yath-corfu-expand)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "C-M-i" 'lem-yath-corfu-expand)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "M-g" 'lem-yath-corfu-info-location)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "M-h" 'lem-yath-corfu-info-documentation)
 (define-key lem/completion-mode::*completion-mode-keymap*
   'move-to-end-of-buffer 'lem-yath-corfu-last)
 (define-key lem/completion-mode::*completion-mode-keymap*

@@ -11,7 +11,8 @@ export WORKDIR="$root/work"
 export LEM_YATH_AUTO_COMPLETION_REPORT="$root/report"
 export LEM_YATH_AUTO_COMPLETION_FILE_DIR="$root/files/"
 mkdir -p "$HOME" "$WORKDIR/roam" "$LEM_YATH_AUTO_COMPLETION_FILE_DIR"
-touch "$LEM_YATH_AUTO_COMPLETION_FILE_DIR/alpha-file.txt"
+printf '%s\n' 'CORFU LOCATION SENTINEL' \
+  >"$LEM_YATH_AUTO_COMPLETION_FILE_DIR/alpha-file.txt"
 touch "$LEM_YATH_AUTO_COMPLETION_FILE_DIR/alpine-file.txt"
 source "$here/scripts/tui-driver.sh"
 
@@ -72,6 +73,7 @@ run_fixture_command() {
     lem-yath-test-auto-corfu-setup) key=c ;;
     lem-yath-test-auto-valid-setup) key=v ;;
     lem-yath-test-auto-exact-setup) key=e ;;
+    lem-yath-test-auto-info-setup) key=i ;;
     lem-yath-test-auto-corfu-middle-setup) key=r ;;
     lem-yath-test-auto-async-setup) key=a ;;
     lem-yath-test-auto-dabbrev-setup) key=d ;;
@@ -119,6 +121,14 @@ setup_exact_popup() {
     lem_wait_for "$session" 'exactExtra' 10 >/dev/null
 }
 
+setup_info_popup() {
+  run_fixture_command lem-yath-test-auto-info-setup &&
+    wait_report '^SETUP info$' 10 &&
+    enter_insert &&
+    tmux_cmd send-keys -t "$session" -l doc &&
+    lem_wait_for "$session" 'documentAlpha' 10 >/dev/null
+}
+
 report_corfu_state() {
   local before
   before=$(grep -c '^CORFU STATE ' "$LEM_YATH_AUTO_COMPLETION_REPORT" 2>/dev/null || true)
@@ -139,9 +149,83 @@ fi
 
 if run_fixture_command lem-yath-test-auto-completion-static-checks &&
    wait_report '^SUMMARY STATIC PASS failures=0$' 10; then
-  pass static-contracts "threshold, delay, rows, change groups, and empty LSP passed"
+  pass static-contracts "threshold, rows, Corfu bindings, change groups, and empty LSP passed"
 else
   fail static-contracts "static automatic-completion contracts failed"
+fi
+
+# M-Tab is Corfu expansion, not ordinary Tab acceptance: the implicit
+# preselection must yield the common prefix, while an explicitly previewed
+# candidate is accepted.
+if setup_corfu_popup; then
+  accept_before=$(grep -c '^CORFU ACCEPT ' "$LEM_YATH_AUTO_COMPLETION_REPORT" 2>/dev/null || true)
+  lem_keys "$session" M-Tab
+  sleep 0.3
+  expanded=$(report_corfu_state || true)
+  accept_after=$(grep -c '^CORFU ACCEPT ' "$LEM_YATH_AUTO_COMPLETION_REPORT" 2>/dev/null || true)
+  if [ "$accept_after" -eq "$accept_before" ] &&
+     grep -q 'context=T buffer="preview".*preselect="previewAlpha" selected="previewAlpha" preview=NIL.*items=3' <<<"$expanded"; then
+    pass corfu-meta-tab-expand \
+      'M-Tab expanded the common prefix without accepting the preselection'
+  else
+    fail corfu-meta-tab-expand \
+      "M-Tab accepted or failed to expand the implicit candidate: $expanded"
+  fi
+  lem_keys "$session" C-g
+else
+  fail corfu-meta-tab-expand-setup \
+    'could not prepare the M-Tab common-prefix scenario'
+fi
+
+if setup_corfu_popup; then
+  accept_before=$(grep -c '^CORFU ACCEPT ' "$LEM_YATH_AUTO_COMPLETION_REPORT" 2>/dev/null || true)
+  lem_keys "$session" C-n M-Tab
+  if wait_report_count '^CORFU ACCEPT previewBeta ' $((accept_before + 1)) 5; then
+    lem_keys "$session" F7
+    if wait_report '^STATE none buffer=previewBeta timer=NIL$' 5; then
+      pass corfu-meta-tab-preview \
+        'M-Tab accepted the explicitly previewed candidate once'
+    else
+      fail corfu-meta-tab-preview \
+        'M-Tab accepted the wrong text or retained the completion session'
+    fi
+  else
+    fail corfu-meta-tab-preview \
+      'M-Tab did not accept the explicitly previewed candidate'
+  fi
+else
+  fail corfu-meta-tab-preview-setup \
+    'could not prepare the M-Tab preview scenario'
+fi
+
+# Explicit documentation uses the provider's exact rendered Markdown buffer,
+# then restores the completion layout before the following command.
+if setup_info_popup; then
+  lem_keys "$session" F4
+  if wait_report '^MESSAGE CLEARED$' 5 &&
+     ! lem_capture "$session" | grep -q 'CORFU DOCUMENTATION SENTINEL'; then
+    lem_keys "$session" M-h
+    sleep 0.3
+    info_screen=$(lem_capture "$session")
+    info_state=$(report_corfu_state || true)
+    restored_screen=$(lem_capture "$session")
+    if grep -q 'CORFU DOCUMENTATION SENTINEL' <<<"$info_screen" &&
+       ! grep -q 'CORFU DOCUMENTATION SENTINEL' <<<"$restored_screen" &&
+       grep -q 'context=T buffer="doc".*selected="documentAlpha"' <<<"$info_state"; then
+      pass corfu-documentation \
+        'M-h showed provider documentation and restored the live popup layout'
+    else
+      fail corfu-documentation \
+        "M-h documentation or restoration diverged: $info_state"
+    fi
+  else
+    fail corfu-documentation \
+      'could not clear the automatic provider documentation before M-h'
+  fi
+  lem_keys "$session" C-g
+else
+  fail corfu-documentation-setup \
+    'could not prepare the documented completion scenario'
 fi
 
 if setup_valid_popup; then
@@ -990,6 +1074,20 @@ if run_fixture_command lem-yath-test-auto-file-setup &&
   tmux_cmd send-keys -t "$session" -l ./a
   if lem_wait_for "$session" 'alpha-file.txt' 10 >/dev/null; then
     pass file-short-prefix "file completion bypassed the three-symbol threshold"
+    lem_keys "$session" M-g
+    sleep 0.3
+    location_screen=$(lem_capture "$session")
+    location_state=$(report_corfu_state || true)
+    restored_screen=$(lem_capture "$session")
+    if grep -q 'CORFU LOCATION SENTINEL' <<<"$location_screen" &&
+       ! grep -q 'CORFU LOCATION SENTINEL' <<<"$restored_screen" &&
+       grep -q 'context=T buffer="./a".*selected="alpha-file.txt"' <<<"$location_state"; then
+      pass corfu-location \
+        'M-g showed the Cape file target and restored completion without acceptance'
+    else
+      fail corfu-location \
+        "M-g location or restoration diverged: $location_state"
+    fi
     lem_keys "$session" Enter
     sleep 0.3
     lem_keys "$session" F7

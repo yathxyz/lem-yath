@@ -366,7 +366,12 @@ non-mutating preview which is committed before subsequent ordinary input.
 stages, `C-g` quits while retaining typed input, and `M-Space` inserts the
 Orderless separator without accepting a preview. The default Corfu map also
 uses `C-a`/`Home` and `C-e`/`End` for prompt-boundary motion, and moves by its
-ten-row page with `C-v`/`PageDown` and `M-v`/`PageUp`.
+ten-row page with `C-v`/`PageDown` and `M-v`/`PageUp`. `M-TAB` expands the
+common prefix unless the current candidate is explicitly previewed, in which
+case it completes that candidate. `M-h` requests the selected candidate's
+`company-doc-buffer`, which Eglot supplies from completion documentation, and
+`M-g` requests `company-location`. Of the configured providers, Cape file
+completion supplies locations, while Eglot and Cape Dabbrev do not.
 
 An isolated live-Vertico probe confirmed that opening candidates does not insert
 a common prefix or accept a singleton. `TAB` inserts the focused candidate while

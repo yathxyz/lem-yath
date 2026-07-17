@@ -27,6 +27,12 @@
 (defparameter *auto-test-corfu-labels*
   '("previewAlpha" "previewBeta" "previewGamma"))
 
+(defun auto-test-key-command (keymap keys)
+  (alexandria:when-let
+      ((prefix (lem-core::keymap-find
+                keymap (lem-core::parse-keyspec keys))))
+    (lem-core::prefix-suffix prefix)))
+
 (defun auto-test-report (control &rest arguments)
   (with-open-file (stream (uiop:getenv "LEM_YATH_AUTO_COMPLETION_REPORT")
                           :direction :output
@@ -161,6 +167,29 @@
                             (auto-test-buffer-text)))))
      *auto-test-valid-labels*)))
 
+(defun auto-test-info-provider (point)
+  (multiple-value-bind (start end prefix)
+      (auto-completion-symbol-bounds point)
+    (declare (ignore prefix))
+    (list
+     (lem/completion-mode:make-completion-item
+      :label "documentAlpha"
+      :filter-text "documentAlpha"
+      :insert-text "documentAlpha"
+      :detail "Documented"
+      :start start
+      :end end
+      :focus-action
+      (lambda (context)
+        (show-message
+         (lem/markdown-buffer:markdown-buffer
+          "CORFU DOCUMENTATION SENTINEL")
+         :style '(:gravity :vertically-adjacent-window
+                  :offset-y -1 :offset-x 1)
+         :source-window
+         (lem/popup-menu::popup-menu-window
+          (lem/completion-mode::context-popup-menu context))))))))
+
 (define-command lem-yath-test-auto-corfu-setup () ()
   (auto-test-reset-current-buffer)
   (setf *auto-test-corfu-accept-count* 0
@@ -213,6 +242,18 @@
          :test-function #'auto-completion-case-fold-input-valid-p))
   (insert-string (current-point) "exac")
   (auto-test-report "SETUP exact"))
+
+(define-command lem-yath-test-auto-info-setup () ()
+  (auto-test-reset-current-buffer)
+  (setf *auto-test-origin-buffer* (current-buffer)
+        (variable-value 'lem/language-mode:completion-spec
+                        :buffer (current-buffer))
+        #'auto-test-info-provider)
+  (auto-test-report "SETUP info"))
+
+(define-command lem-yath-test-clear-message () ()
+  (clear-message)
+  (auto-test-report "MESSAGE CLEARED"))
 
 (define-command lem-yath-test-auto-corfu-lisp-setup () ()
   (lem-yath-test-auto-corfu-setup)
@@ -1093,6 +1134,15 @@
       (check (= 3 *auto-completion-prefix-length*) "prefix-three")
       (check (= 200 *auto-completion-delay-ms*) "delay-200ms")
       (check (= 10 *auto-completion-max-display-items*) "ten-rows")
+      (dolist (binding '(("M-Tab" lem-yath-corfu-expand)
+                         ("C-M-i" lem-yath-corfu-expand)
+                         ("M-g" lem-yath-corfu-info-location)
+                         ("M-h" lem-yath-corfu-info-documentation)))
+        (check (eq (auto-test-key-command
+                    lem/completion-mode::*completion-mode-keymap*
+                    (first binding))
+                   (second binding))
+               (format nil "corfu-binding-~a" (first binding))))
       (check (string= "AlphaDabbrev"
                       (auto-completion-dabbrev-case-replace
                        "A" "alphaDabbrev"))
@@ -1175,6 +1225,8 @@
 (define-key lem/completion-mode::*completion-mode-keymap*
   "F3" 'lem-yath-test-clear-sentinel-float)
 (define-key lem/completion-mode::*completion-mode-keymap*
+  "F4" 'lem-yath-test-clear-message)
+(define-key lem/completion-mode::*completion-mode-keymap*
   "F11" 'lem-yath-test-deliver-current-auto-completion)
 (define-key lem/completion-mode::*completion-mode-keymap*
   "F12" 'lem-yath-test-deliver-nil-auto-completion)
@@ -1185,6 +1237,7 @@
 (dolist (command '(lem-yath-test-make-sentinel-float
                    lem-yath-test-auto-delete-source-window
                    lem-yath-test-clear-sentinel-float
+                   lem-yath-test-clear-message
                    lem-yath-test-deliver-current-auto-completion
                    lem-yath-test-deliver-nil-auto-completion))
   (pushnew command *auto-completion-continue-commands*))
@@ -1198,6 +1251,8 @@
   "F2" 'lem-yath-test-make-sentinel-float)
 (define-key lem-vi-mode:*insert-keymap*
   "F3" 'lem-yath-test-clear-sentinel-float)
+(define-key lem-vi-mode:*insert-keymap*
+  "F4" 'lem-yath-test-clear-message)
 (define-key lem-vi-mode:*insert-keymap*
   "F11" 'lem-yath-test-deliver-current-auto-completion)
 (define-key lem-vi-mode:*insert-keymap*
@@ -1220,6 +1275,8 @@
   "C-c z v" 'lem-yath-test-auto-valid-setup)
 (define-key lem-vi-mode:*normal-keymap*
   "C-c z e" 'lem-yath-test-auto-exact-setup)
+(define-key lem-vi-mode:*normal-keymap*
+  "C-c z i" 'lem-yath-test-auto-info-setup)
 (define-key lem-vi-mode:*normal-keymap*
   "C-c z r" 'lem-yath-test-auto-corfu-middle-setup)
 (define-key lem-vi-mode:*normal-keymap*
