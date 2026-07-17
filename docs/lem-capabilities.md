@@ -2026,6 +2026,13 @@ source-with-descendants, or exact-revision mode, while `a` and `B` insert that
 revision after or before the destination. A Prescient prompt offers bounded
 history IDs with descriptions but accepts an arbitrary nonblank revset; Lem
 then confirms before mutation and preserves the source row after success.
+Majutsu's duplicate key split is also retained: lowercase `y` opens a compact
+placement popup whose Return/`y`, `o`, `a`, and `b` actions duplicate the
+selected row onto its existing parent, onto a prompted destination, or after
+or before a prompted revision. Uppercase `Y` performs the existing-parent
+case immediately. Destination prompts share the annotated Prescient revision
+history, accept arbitrary nonblank revsets, and every successful form keeps
+point on the original revision.
 Every subprocess uses direct argv; the history is bounded and refresh preserves
 the selected change ID when that change still exists.
 `scripts/jj-porcelain-test.sh` drives the complete loop through the installed
@@ -2034,12 +2041,16 @@ including squash popup cancellation, exact multiline combination, content
 movement, parent restoration, root refusal, both rebase cancellation paths,
 content-bearing sibling rebase, row restoration, invalid self-destination, and
 the complete local bookmark lifecycle with inline-label and nested-list checks.
+It also drives duplicate-popup cancellation, immediate parent duplication,
+onto/after/before placement, content retention, graph rewrites and fixture
+undos, point preservation, and invalid-destination refusal.
 The in-editor description prompt is intentionally single-line and refuses an
 existing multiline description rather than truncating it. Majutsu's general
 transient dispatch, multiline description buffer, arbitrary source/destination
 and partial-patch squash, multi-source/destination rebase selection and
 advanced rebase flags, remote bookmark tracking and advance patterns,
-multi-bookmark operations, split, conflict handling, operation log,
+multi-bookmark operations, multi-source/destination duplicate selection and
+configurable duplicate descriptions, split, conflict handling, operation log,
 workspaces, sparse checkout, and partial patch selection remain outside this
 focused approximation.
 

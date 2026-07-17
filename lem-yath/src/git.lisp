@@ -583,15 +583,15 @@
          (parent (jj-single-parent-revision root revision)))
     (dispatch-jj-squash root revision parent)))
 
-(defun jj-prompt-for-rebase-destination (root)
-  "Read a history change ID or arbitrary jj revset for a rebase destination."
+(defun jj-prompt-for-revision (root prompt history-symbol)
+  "Read a history change ID or arbitrary jj revset using PROMPT and HISTORY-SYMBOL."
   (let* ((entries (jj-log-entries root))
          (choices
            (mapcar (lambda (entry)
                      (cons (jj-log-entry-change-id entry) entry))
                    entries)))
     (prompt-for-string
-     "Rebase destination revision or revset: "
+     prompt
      :completion-function
      (lambda (input)
        (completion-annotated-prompt-choices
@@ -603,7 +603,7 @@
                       "(no description)"
                       (jj-log-entry-description entry))))))
      :test-function (lambda (input) (not (str:blankp input)))
-     :history-symbol 'lem-yath-jj-rebase-destination)))
+     :history-symbol history-symbol)))
 
 (defun jj-rebase-keymap ()
   "Build the focused Majutsu-style rebase popup."
@@ -641,7 +641,11 @@
 
 (defun jj-execute-rebase (root revision action)
   "Prompt for a destination and rebase row REVISION according to ACTION."
-  (let ((destination (jj-prompt-for-rebase-destination root)))
+  (let ((destination
+          (jj-prompt-for-revision
+           root
+           "Rebase destination revision or revset: "
+           'lem-yath-jj-rebase-destination)))
     (if (prompt-for-y-or-n-p
          (format nil "Rebase Jujutsu revision ~a using ~a onto ~a?"
                  revision (string-downcase (symbol-name action)) destination))
@@ -682,6 +686,86 @@
 (define-command lem-yath-jj-rebase () ()
   "Rebase the selected change through a focused Majutsu-style popup."
   (dispatch-jj-rebase (jj-current-root) (jj-selected-revision)))
+
+(defun jj-duplicate-keymap ()
+  "Build the focused Majutsu-style duplicate popup."
+  (let ((keymap (make-keymap :description "JJ Duplicate")))
+    (setf (lem/transient::keymap-show-p keymap) t
+          (lem/transient::keymap-display-style keymap) :column)
+    (dolist (entry
+              '(("Return" "duplicate onto the existing parent")
+                ("y" "duplicate onto the existing parent")
+                ("o" "duplicate onto a destination")
+                ("a" "duplicate after a destination")
+                ("b" "duplicate before a destination")
+                ("q" "cancel")))
+      (destructuring-bind (key description) entry
+        (define-key keymap key 'nop-command)
+        (setf (lem-core::prefix-description
+               (lem-core::keymap-find keymap (lem-core::parse-keyspec key)))
+              description)))
+    keymap))
+
+(defun jj-duplicate-arguments (revision action &optional destination)
+  "Return direct jj duplicate arguments for REVISION, ACTION, and DESTINATION."
+  (ecase action
+    (:parent (list "duplicate" revision))
+    (:onto (list "duplicate" revision "--destination" destination))
+    (:after (list "duplicate" revision "--insert-after" destination))
+    (:before (list "duplicate" revision "--insert-before" destination))))
+
+(defun jj-duplicate-prompt (action)
+  "Return the destination prompt for duplicate ACTION."
+  (ecase action
+    (:onto "Duplicate destination revision or revset: ")
+    (:after "Duplicate insert-after revision or revset: ")
+    (:before "Duplicate insert-before revision or revset: ")))
+
+(defun jj-execute-duplicate (root revision action)
+  "Duplicate row REVISION according to placement ACTION and retain its row."
+  (let ((destination
+          (unless (eq action :parent)
+            (jj-prompt-for-revision
+             root (jj-duplicate-prompt action)
+             'lem-yath-jj-duplicate-destination))))
+    (run-jj root (jj-duplicate-arguments revision action destination))
+    (let ((buffer (current-buffer)))
+      (render-jj-buffer buffer root)
+      (jj-restore-revision-point buffer revision))
+    (message "Jujutsu change duplicated")))
+
+(defun dispatch-jj-duplicate (root revision)
+  "Read one focused Majutsu-style duplicate action for REVISION."
+  (unwind-protect
+       (progn
+         (let ((lem/transient:*transient-popup-delay* 0))
+           (keymap-activate (jj-duplicate-keymap)))
+         (redraw-display)
+         (let* ((key (read-key))
+                (name (lem-core::keyseq-to-string (list key))))
+           (lem/transient::hide-transient)
+           (cond
+             ((or (string= name "Return") (string= name "y"))
+              (jj-execute-duplicate root revision :parent))
+             ((string= name "o")
+              (jj-execute-duplicate root revision :onto))
+             ((string= name "a")
+              (jj-execute-duplicate root revision :after))
+             ((string= name "b")
+              (jj-execute-duplicate root revision :before))
+             ((or (string= name "q") (string= name "Escape"))
+              (message "Jujutsu duplicate cancelled"))
+             (t (message "No duplicate action is bound to ~a" name)))))
+    (lem/transient::hide-transient)))
+
+(define-command lem-yath-jj-duplicate () ()
+  "Duplicate the selected change through a Majutsu-style placement popup."
+  (dispatch-jj-duplicate (jj-current-root) (jj-selected-revision)))
+
+(define-command lem-yath-jj-duplicate-dwim () ()
+  "Duplicate the selected change onto its existing parent, like Majutsu `Y'."
+  (jj-execute-duplicate
+   (jj-current-root) (jj-selected-revision) :parent))
 
 (defun jj-bookmark-names (root)
   "Return the sorted local bookmark names at ROOT."
@@ -925,7 +1009,7 @@
 (define-command lem-yath-jj-help () ()
   "Show the focused Majutsu-compatible Jujutsu command surface."
   (message
-   "Jujutsu: c describe, o new, s squash, r rebase, b bookmarks, e edit, u undo, C-r redo, x abandon, d/RET show, C-j/C-k rows, g r refresh, q quit"))
+   "Jujutsu: c describe, o new, s squash, r rebase, y/Y duplicate, b bookmarks, e edit, u undo, C-r redo, x abandon, d/RET show, C-j/C-k rows, g r refresh, q quit"))
 
 (define-command lem-yath-jj-quit () ()
   "Quit the current Jujutsu status/log window."
@@ -959,6 +1043,8 @@
 (define-key *lem-yath-jj-view-keymap* "o" 'lem-yath-jj-new)
 (define-key *lem-yath-jj-view-keymap* "s" 'lem-yath-jj-squash)
 (define-key *lem-yath-jj-view-keymap* "r" 'lem-yath-jj-rebase)
+(define-key *lem-yath-jj-view-keymap* "y" 'lem-yath-jj-duplicate)
+(define-key *lem-yath-jj-view-keymap* "Y" 'lem-yath-jj-duplicate-dwim)
 (define-key *lem-yath-jj-view-keymap* "b" 'lem-yath-jj-bookmark)
 (define-key *lem-yath-jj-view-keymap* "e" 'lem-yath-jj-edit)
 (define-key *lem-yath-jj-view-keymap* "u" 'lem-yath-jj-undo)

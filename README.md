@@ -390,6 +390,7 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   the Jujutsu side is a row-aware porcelain with Majutsu-compatible describe,
   new, whole-change squash with a compact description-policy popup, edit,
   confirmed selected-row rebase with branch/subtree/exact/insert modes,
+  Majutsu-compatible `y` placement and immediate `Y` duplicate workflows,
   visible local bookmarks with create/set/move/rename/delete/forget/list,
   undo/redo, confirmed abandon, diff, refresh, and navigation keys,
   while programming buffers get buffer-local Git markers and Git status includes

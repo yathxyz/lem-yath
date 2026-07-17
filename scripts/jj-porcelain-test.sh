@@ -59,6 +59,24 @@ visible_description() {
     --template 'description.first_line() ++ "\n"' | grep -Fxq -- "$1"
 }
 
+revision_count_by_description() {
+  "$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" log --no-graph -r 'all()' \
+    --template 'description.first_line() ++ "\n"' |
+    grep -Fxc -- "$1" || true
+}
+
+wait_revision_count() {
+  local description=$1 expected=$2 index=0
+  while ((index < 80)); do
+    if [ "$(revision_count_by_description "$description")" -eq "$expected" ]; then
+      return 0
+    fi
+    sleep 0.25
+    index=$((index + 1))
+  done
+  return 1
+}
+
 full_description() {
   "$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" log --no-graph \
     -r "$1" --template description
@@ -84,6 +102,23 @@ wait_revision_absent() {
 revision_parent() {
   "$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" log --no-graph \
     -r "($1)-" --template change_id
+}
+
+revision_with_description_parent() {
+  local wanted_description=$1 wanted_parent=$2 excluded_revision=$3
+  local revision description
+  while IFS=$'\t' read -r revision description; do
+    if [ "$revision" != "$excluded_revision" ] &&
+       [ "$description" = "$wanted_description" ] &&
+       [ "$(revision_parent "$revision")" = "$wanted_parent" ]; then
+      printf '%s\n' "$revision"
+      return 0
+    fi
+  done < <(
+    "$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" log --no-graph -r 'all()' \
+      --template 'change_id ++ "\t" ++ description.first_line() ++ "\n"'
+  )
+  return 1
 }
 
 wait_revision_parent() {
@@ -615,6 +650,167 @@ if wait_bookmark_absent topic-renamed; then
   pass bookmark-delete 'b d deleted the bookmark after confirmation'
 else
   fail bookmark-delete 'confirmed bookmark deletion left the bookmark present'
+fi
+
+duplicate_baseline=$(revision_count_by_description 'rebase source')
+lem_keys "$session" y
+if lem_wait_for "$session" 'JJ Duplicate' 10 >/dev/null; then
+  lem_keys "$session" q
+fi
+if [ "$(revision_count_by_description 'rebase source')" -eq "$duplicate_baseline" ] &&
+   ! lem_capture "$session" | grep -q 'JJ Duplicate' &&
+   invoke_report &&
+   [[ $(latest_report) == *'kind=log row=yes description=rebase_source '* ]]; then
+  pass duplicate-popup-cancel 'y q closed the duplicate popup without mutation'
+else
+  fail duplicate-popup-cancel 'duplicate cancellation changed history, point, or popup state'
+fi
+
+lem_keys "$session" y
+if lem_wait_for "$session" 'JJ Duplicate' 10 >/dev/null; then
+  lem_keys "$session" y
+fi
+if wait_revision_count 'rebase source' $((duplicate_baseline + 1)); then
+  popup_parent_duplicate=$(
+    revision_with_description_parent \
+      'rebase source' "$rebase_destination_id" "$rebase_source_id" || true
+  )
+else
+  popup_parent_duplicate=
+fi
+if [ -n "$popup_parent_duplicate" ] &&
+   invoke_report &&
+   [[ $(latest_report) == *'kind=log row=yes description=rebase_source '* ]]; then
+  pass duplicate-popup-default 'y y duplicated onto the existing parent and retained the source row'
+else
+  fail duplicate-popup-default 'the popup default lost its placement or selected row'
+fi
+"$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" undo >/dev/null
+lem_keys "$session" g r
+if ! wait_revision_count 'rebase source' "$duplicate_baseline"; then
+  fail duplicate-popup-default-undo 'the popup-default fixture did not undo cleanly'
+fi
+
+lem_keys "$session" Y
+if wait_revision_count 'rebase source' $((duplicate_baseline + 1)); then
+  parent_duplicate=$(
+    revision_with_description_parent \
+      'rebase source' "$rebase_destination_id" "$rebase_source_id" || true
+  )
+else
+  parent_duplicate=
+fi
+if [ -n "$parent_duplicate" ] &&
+   "$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" file show \
+     -r "$parent_duplicate" 'root:rebase-source.txt' |
+       grep -Fxq 'source content' &&
+   invoke_report &&
+   [[ $(latest_report) == *'kind=log row=yes description=rebase_source '* ]]; then
+  pass duplicate-dwim 'Y duplicated the selected change onto its parent and retained its row'
+else
+  fail duplicate-dwim 'immediate duplication lost content, placement, or selected row'
+fi
+
+lem_keys "$session" y
+if lem_wait_for "$session" 'JJ Duplicate' 10 >/dev/null; then
+  lem_keys "$session" o
+fi
+if lem_wait_for "$session" 'Duplicate destination revision or revset:' 10 >/dev/null; then
+  replace_prompt_text "$base_change_id"
+fi
+if wait_revision_count 'rebase source' $((duplicate_baseline + 2)); then
+  onto_duplicate=$(
+    revision_with_description_parent \
+      'rebase source' "$base_change_id" "$rebase_source_id" || true
+  )
+else
+  onto_duplicate=
+fi
+if [ -n "$onto_duplicate" ] &&
+   "$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" file show \
+     -r "$onto_duplicate" 'root:rebase-source.txt' |
+       grep -Fxq 'source content'; then
+  pass duplicate-onto 'y o duplicated the selected change onto the prompted destination'
+else
+  fail duplicate-onto 'onto placement did not retain the duplicated content or parent'
+fi
+"$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" undo >/dev/null
+lem_keys "$session" g r
+if ! wait_revision_count 'rebase source' $((duplicate_baseline + 1)); then
+  fail duplicate-onto-undo 'the onto placement fixture did not undo cleanly'
+fi
+
+lem_keys "$session" y
+if lem_wait_for "$session" 'JJ Duplicate' 10 >/dev/null; then
+  lem_keys "$session" a
+fi
+if lem_wait_for "$session" 'Duplicate insert-after revision or revset:' 10 >/dev/null; then
+  replace_prompt_text "$base_change_id"
+fi
+if wait_revision_count 'rebase source' $((duplicate_baseline + 2)); then
+  after_duplicate=$(
+    revision_with_description_parent \
+      'rebase source' "$base_change_id" "$rebase_source_id" || true
+  )
+else
+  after_duplicate=
+fi
+if [ -n "$after_duplicate" ] &&
+   wait_revision_parent "$rebase_destination_id" "$after_duplicate"; then
+  pass duplicate-after 'y a inserted the duplicate after the prompted destination'
+else
+  fail duplicate-after 'insert-after placement did not reparent the destination children'
+fi
+"$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" undo >/dev/null
+lem_keys "$session" g r
+if ! wait_revision_count 'rebase source' $((duplicate_baseline + 1)) ||
+   ! wait_revision_parent "$rebase_destination_id" "$base_change_id"; then
+  fail duplicate-after-undo 'the insert-after fixture did not undo cleanly'
+fi
+
+lem_keys "$session" y
+if lem_wait_for "$session" 'JJ Duplicate' 10 >/dev/null; then
+  lem_keys "$session" b
+fi
+if lem_wait_for "$session" 'Duplicate insert-before revision or revset:' 10 >/dev/null; then
+  replace_prompt_text "$rebase_destination_id"
+fi
+if wait_revision_count 'rebase source' $((duplicate_baseline + 2)); then
+  before_duplicate=$(
+    revision_with_description_parent \
+      'rebase source' "$base_change_id" "$rebase_source_id" || true
+  )
+else
+  before_duplicate=
+fi
+if [ -n "$before_duplicate" ] &&
+   wait_revision_parent "$rebase_destination_id" "$before_duplicate"; then
+  pass duplicate-before 'y b inserted the duplicate before the prompted destination'
+else
+  fail duplicate-before 'insert-before placement did not reparent the destination'
+fi
+"$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" undo >/dev/null
+lem_keys "$session" g r
+if ! wait_revision_count 'rebase source' $((duplicate_baseline + 1)) ||
+   ! wait_revision_parent "$rebase_destination_id" "$base_change_id"; then
+  fail duplicate-before-undo 'the insert-before fixture did not undo cleanly'
+fi
+
+lem_keys "$session" y
+if lem_wait_for "$session" 'JJ Duplicate' 10 >/dev/null; then
+  lem_keys "$session" o
+fi
+if lem_wait_for "$session" 'Duplicate destination revision or revset:' 10 >/dev/null; then
+  replace_prompt_text 'definitely-no-such-revision'
+fi
+if lem_wait_for "$session" 'jj duplicate failed' 10 >/dev/null &&
+   [ "$(revision_count_by_description 'rebase source')" -eq \
+     $((duplicate_baseline + 1)) ] &&
+   invoke_report &&
+   [[ $(latest_report) == *'kind=log row=yes description=rebase_source '* ]]; then
+  pass duplicate-refusal 'an invalid destination surfaced jj failure without mutation'
+else
+  fail duplicate-refusal 'invalid duplicate placement mutated history or lost the source row'
 fi
 
 lem_keys "$session" q
