@@ -235,6 +235,11 @@ its Common Lisp mode registry.
 The stock `.` command uses a real last-window-display timestamp and GNU
 Ibuffer's configurable 72-hour default. The comparison is strict, and a buffer
 with no display timestamp is not marked.
+The effective Evil-Collection `-` and `+` commands stage session-local hide and
+force-show name regexps with the focused name quoted as input. `gR` retains the
+current rows, while `gr` activates the staged rules; force-show takes precedence
+over hiding and ordinary filters. `K` hides visible ordinary-marked lines until
+`gr`, which restores them unmarked without disturbing a visible `D` mark.
 
 ### 1.4 Mode-local bindings
 

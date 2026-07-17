@@ -204,6 +204,18 @@ Each nonempty group begins with a distinct heading entry."
    (filters
     :initform nil
     :accessor buffer-list-component-filters)
+   (tmp-hide-regexps
+    :initform nil
+    :accessor buffer-list-component-tmp-hide-regexps)
+   (tmp-show-regexps
+    :initform nil
+    :accessor buffer-list-component-tmp-show-regexps)
+   (pending-tmp-hide-regexps
+    :initform nil
+    :accessor buffer-list-component-pending-tmp-hide-regexps)
+   (pending-tmp-show-regexps
+    :initform nil
+    :accessor buffer-list-component-pending-tmp-show-regexps)
    (pending-filter-kind
     :initform nil
     :accessor buffer-list-component-pending-filter-kind)))
@@ -499,9 +511,21 @@ Each nonempty group begins with a distinct heading entry."
     (:content (buffer-list-content-regexp-match-p (third filter) buffer))
     (:not (not (buffer-list-filter-match-p (second filter) buffer)))))
 
+(defun buffer-list-matches-any-regexp-p (patterns buffer)
+  (some (lambda (pattern)
+          (buffer-list-regexp-match-p pattern (buffer-name buffer)))
+        patterns))
+
 (defun buffer-list-active-filters-match-p (component buffer)
-  (every (lambda (filter) (buffer-list-filter-match-p filter buffer))
-         (buffer-list-component-filters component)))
+  ;; GNU Ibuffer's temporary show list takes precedence over both its hide
+  ;; list and ordinary filters.  Pending patterns become active only on `gr'.
+  (or (buffer-list-matches-any-regexp-p
+       (buffer-list-component-tmp-show-regexps component) buffer)
+      (and
+       (not (buffer-list-matches-any-regexp-p
+             (buffer-list-component-tmp-hide-regexps component) buffer))
+       (every (lambda (filter) (buffer-list-filter-match-p filter buffer))
+              (buffer-list-component-filters component)))))
 
 (defun buffer-list-reset-visible-items (component)
   "Rebuild grouped rows after active filters or collapsed groups change."
@@ -1379,6 +1403,37 @@ With a prefix, include buffers GNU Ibuffer normally excludes."
   (or (buffer-list-current-buffer component)
       (editor-error "No buffer on this Ibuffer row")))
 
+(defun buffer-list-validate-temp-visibility-regexp (pattern)
+  (handler-case
+      (progn
+        (cl-ppcre:create-scanner pattern :case-insensitive-mode t)
+        pattern)
+    (error ()
+      (editor-error "Invalid Ibuffer visibility regexp"))))
+
+(defun buffer-list-read-temp-visibility-regexp (component prompt)
+  (let* ((buffer (buffer-list-require-current-buffer component))
+         (pattern
+           (prompt-for-string
+            prompt
+            :initial-value
+            (cl-ppcre:quote-meta-chars (buffer-name buffer)))))
+    (buffer-list-validate-temp-visibility-regexp pattern)))
+
+(define-command lem-yath-buffer-list-add-to-tmp-hide () ()
+  "Stage a buffer-name regexp to hide on the next `gr' update."
+  (let ((component (lem/multi-column-list::current-multi-column-list)))
+    (push (buffer-list-read-temp-visibility-regexp
+           component "Never show buffers matching: ")
+          (buffer-list-component-pending-tmp-hide-regexps component))))
+
+(define-command lem-yath-buffer-list-add-to-tmp-show () ()
+  "Stage a buffer-name regexp to force visible on the next `gr' update."
+  (let ((component (lem/multi-column-list::current-multi-column-list)))
+    (push (buffer-list-read-temp-visibility-regexp
+           component "Always show buffers matching: ")
+          (buffer-list-component-pending-tmp-show-regexps component))))
+
 (defun buffer-list-copy-current (value description)
   (copy-to-clipboard-with-killring value)
   (message "Copied ~a: ~a" description value))
@@ -1552,8 +1607,20 @@ mark inside a collapsed group still participates.  Deletion marks never do."
         (lem/multi-column-list::multi-column-list/down))
       t)))
 
+(defun buffer-list-activate-pending-temp-visibility (component)
+  "Activate the session visibility regexps staged since the previous `gr'."
+  (setf (buffer-list-component-tmp-hide-regexps component)
+        (append (buffer-list-component-pending-tmp-hide-regexps component)
+                (buffer-list-component-tmp-hide-regexps component))
+        (buffer-list-component-tmp-show-regexps component)
+        (append (buffer-list-component-pending-tmp-show-regexps component)
+                (buffer-list-component-tmp-show-regexps component))
+        (buffer-list-component-pending-tmp-hide-regexps component) nil
+        (buffer-list-component-pending-tmp-show-regexps component) nil))
+
 (defun buffer-list-rebuild-snapshot
     (component &key (preserve-focused-buffer-p t) focus-index)
+  (buffer-list-activate-pending-temp-visibility component)
   (let ((focused-buffer
           (and preserve-focused-buffer-p
                (buffer-list-current-buffer component)))
@@ -1598,6 +1665,28 @@ mark inside a collapsed group still participates.  Deletion marks never do."
   (and (lem/multi-column-list::multi-column-list-item-checked-p item)
        (not (gethash item (buffer-list-component-deletion-items component)))
        (not (buffer-list-entry-heading-p (buffer-list-item-entry item)))))
+
+(define-command lem-yath-buffer-list-kill-lines () ()
+  "Hide visible ordinary-marked rows until the next `gr' update."
+  (let* ((component (lem/multi-column-list::current-multi-column-list))
+         (visible-items (buffer-list-current-view-items component))
+         (focus (buffer-list-current-item component))
+         (focus-index (or (position focus visible-items :test #'eq) 0))
+         (killed
+           (remove-if-not
+            (lambda (item)
+              (buffer-list-ordinary-marked-item-p component item))
+            visible-items)))
+    (if (null killed)
+        (message "No buffers marked; use m to mark a buffer")
+        (progn
+          (setf (buffer-list-component-all-items component)
+                (remove-if
+                 (lambda (item) (member item killed :test #'eq))
+                 (buffer-list-component-all-items component)))
+          (buffer-list-refresh component :recompute-columns t)
+          (buffer-list-focus-index component focus-index)
+          (message "Killed ~d lines" (length killed))))))
 
 (defun buffer-list-occur-owned-buffer-p (buffer)
   (and buffer
@@ -3370,6 +3459,10 @@ through later selected buffers without wrapping."
   'lem-yath-buffer-list-update)
 (define-key *buffer-list-picker-mode-keymap* "g R"
   'lem-yath-buffer-list-redisplay)
+(define-key *buffer-list-picker-mode-keymap* "-"
+  'lem-yath-buffer-list-add-to-tmp-hide)
+(define-key *buffer-list-picker-mode-keymap* "+"
+  'lem-yath-buffer-list-add-to-tmp-show)
 (define-key *buffer-list-picker-mode-keymap* "g o"
   'lem-yath-buffer-list-visit-other-window)
 (define-key *buffer-list-picker-mode-keymap* "C-o"
@@ -3416,6 +3509,8 @@ through later selected buffers without wrapping."
   'lem-yath-buffer-list-rename-uniquely)
 (define-key *buffer-list-picker-mode-keymap* "X"
   'lem-yath-buffer-list-bury)
+(define-key *buffer-list-picker-mode-keymap* "K"
+  'lem-yath-buffer-list-kill-lines)
 (define-key *buffer-list-picker-mode-keymap* "V"
   'lem-yath-buffer-list-revert)
 (define-key *buffer-list-picker-mode-keymap* "Tab"

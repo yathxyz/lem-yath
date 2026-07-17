@@ -983,6 +983,10 @@ through the ncurses editor.
   redisplays the existing snapshot, `gr` rebuilds it
   from live buffers while preserving applicable marks and filters, `yb/yf`
   copy exact buffer/file names, and `go` visits in another ordinary window.
+  `-`/`+` stage session-local hide/force-show name regexps; they remain pending
+  through `gR` and activate on `gr`, with force-show precedence over hiding and
+  ordinary filters. `K` hides visible ordinary-marked rows through `gR`; `gr`
+  restores them unmarked and retains unrelated deletion marks.
   `s RET` selects one or more exact registered major modes, `s M` includes
   CLOS parent modes represented in the snapshot, `s *` selects GNU-style
   starred names, `s </>` apply strict character-size filters, and `s c`

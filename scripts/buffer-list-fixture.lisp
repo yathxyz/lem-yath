@@ -241,6 +241,17 @@
             (make-buffer "buffer-list-late-buffer")))
   (buffer-list-test-log "LATE created=yes"))
 
+(define-command lem-yath-test-buffer-list-prepare-row-visibility () ()
+  (dolist (spec '((tmp-hide "buffer-list-tmp-hide")
+                  (tmp-show "buffer-list-tmp-show")
+                  (tmp-peer "buffer-list-tmp-peer")
+                  (kill-line-a "buffer-list-kill-line-a")
+                  (kill-line-b "buffer-list-kill-line-b")
+                  (kill-line-delete "buffer-list-kill-line-delete")))
+    (unless (get-buffer (second spec))
+      (buffer-list-test-make-buffer (first spec) (second spec))))
+  (buffer-list-test-log "ROW-VISIBILITY-PREPARED"))
+
 (define-command lem-yath-test-buffer-list-killring () ()
   (buffer-list-test-log
    "COPY value=~a"
@@ -315,7 +326,7 @@
 (define-command lem-yath-test-buffer-list-picker-bindings () ()
   (let ((windows (window-list)))
     (buffer-list-test-log
-     "PICKER-BINDINGS backspace=~a control-h=~a delete=~a diff=~a jump=~a meta-jump=~a group-jump=~a other-noselect=~a one-window=~a view=~a view-g=~a view-horizontal=~a occur=~a occur-meta=~a isearch=~a isearch-regexp=~a query=~a query-regexp=~a mode=~a derived=~a starred=~a size-lt=~a size-gt=~a content=~a lock=~a mark-locked=~a current-popup=~a ordinary-count=~d ordinary-buffers=~{~a~^,~}"
+     "PICKER-BINDINGS backspace=~a control-h=~a delete=~a diff=~a jump=~a meta-jump=~a group-jump=~a other-noselect=~a one-window=~a view=~a view-g=~a view-horizontal=~a occur=~a occur-meta=~a isearch=~a isearch-regexp=~a query=~a query-regexp=~a mode=~a derived=~a starred=~a size-lt=~a size-gt=~a content=~a tmp-hide=~a tmp-show=~a kill-lines=~a lock=~a mark-locked=~a current-popup=~a ordinary-count=~d ordinary-buffers=~{~a~^,~}"
      (buffer-list-test-binding "Backspace")
      (buffer-list-test-binding "C-h")
      (buffer-list-test-binding "Delete")
@@ -340,6 +351,9 @@
      (buffer-list-test-binding "s <")
      (buffer-list-test-binding "s >")
      (buffer-list-test-binding "s c")
+     (buffer-list-test-binding "-")
+     (buffer-list-test-binding "+")
+     (buffer-list-test-binding "K")
      (buffer-list-test-binding "L")
      (buffer-list-test-binding "% L")
      (if (floating-window-p (current-window)) "yes" "no")
@@ -905,6 +919,8 @@
   'lem-yath-test-buffer-list-lock-state)
 (define-key *buffer-list-picker-mode-keymap* "C-c o"
   'lem-yath-test-buffer-list-old-state)
+(define-key *buffer-list-picker-mode-keymap* "C-c v"
+  'lem-yath-test-buffer-list-prepare-row-visibility)
 (define-key *buffer-list-picker-mode-keymap* "F2"
   'lem-yath-test-buffer-list-picker-bindings)
 (define-key *buffer-list-picker-mode-keymap* "F1"

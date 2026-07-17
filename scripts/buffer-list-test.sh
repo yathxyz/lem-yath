@@ -1232,6 +1232,113 @@ else
   fail mark-old "could not focus the old-buffer fixture"
 fi
 
+lem_keys "$session" C-c v g r U J
+if lem_wait_for "$session" 'Jump to buffer:' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l 'buffer-list-tmp-hide'
+  lem_keys "$session" Enter '-'
+  if lem_wait_for "$session" 'Never show buffers matching:' 10 >/dev/null &&
+     grep -Fq 'buffer\-list\-tmp\-hide' <<<"$(lem_capture "$session")"; then
+    lem_keys "$session" Enter J
+    if lem_wait_for "$session" 'Jump to buffer:' 10 >/dev/null; then
+      tmux_cmd send-keys -t "$session" -l 'buffer-list-tmp-show'
+      lem_keys "$session" Enter '+'
+      if lem_wait_for "$session" 'Always show buffers matching:' 10 >/dev/null &&
+         grep -Fq 'buffer\-list\-tmp\-show' <<<"$(lem_capture "$session")"; then
+        lem_keys "$session" Enter
+        before_tmp=$(report_filter || true)
+        lem_keys "$session" g R
+        redisplayed_tmp=$(report_filter || true)
+        if [[ "$before_tmp" == *'buffer-list-tmp-hide'* ]] &&
+           [[ "$before_tmp" == *'buffer-list-tmp-show'* ]] &&
+           [[ "$redisplayed_tmp" == *'buffer-list-tmp-hide'* ]] &&
+           [[ "$redisplayed_tmp" == *'buffer-list-tmp-show'* ]]; then
+          pass tmp-visibility-deferred "-/+ remained pending through ordinary gR redisplay"
+        else
+          fail tmp-visibility-deferred "temporary visibility applied before gr: $before_tmp / $redisplayed_tmp"
+        fi
+
+        lem_keys "$session" s n
+        tmux_cmd send-keys -t "$session" -l 'buffer-list-tmp-peer$'
+        lem_keys "$session" Enter
+        pending_tmp=$(report_filter || true)
+        lem_keys "$session" g r
+        active_tmp=$(report_filter || true)
+        if [[ "$pending_tmp" == *'buffer-list-tmp-peer'* ]] &&
+           [[ "$pending_tmp" != *'buffer-list-tmp-show'* ]] &&
+           [[ "$active_tmp" == *'buffer-list-tmp-peer'* ]] &&
+           [[ "$active_tmp" == *'buffer-list-tmp-show'* ]] &&
+           [[ "$active_tmp" != *'buffer-list-tmp-hide'* ]]; then
+          pass tmp-visibility-update "gr activated hide and show regexps with show precedence over filters"
+        else
+          fail tmp-visibility-update "temporary visibility update diverged: $pending_tmp / $active_tmp"
+        fi
+      else
+        fail tmp-visibility-show "the + prompt lacked the current-name default"
+        lem_keys "$session" C-g
+      fi
+    else
+      fail tmp-visibility-show "could not focus the temporary-show fixture"
+    fi
+  else
+    fail tmp-visibility-hide "the - prompt lacked the current-name default"
+    lem_keys "$session" C-g
+  fi
+else
+  fail tmp-visibility-hide "could not focus the temporary-hide fixture"
+fi
+lem_keys "$session" q
+sleep 0.3
+lem_keys "$session" C-x C-b
+reset_tmp=$(report_filter || true)
+if [[ "$reset_tmp" == *'buffer-list-tmp-hide'* ]] &&
+   [[ "$reset_tmp" == *'buffer-list-tmp-show'* ]] &&
+   [[ "$reset_tmp" == *'buffer-list-tmp-peer'* ]]; then
+  pass tmp-visibility-session "a fresh Ibuffer session cleared temporary visibility regexps"
+else
+  fail tmp-visibility-session "temporary visibility leaked into a fresh picker: $reset_tmp"
+fi
+
+lem_keys "$session" J
+if lem_wait_for "$session" 'Jump to buffer:' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l 'buffer-list-kill-line-a'
+  lem_keys "$session" Enter m J
+  if lem_wait_for "$session" 'Jump to buffer:' 10 >/dev/null; then
+    tmux_cmd send-keys -t "$session" -l 'buffer-list-kill-line-b'
+    lem_keys "$session" Enter m J
+    if lem_wait_for "$session" 'Jump to buffer:' 10 >/dev/null; then
+      tmux_cmd send-keys -t "$session" -l 'buffer-list-kill-line-delete'
+      lem_keys "$session" Enter d K
+      killed_rows=$(report_filter || true)
+      killed_marks=$(report_nav || true)
+      lem_keys "$session" g R
+      redisplayed_rows=$(report_filter || true)
+      lem_keys "$session" g r
+      updated_rows=$(report_filter || true)
+      updated_marks=$(report_nav || true)
+      if [[ "$killed_rows" != *'buffer-list-kill-line-a'* ]] &&
+         [[ "$killed_rows" != *'buffer-list-kill-line-b'* ]] &&
+         [[ "$killed_rows" == *'buffer-list-kill-line-delete'* ]] &&
+         [[ "$killed_marks" == *'buffer-list-kill-line-delete:D'* ]] &&
+         [[ "$redisplayed_rows" != *'buffer-list-kill-line-a'* ]] &&
+         [[ "$updated_rows" == *'buffer-list-kill-line-a'* ]] &&
+         [[ "$updated_rows" == *'buffer-list-kill-line-b'* ]] &&
+         [[ "$updated_marks" == *'buffer-list-kill-line-delete:D'* ]] &&
+         [[ "$updated_marks" != *'buffer-list-kill-line-a:>'* ]] &&
+         [[ "$updated_marks" != *'buffer-list-kill-line-b:>'* ]]; then
+        pass kill-marked-lines "K hid ordinary marks through gR and gr restored them unmarked"
+      else
+        fail kill-marked-lines "K/gr lifecycle diverged: $killed_rows / $killed_marks / $redisplayed_rows / $updated_rows / $updated_marks"
+      fi
+    else
+      fail kill-marked-lines "could not focus the deletion-mark control"
+    fi
+  else
+    fail kill-marked-lines "could not focus the second ordinary mark"
+  fi
+else
+  fail kill-marked-lines "could not focus the first ordinary mark"
+fi
+
 lem_keys "$session" s / U '*' M
 if lem_wait_for "$session" 'Mark by major mode' 10 >/dev/null; then
   tmux_cmd send-keys -t "$session" -l \
