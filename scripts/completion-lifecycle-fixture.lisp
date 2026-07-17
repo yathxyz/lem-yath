@@ -218,6 +218,7 @@
 (define-command lem-yath-test-completion-async () ()
   (completion-lifecycle-clear-buffer)
   (clrhash *completion-lifecycle-callbacks*)
+  (lem-vi-mode/commands:vi-insert)
   (insert-string (current-point) "a")
   (lem/completion-mode:run-completion
    (lem/completion-mode:make-completion-spec
