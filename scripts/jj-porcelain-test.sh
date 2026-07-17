@@ -64,6 +64,23 @@ full_description() {
     -r "$1" --template description
 }
 
+revision_present() {
+  "$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" log --no-graph \
+    -r "$1" --template change_id >/dev/null 2>&1
+}
+
+wait_revision_absent() {
+  local revision=$1 index=0
+  while ((index < 80)); do
+    if ! revision_present "$revision"; then
+      return 0
+    fi
+    sleep 0.25
+    index=$((index + 1))
+  done
+  return 1
+}
+
 wait_description() {
   local expected=$1 index=0
   while ((index < 80)); do
@@ -195,6 +212,69 @@ else
   fail previous-row 'C-k did not select the restored child revision'
 fi
 
+child_change_id=$("$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" log \
+  --no-graph -r @ --template change_id)
+destination_change_id=$("$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" log \
+  --no-graph -r @- --template change_id)
+printf 'moved into the parent by Lem squash\n' \
+  >>"${LEM_YATH_JJ_PORCELAIN_ROOT}working copy.txt"
+"$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" status >/dev/null
+
+lem_keys "$session" s
+if lem_wait_for "$session" 'JJ Squash' 10 >/dev/null; then
+  lem_keys "$session" q
+fi
+if revision_present "$child_change_id" &&
+   [ "$(current_description)" = 'created in Lem' ] &&
+   ! lem_capture "$session" | grep -q 'JJ Squash'; then
+  pass squash-cancel 'q closed the squash popup without changing the repository'
+else
+  fail squash-cancel 'squash cancellation changed state or left its popup active'
+fi
+
+lem_keys "$session" s
+if lem_wait_for "$session" 'JJ Squash' 10 >/dev/null; then
+  lem_keys "$session" s
+fi
+if wait_revision_absent "$child_change_id" &&
+   [ "$(full_description "$destination_change_id")" = \
+     $'described in Lem\n\ncreated in Lem' ] &&
+   "$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" file show \
+     -r "$destination_change_id" 'root:working copy.txt' |
+       grep -Fxq 'moved into the parent by Lem squash' &&
+   invoke_report &&
+   [[ $(latest_report) == \
+     *'kind=log row=yes description=described_in_Lem\n\ncreated_in_Lem '* ]]; then
+  pass squash 's s combined both messages, moved the whole change, and selected its parent'
+else
+  fail squash 'default whole-change squash, message combination, or parent restoration failed'
+fi
+
+# Normalize the destination description so the existing show/describe checks
+# remain independent of the multiline squash assertion above.
+"$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" describe \
+  "$destination_change_id" --message 'described in Lem' >/dev/null
+lem_keys "$session" g r
+if ! invoke_report ||
+   [[ $(latest_report) != *'kind=log row=yes description=described_in_Lem '* ]]; then
+  fail squash-followup 'the normalized squash destination did not refresh in place'
+fi
+
+# Recreate the child so the independent confirmed-abandon path remains covered.
+lem_keys "$session" o
+if lem_wait_for "$session" 'New change description' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l 'created in Lem'
+  lem_keys "$session" Enter
+fi
+if ! wait_description 'created in Lem'; then
+  fail squash-followup 'the squash destination could not create a new child'
+fi
+lem_keys "$session" C-k
+if ! invoke_report ||
+   [[ $(latest_report) != *'kind=log row=yes description=created_in_Lem '* ]]; then
+  fail squash-followup 'the recreated child row could not be selected'
+fi
+
 lem_keys "$session" x
 if lem_wait_for "$session" 'Abandon Jujutsu revision' 10 >/dev/null; then
   lem_keys "$session" y
@@ -243,6 +323,16 @@ if wait_description base; then
   pass edit 'e moved the working copy to the selected historical change'
 else
   fail edit 'the row-aware edit command selected the wrong revision'
+fi
+
+root_change_id=$("$jj_bin" -R "$LEM_YATH_JJ_PORCELAIN_ROOT" log \
+  --no-graph -r 'root()' --template change_id)
+lem_keys "$session" C-j s
+if lem_wait_for "$session" 'no parent to squash into' 10 >/dev/null &&
+   revision_present "$root_change_id"; then
+  pass squash-refusal 's rejected the root revision before opening the popup'
+else
+  fail squash-refusal 'root squash did not fail closed'
 fi
 
 lem_keys "$session" q

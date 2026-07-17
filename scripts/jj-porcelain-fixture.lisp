@@ -34,6 +34,7 @@
          (jj-porcelain-test-key-command (first binding))))
    '(("c" lem-yath-jj-describe)
      ("o" lem-yath-jj-new)
+     ("s" lem-yath-jj-squash)
      ("e" lem-yath-jj-edit)
      ("u" lem-yath-jj-undo)
      ("C-r" lem-yath-jj-redo)

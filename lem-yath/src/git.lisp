@@ -454,6 +454,105 @@
            (list "log" "--no-graph" "-r" revision
                  "--template" "description"))))
 
+(defun jj-single-parent-revision (root revision)
+  "Return REVISION's sole parent, refusing roots and merge revisions."
+  (let ((parents
+          (jj-split-null-fields
+           (run-jj root
+                   (list "log" "--no-graph"
+                         "-r" (format nil "(~a)-" revision)
+                         "--template"
+                         "change_id.shortest(12) ++ \"\\0\"")))))
+    (cond
+      ((null parents)
+       (editor-error "The selected Jujutsu revision has no parent to squash into"))
+      ((rest parents)
+       (editor-error "Cannot squash a Jujutsu merge with this focused workflow"))
+      (t (first parents)))))
+
+(defun jj-combined-description (destination source)
+  "Combine DESTINATION and SOURCE descriptions without losing either body."
+  (cond
+    ((str:blankp destination) source)
+    ((str:blankp source) destination)
+    (t (format nil "~a~%~%~a" destination source))))
+
+(defun jj-squash-description (root revision parent policy)
+  "Return the squash message selected by POLICY for REVISION and PARENT."
+  (let ((source (jj-description root revision))
+        (destination (jj-description root parent)))
+    (ecase policy
+      (:combine (jj-combined-description destination source))
+      (:destination destination)
+      (:source source))))
+
+(defun jj-squash-keymap ()
+  "Build the focused Majutsu-style squash popup."
+  (let ((keymap (make-keymap :description "JJ Squash")))
+    (setf (lem/transient::keymap-show-p keymap) t
+          (lem/transient::keymap-display-style keymap) :column)
+    (dolist
+        (entry
+          '(("c" "squash; combine descriptions")
+            ("d" "squash; destination description")
+            ("r" "squash; source description")
+            ("k" "squash; combine and keep emptied source")
+            ("s" "squash; combine descriptions")
+            ("Return" "squash; combine descriptions")
+            ("q" "cancel")))
+      (destructuring-bind (key description) entry
+        (define-key keymap key 'nop-command)
+        (setf (lem-core::prefix-description
+               (lem-core::keymap-find keymap (lem-core::parse-keyspec key)))
+              description)))
+    keymap))
+
+(defun jj-execute-squash (root revision parent policy keep-emptied)
+  "Squash REVISION into PARENT and keep point on the destination row."
+  (let ((arguments
+          (list "squash" "--revision" revision
+                "--message"
+                (jj-squash-description root revision parent policy))))
+    (when keep-emptied
+      (setf arguments (append arguments '("--keep-emptied"))))
+    (run-jj root arguments)
+    (let ((buffer (current-buffer)))
+      (render-jj-buffer buffer root)
+      (jj-restore-revision-point buffer parent))
+    (message "Jujutsu change squashed")))
+
+(defun dispatch-jj-squash (root revision parent)
+  "Read and execute a focused whole-revision squash action."
+  (unwind-protect
+       (progn
+         (let ((lem/transient:*transient-popup-delay* 0))
+           (keymap-activate (jj-squash-keymap)))
+         (redraw-display)
+         (let* ((key (read-key))
+                (name (lem-core::keyseq-to-string (list key))))
+           (lem/transient::hide-transient)
+           (cond
+             ((or (string= name "s") (string= name "Return")
+                  (string= name "c"))
+              (jj-execute-squash root revision parent :combine nil))
+             ((string= name "d")
+              (jj-execute-squash root revision parent :destination nil))
+             ((string= name "r")
+              (jj-execute-squash root revision parent :source nil))
+             ((string= name "k")
+              (jj-execute-squash root revision parent :combine t))
+             ((or (string= name "q") (string= name "Escape"))
+              (message "Jujutsu squash cancelled"))
+             (t (message "No squash action is bound to ~a" name)))))
+    (lem/transient::hide-transient)))
+
+(define-command lem-yath-jj-squash () ()
+  "Squash the selected change into its sole parent, like Majutsu `s'."
+  (let* ((root (jj-current-root))
+         (revision (jj-selected-revision))
+         (parent (jj-single-parent-revision root revision)))
+    (dispatch-jj-squash root revision parent)))
+
 (define-command lem-yath-jj-describe () ()
   "Set the selected change's description, like Majutsu `c'."
   (let* ((root (jj-current-root))
@@ -552,7 +651,7 @@
 (define-command lem-yath-jj-help () ()
   "Show the focused Majutsu-compatible Jujutsu command surface."
   (message
-   "Jujutsu: c describe (one line), o new, e edit, u undo, C-r redo, x abandon, d/RET show, C-j/C-k rows, g r refresh, q quit"))
+   "Jujutsu: c describe (one line), o new, s squash, e edit, u undo, C-r redo, x abandon, d/RET show, C-j/C-k rows, g r refresh, q quit"))
 
 (define-command lem-yath-jj-quit () ()
   "Quit the current Jujutsu status/log window."
@@ -584,6 +683,7 @@
 (define-key *lem-yath-jj-view-keymap* "q" 'lem-yath-jj-quit)
 (define-key *lem-yath-jj-view-keymap* "c" 'lem-yath-jj-describe)
 (define-key *lem-yath-jj-view-keymap* "o" 'lem-yath-jj-new)
+(define-key *lem-yath-jj-view-keymap* "s" 'lem-yath-jj-squash)
 (define-key *lem-yath-jj-view-keymap* "e" 'lem-yath-jj-edit)
 (define-key *lem-yath-jj-view-keymap* "u" 'lem-yath-jj-undo)
 (define-key *lem-yath-jj-view-keymap* "C-r" 'lem-yath-jj-redo)
