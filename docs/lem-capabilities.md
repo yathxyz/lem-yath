@@ -2715,6 +2715,39 @@ both state maps, marked and current-row dispatch, shared prompts, tag inversion,
 planning-line shape, destructive archive/refile order, unsupported-action mark
 retention, and stale unsaved-source refusal.
 
+`src/apps/agenda-filter.lisp` adds Evil-Org's complete effective filter chord
+family: `sc` category, `sr` regexp, `se` Effort, `st` tag, `s^` top headline,
+`ss` temporary limiting, and `S` clear. C-z Emacs state retains GNU Org's
+corresponding `</=/_/\\/^/~/|` aliases. The off-thread agenda scan annotates
+each item with GNU-style effective category (nearest `CATEGORY`, then
+`#+CATEGORY`, then filename), inherited `#+FILETAGS` and ancestor/local tags,
+local `Effort`, and the normalized top-level headline. These values are copied
+to rendered rows; applying filters re-renders a cached immutable result and
+never visits or changes a source buffer.
+
+Category and top-headline commands toggle the value at point and accept a
+negative prefix. Tag dispatch supports tagged-any, completion, tags at point,
+positive/negative selection, explicit removal, and double-prefix intersection.
+Regexp filters use case-folded display text, validate before changing state,
+toggle off on a second ordinary invocation, and double-prefix accumulate.
+Effort implements Org's default duration units and its inclusive `<`/`>`
+comparison, including the pinned high-effort treatment of missing estimates;
+`_` removes that filter. Different filter types and accumulated clauses compose
+by AND, survive `g` refresh in the current agenda, and appear in the first-line
+status. `S`/`|` clears the filter stack. `ss` deliberately remains Org's
+separate per-section entry/TODO/tag/cumulative-Effort limiter; its result lasts
+for the current scan generation, `C-u ss` removes it, and a source refresh
+rebuilds the full view. Agenda-local `C-u` is a universal prefix, matching the
+user's default `evil-want-C-u-scroll=nil` configuration.
+
+`scripts/agenda-filter-test.sh` physically drives both state maps, inherited
+metadata, positive and negative categories, refresh-stable top-headline
+selection, tag completion and double-prefix accumulation, regexp toggle,
+Effort comparison/removal, temporary limiting, and full filter clearing. It
+also compares the Org source byte-for-byte after the session. The arbitrary
+GNU `/` filter expression language, configured tag-group expansion, filter
+presets, and auto-exclusion callbacks are not claimed.
+
 This is a task summary, not a replacement for GNU Org's arbitrary agenda
 dispatcher. Diary sexps, hour repeaters, full time-grid and time-range
 presentation, exact scheduled-delay and deadline-prewarning reminder rendering,
@@ -2722,6 +2755,7 @@ configurable or cross-file refile targets, target creation/copy/reverse and
 prefix/cache variants, custom archive destinations and local archive
 sibling/tag commands, bulk archive-sibling/scatter/arbitrary-function/persistent-
 mark variants, clock recent-task/prefix variants, arbitrary clock-report spans,
+general `/` matcher expressions, tag-group/preset/auto-exclusion filtering,
 custom commands, and the wider org-super-agenda presentation remain explicit
 gaps.
 

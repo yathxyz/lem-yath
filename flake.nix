@@ -740,6 +740,8 @@
             agenda-test = mkTestAppWithLem lemYath "lem-yath-agenda-test" "agenda-test.sh";
             agenda-clock-test = mkTestAppWithLem lemYath "lem-yath-agenda-clock-test" "agenda-clock-test.sh";
             agenda-bulk-test = mkTestAppWithLem lemYath "lem-yath-agenda-bulk-test" "agenda-bulk-test.sh";
+            agenda-filter-test =
+              mkTestAppWithLem lemYath "lem-yath-agenda-filter-test" "agenda-filter-test.sh";
             editing-test = mkTestApp "lem-yath-editing-test" "editing-test.sh";
             formatting-test = mkTestApp "lem-yath-formatting-test" "formatting-test.sh";
             prompt-completion-test = mkTestApp "lem-yath-prompt-completion-test" "prompt-completion-test.sh";
@@ -852,6 +854,7 @@
             agenda = mkCheckWithLem lemYath "agenda" "agenda-test.sh";
             agenda-clock = mkCheckWithLem lemYath "agenda-clock" "agenda-clock-test.sh";
             agenda-bulk = mkCheckWithLem lemYath "agenda-bulk" "agenda-bulk-test.sh";
+            agenda-filter = mkCheckWithLem lemYath "agenda-filter" "agenda-filter-test.sh";
             editing = mkCheck "editing" "editing-test.sh";
             formatting = mkCheck "formatting" "formatting-test.sh";
             prompt-completion = mkCheck "prompt-completion" "prompt-completion-test.sh";

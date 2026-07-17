@@ -616,7 +616,7 @@ interaction, and authenticated MCP diff review,
 cursor/state parity, evil-snipe and Avy parity, screen-line/Evil parity, notes,
 roam, roam backlinks, native Org, Org-modern projection, Org image
 capture/download, planning/timestamps, agenda, agenda-clock, and
-parity-ledger checks. The ledger can also be
+agenda-bulk, agenda-filter, and parity-ledger checks. The ledger can also be
 validated directly, and the
 interactive TUI checks are exposed as flake apps:
 
@@ -691,6 +691,8 @@ nix run .#org-timestamp-test
 nix run .#org-source-edit-test
 nix run .#agenda-test
 nix run .#agenda-clock-test
+nix run .#agenda-bulk-test
+nix run .#agenda-filter-test
 nix run .#interactive-test
 nix run .#structural-test
 nix run .#lisp-eval-test
@@ -712,6 +714,7 @@ Pass `check`, `compile`, `compilation`, `terminal`, `server`, `boot`, `completio
 `lsp-project`, `real-lsp`, `tree-sitter`, `dap`, `project-navigation`, `project-outline`, `persistence`, `bookmarks`,
 `vundo`, `electric-editing`, `ui-parity`, `business-visual`, `cursor-state`, `snipe`, `avy`,
 `documents`, `notmuch`, `interactive`, `structural`, `roam`, `roam-backlinks`,
-`org-modern`, `org-download`, or `notes` to run only that gate.
+`org-modern`, `org-download`, `agenda`, `agenda-filter`, or `notes` to run only
+that gate.
 `LEM_YATH_TEST_HOST` and `LEM_YATH_REMOTE_ROOT` override the SSH host and remote
 cache directory.

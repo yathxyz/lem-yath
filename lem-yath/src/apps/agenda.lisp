@@ -34,13 +34,29 @@
 (defvar *agenda-buffer-cleanup-functions* nil
   "Functions called with an agenda buffer immediately before it is killed.")
 
+(defvar *agenda-item-filter-function* nil
+  "Optional function called with an agenda buffer and parsed item.")
+
+(defvar *agenda-section-transform-function* nil
+  "Optional function called with a buffer, section keyword, and item list.")
+
+(defvar *agenda-status-function* nil
+  "Optional function returning a short status suffix for an agenda buffer.")
+
 ;;; --- parsing -------------------------------------------------------------
 
 (defstruct (agenda-item (:constructor make-agenda-item))
   "One parsed heading: its TODO keyword, text, source file/line and date."
   keyword text file line heading date kind event-p end-date repeater time
   occurrence-index occurrence-count
-  timestamp-line timestamp-source-line timestamp-start timestamp-raw)
+  timestamp-line timestamp-source-line timestamp-start timestamp-raw
+  category tags effort top-headline)
+
+(defstruct (agenda-item-metadata (:constructor make-agenda-item-metadata))
+  category tags effort top-headline)
+
+(defstruct (agenda-heading-context (:constructor make-agenda-heading-context))
+  level title tags category metadata)
 
 (defparameter *heading-scanner*
   (ppcre:create-scanner
@@ -326,6 +342,173 @@ Ordinary active timestamps belong to their containing visible heading."
     (error (condition)
       (values nil (list condition)))))
 
+(defun agenda-unique-strings (strings)
+  "Return STRINGS in first-seen order without duplicates."
+  (remove-duplicates strings :test #'string= :from-end t))
+
+(defun agenda-filter-top-title (title)
+  "Normalize TITLE like `org-find-top-headline' for agenda filtering."
+  (ppcre:regex-replace
+   "^\\[(?:[0-9]+/[0-9]+|%[0-9]+)\\]\\s*" title ""))
+
+(defun agenda-file-filter-metadata (lines source)
+  "Return GNU Org's file category and inherited FILETAGS for LINES."
+  (let ((category nil)
+        (tags '()))
+    (dolist (line lines)
+      (multiple-value-bind (start end registers register-ends)
+          (ppcre:scan
+           "(?i)^\\s*#\\+(CATEGORY|FILETAGS):\\s*(.*?)\\s*$" line)
+        (declare (ignore start end))
+        (when (and registers (aref registers 0))
+          (let ((name (string-upcase
+                       (subseq line (aref registers 0)
+                               (aref register-ends 0))))
+                (value (subseq line (aref registers 1)
+                               (aref register-ends 1))))
+            (cond
+              ((and (string= name "CATEGORY")
+                    (null category)
+                    (plusp (length value)))
+               (setf category value))
+              ((string= name "FILETAGS")
+               (setf tags
+                     (nconc tags (agenda-normalize-tags value)))))))))
+    (values (or category (pathname-name source))
+            (agenda-unique-strings tags))))
+
+(defun agenda-filter-property-fields (line)
+  "Return an immediate Org drawer property's name and value from LINE."
+  (multiple-value-bind (start end registers register-ends)
+      (ppcre:scan "^:([A-Za-z0-9_-]+):[ \\t]*(.*?)[ \\t]*$" line)
+    (declare (ignore start end))
+    (when (and registers (aref registers 0))
+      (values
+       (string-upcase
+        (subseq line (aref registers 0) (aref register-ends 0)))
+       (subseq line (aref registers 1) (aref register-ends 1))))))
+
+(defun agenda-heading-inherited-category (contexts file-category)
+  (or (loop :for context :in contexts
+            :for category := (agenda-heading-context-category context)
+            :when (and category (plusp (length category)))
+              :return category)
+      file-category))
+
+(defun agenda-heading-inherited-tags (contexts file-tags local-tags)
+  (agenda-unique-strings
+   (append file-tags
+           (loop :for context :in (reverse contexts)
+                 :nconc (copy-list (agenda-heading-context-tags context)))
+           local-tags)))
+
+(defun agenda-build-filter-metadata (lines source)
+  "Return a source-line table of category, tags, Effort, and top headline."
+  (multiple-value-bind (file-category file-tags)
+      (agenda-file-filter-metadata lines source)
+    (let ((table (make-hash-table :test #'eql))
+          (contexts '())
+          (current nil)
+          (property-eligible-p nil)
+          (property-drawer-p nil)
+          (block-p nil))
+      (loop :for line :in lines
+            :for line-number :from 1
+            :do
+               (cond
+                 (block-p
+                  (when (ppcre:scan "(?i)^\\s*#\\+end_" line)
+                    (setf block-p nil)))
+                 ((ppcre:scan "(?i)^\\s*#\\+begin_" line)
+                  (setf block-p t
+                        property-eligible-p nil
+                        property-drawer-p nil))
+                 (t
+                  (multiple-value-bind (level title local-tags)
+                      (roam-org-heading-fields line)
+                    (if level
+                        (progn
+                          (loop :while (and contexts
+                                            (>= (agenda-heading-context-level
+                                                 (first contexts))
+                                                level))
+                                :do (pop contexts))
+                          (let* ((top-title
+                                   (agenda-filter-top-title
+                                    (if contexts
+                                        (agenda-heading-context-title
+                                         (car (last contexts)))
+                                        title)))
+                                 (metadata
+                                   (make-agenda-item-metadata
+                                    :category
+                                    (agenda-heading-inherited-category
+                                     contexts file-category)
+                                    :tags
+                                    (agenda-heading-inherited-tags
+                                     contexts file-tags local-tags)
+                                    :top-headline top-title)))
+                            (setf current
+                                  (make-agenda-heading-context
+                                   :level level
+                                   :title title
+                                   :tags local-tags
+                                   :metadata metadata)
+                                  (gethash line-number table) metadata)
+                            (push current contexts))
+                          (setf property-eligible-p t
+                                property-drawer-p nil))
+                        (when current
+                          (let ((trimmed
+                                  (string-trim
+                                   '(#\Space #\Tab #\Return) line)))
+                            (cond
+                              (property-drawer-p
+                               (if (string-equal trimmed ":END:")
+                                   (setf property-drawer-p nil)
+                                   (multiple-value-bind (name value)
+                                       (agenda-filter-property-fields trimmed)
+                                     (cond
+                                       ((and name (string= name "CATEGORY")
+                                             (plusp (length value)))
+                                        (setf
+                                         (agenda-heading-context-category current)
+                                         value
+                                         (agenda-item-metadata-category
+                                          (agenda-heading-context-metadata current))
+                                         value))
+                                       ((and name (string= name "EFFORT"))
+                                        (setf
+                                         (agenda-item-metadata-effort
+                                          (agenda-heading-context-metadata current))
+                                         value))))))
+                              ((and property-eligible-p
+                                    (ppcre:scan *planning-line-scanner* line)))
+                              ((and property-eligible-p
+                                    (string-equal trimmed ":PROPERTIES:"))
+                               (setf property-drawer-p t
+                                     property-eligible-p nil))
+                              (t
+                               (setf property-eligible-p nil))))))))))
+      table)))
+
+(defun agenda-enrich-filter-metadata (source items)
+  "Attach source-derived agenda filter metadata to ITEMS."
+  (with-open-file (stream source :direction :input :external-format :utf-8)
+    (let* ((lines (loop :for line := (read-line stream nil nil)
+                        :while line :collect line))
+           (table (agenda-build-filter-metadata lines source)))
+      (dolist (item items items)
+        (alexandria:when-let ((metadata (gethash (agenda-item-line item) table)))
+          (setf (agenda-item-category item)
+                (agenda-item-metadata-category metadata)
+                (agenda-item-tags item)
+                (copy-list (agenda-item-metadata-tags metadata))
+                (agenda-item-effort item)
+                (agenda-item-metadata-effort metadata)
+                (agenda-item-top-headline item)
+                (agenda-item-metadata-top-headline metadata)))))))
+
 ;;; --- date helpers --------------------------------------------------------
 
 (defun today-iso (&optional (now (funcall *agenda-now-function*)))
@@ -560,6 +743,14 @@ comparison. Dated DONE/CANCELLED items are dropped from the dated sections."
                                  (agenda-item-time item))
               (put-text-property start point :agenda-occurrence-index
                                  (agenda-item-occurrence-index item))
+              (put-text-property start point :agenda-category
+                                 (agenda-item-category item))
+              (put-text-property start point :agenda-tags
+                                 (agenda-item-tags item))
+              (put-text-property start point :agenda-effort
+                                 (agenda-item-effort item))
+              (put-text-property start point :agenda-top-headline
+                                 (agenda-item-top-headline item))
               (put-text-property start point :agenda-timestamp-line
                                  (agenda-item-timestamp-line item))
               (put-text-property start point :agenda-timestamp-source-line
@@ -616,14 +807,45 @@ comparison. Dated DONE/CANCELLED items are dropped from the dated sections."
   "Fill BUFFER with grouped ITEMS and any source FAILURES on the editor thread."
   (let ((now (funcall *agenda-now-function*))
         (restore-key (buffer-value buffer 'lem-yath-agenda-restore-entry))
-        (duplicate-counts (make-hash-table :test #'equal)))
+        (duplicate-counts (make-hash-table :test #'equal))
+        (visible-items
+          (if *agenda-item-filter-function*
+              (remove-if-not
+               (lambda (item)
+                 (funcall *agenda-item-filter-function* buffer item))
+               items)
+              items)))
+    (setf (buffer-value buffer 'lem-yath-agenda-cached-items) items
+          (buffer-value buffer 'lem-yath-agenda-cached-failures) failures
+          (buffer-value buffer 'lem-yath-agenda-cached-clock-report)
+          clock-report
+          (buffer-value buffer 'lem-yath-agenda-cache-ready) t)
     (setf (buffer-value buffer 'lem-yath-agenda-restore-entry) nil)
     (with-buffer-read-only buffer nil
       (erase-buffer buffer)
       (multiple-value-bind (overdue today upcoming todos)
-          (group-items items now)
+          (group-items visible-items now)
+        (when *agenda-section-transform-function*
+          (setf overdue
+                (funcall *agenda-section-transform-function*
+                         buffer :overdue overdue)
+                today
+                (funcall *agenda-section-transform-function*
+                         buffer :today today)
+                upcoming
+                (funcall *agenda-section-transform-function*
+                         buffer :upcoming upcoming)
+                todos
+                (funcall *agenda-section-transform-function*
+                         buffer :todos todos)))
         (let ((point (buffer-end-point buffer)))
-          (insert-string point (format nil "Agenda  (~a)~%~%" (today-iso now))))
+          (insert-string
+           point
+           (format nil "Agenda  (~a)~a~%~%"
+                   (today-iso now)
+                   (if *agenda-status-function*
+                       (or (funcall *agenda-status-function* buffer) "")
+                       ""))))
         (insert-agenda-section buffer "Overdue" overdue duplicate-counts)
         (insert-agenda-section buffer "Today" today duplicate-counts)
         (insert-agenda-section
@@ -649,6 +871,10 @@ comparison. Dated DONE/CANCELLED items are dropped from the dated sections."
               (failures (reverse discovery-failures)))
           (dolist (file files)
             (multiple-value-bind (parsed errors) (parse-org-file file)
+              (handler-case
+                  (agenda-enrich-filter-metadata file parsed)
+                (error (condition)
+                  (push condition errors)))
               (setf items (nconc items parsed))
               (dolist (error errors)
                 (push (cons file error) failures))))

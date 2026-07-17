@@ -612,6 +612,16 @@ the trailing text-ready space. The profile binds no other org-journal command
   row when unmarked), and clears marks only after success. Archive-sibling,
   scatter, arbitrary Emacs Lisp functions, persistent marks, and cross-file
   refile remain explicit divergences.
+- Evil-Org `sc/sr/se/st/s^/ss/S` and GNU Org's base `</=/_/\\/^/~/|`
+  aliases expose category, regexp, Effort, tag, top-headline, temporary-limit,
+  and clear operations. Category and top-headline filters toggle from the row
+  at point; tag, regexp, and Effort filters support the pinned negative and
+  double-prefix accumulation forms. Active filters stack by intersection,
+  remain display-only across `g`, and are visible in the agenda header. `ss`
+  remains Org's generation-local limiter rather than being conflated with the
+  filter stack. Lem derives inherited category and tags, local Effort, and the
+  normalized top headline during the asynchronous scan. Arbitrary `/` matcher
+  expressions and tag-group expansion remain outside this bounded surface.
 
 ### Visuals & babel
 - **org-modern**: `org-modern-mode` on org buffers + `org-modern-agenda` on agenda finalize.
