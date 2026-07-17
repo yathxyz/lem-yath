@@ -1,11 +1,17 @@
 (in-package :lem-yath)
 
+(setf (uiop:getenv "PATH")
+      (format nil "~a:~a"
+              (uiop:getenv "LEM_YATH_ACTIONS_FAKE_BIN")
+              (uiop:getenv "PATH")))
+
 (defvar *actions-fixture-report*
   (uiop:getenv "LEM_YATH_ACTIONS_REPORT"))
 (defvar *actions-fixture-root*
   (uiop:ensure-directory-pathname
    (uiop:getenv "LEM_YATH_ACTIONS_ROOT")))
 (defvar *actions-fixture-source-buffer* nil)
+(defvar *actions-fixture-buffer* nil)
 (defvar *actions-fixture-accept-count* 0)
 
 (defun actions-fixture-log (control &rest arguments)
@@ -84,6 +90,23 @@
   (switch-to-buffer *actions-fixture-source-buffer*)
   (buffer-start (current-point)))
 
+(define-command lem-yath-test-actions-buffer () ()
+  (unless (and *actions-fixture-buffer*
+               (member *actions-fixture-buffer* (buffer-list) :test #'eq))
+    (editor-error "The actions fixture buffer is gone"))
+  (switch-to-buffer *actions-fixture-buffer*)
+  (buffer-start (current-point)))
+
+(define-command lem-yath-test-actions-record-buffer () ()
+  (if (and *actions-fixture-buffer*
+           (member *actions-fixture-buffer* (buffer-list) :test #'eq))
+      (actions-fixture-log
+       "BUFFER live=yes modified=~a text=~a"
+       (if (buffer-modified-p *actions-fixture-buffer*) "yes" "no")
+       (actions-fixture-encode
+        (actions-fixture-buffer-text *actions-fixture-buffer*)))
+      (actions-fixture-log "BUFFER live=no")))
+
 (defun actions-fixture-key-command (keymap keys)
   (alexandria:when-let
       ((prefix (lem-core::keymap-find
@@ -99,6 +122,9 @@
     (hash-table (hash-table-count collection))))
 
 (define-command lem-yath-test-actions-static () ()
+  (actions-fixture-log
+   "XDG path=~a"
+   (or (ignore-errors (executable-find "xdg-open")) "none"))
   (let ((failures 0))
     (labels ((check (condition name)
                (actions-fixture-log
@@ -422,6 +448,12 @@
   (define-key keymap "F5" 'lem-yath-test-actions-record-state))
 
 (dolist (keymap (list *global-keymap*
+                      lem-vi-mode:*normal-keymap*
+                      lem-vi-mode:*visual-keymap*))
+  (define-key keymap "F2" 'lem-yath-test-actions-record-buffer)
+  (define-key keymap "F3" 'lem-yath-test-actions-buffer))
+
+(dolist (keymap (list *global-keymap*
                       lem/prompt-window::*prompt-mode-keymap*
                       lem/completion-mode::*completion-mode-keymap*))
   (define-key keymap "F4" 'lem-yath-test-actions-direct-completion-copy)
@@ -441,6 +473,13 @@
   (define-key keymap "Shift-F8" 'lem-yath-test-actions-reload))
 
 (setf *actions-fixture-source-buffer* (current-buffer))
+(setf *actions-fixture-buffer*
+      (find-file-buffer (uiop:getenv "LEM_YATH_ACTIONS_BUFFER")))
+(add-hook
+ (variable-value 'kill-buffer-hook :buffer *actions-fixture-buffer*)
+ (lambda (buffer)
+   (declare (ignore buffer))
+   (actions-fixture-log "BUFFER killed=yes name=buffer-action.txt")))
 (setf (buffer-directory *actions-fixture-source-buffer*)
       *actions-fixture-root*)
 (actions-fixture-install-language-handlers *actions-fixture-source-buffer*)

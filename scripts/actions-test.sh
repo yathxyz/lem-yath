@@ -31,6 +31,8 @@ export LEM_YATH_ACTIONS_ROOT="$root/fixture/"
 export LEM_YATH_ACTIONS_REPORT="$root/report"
 export LEM_YATH_ACTIONS_LAUNCH_REPORT="$root/launch-report"
 export LEM_YATH_ACTIONS_SOURCE="$root/fixture/actions-source.txt"
+export LEM_YATH_ACTIONS_BUFFER="$root/fixture/buffer-action.txt"
+export LEM_YATH_ACTIONS_FAKE_BIN="$root/bin"
 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$WORKDIR" \
   "$LEM_YATH_ACTIONS_ROOT/relative" "$LEM_YATH_ACTIONS_ROOT/find" \
   "$root/bin"
@@ -51,12 +53,13 @@ printf 'PEEK ACTION TARGET\n' \
   >"$LEM_YATH_ACTIONS_ROOT/peek-target.txt"
 printf 'DELETED FILE ACTION TARGET\n' \
   >"$LEM_YATH_ACTIONS_ROOT/deleted-target.txt"
+printf '.' >"$LEM_YATH_ACTIONS_BUFFER"
 
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'set -eu' \
   ': "${LEM_YATH_ACTIONS_LAUNCH_REPORT:?}"' \
-  'printf "%s\\n" "$*" >>"$LEM_YATH_ACTIONS_LAUNCH_REPORT"' \
+  'printf "argc=%s arg=%s\\n" "$#" "$1" >>"$LEM_YATH_ACTIONS_LAUNCH_REPORT"' \
   >"$root/bin/xdg-open"
 chmod +x "$root/bin/xdg-open"
 export PATH="$root/bin:$PATH"
@@ -76,6 +79,10 @@ die() {
   if [ -f "$LEM_YATH_ACTIONS_REPORT" ]; then
     sed -n '1,260p' "$LEM_YATH_ACTIONS_REPORT" >&2
   fi
+  printf '\n--- launch report ---\n' >&2
+  if [ -f "$LEM_YATH_ACTIONS_LAUNCH_REPORT" ]; then
+    sed -n '1,80p' "$LEM_YATH_ACTIONS_LAUNCH_REPORT" >&2
+  fi
   exit 1
 }
 
@@ -88,6 +95,23 @@ wait_report_count() {
   local pattern=$1 expected=$2 timeout=${3:-$WAIT_TIMEOUT} index=0
   while ((index < timeout * 4)); do
     if (( $(report_count "$pattern") >= expected )); then
+      return 0
+    fi
+    sleep 0.25
+    index=$((index + 1))
+  done
+  return 1
+}
+
+launch_count() {
+  local pattern=$1
+  grep -cE "$pattern" "$LEM_YATH_ACTIONS_LAUNCH_REPORT" 2>/dev/null || true
+}
+
+wait_launch_count() {
+  local pattern=$1 expected=$2 timeout=${3:-$WAIT_TIMEOUT} index=0
+  while ((index < timeout * 4)); do
+    if (( $(launch_count "$pattern") >= expected )); then
       return 0
     fi
     sleep 0.25
@@ -157,6 +181,10 @@ if ! wait_report_count '^SUMMARY STATIC PASS failures=0 ' 1; then
   die static-contracts 'leader, completion, whitelist, or registry contract failed'
 fi
 pass static-contracts 'normal/visual leader and completion-local bindings are exact'
+if ! grep -Fq "XDG path=$root/bin/xdg-open" "$LEM_YATH_ACTIONS_REPORT"; then
+  die launcher-resolution 'the fixture xdg-open did not win executable resolution'
+fi
+pass launcher-resolution 'external actions resolve the isolated fixture launcher'
 
 goto_source_line 2
 open_actions
@@ -230,6 +258,15 @@ fi
 pass fast-dispatch 'SPC e a w dispatched before any delayed leader help'
 pass url-copy-safety 'URL copy populated the kill ring without launching anything'
 
+goto_source_line 2
+open_actions
+lem_keys "$session" Enter
+if ! wait_launch_count \
+  '^argc=1 arg=https://example\.invalid/action\?q=lem$' 1; then
+  die url-external 'Return did not pass the exact URL as one launcher argument'
+fi
+pass url-external 'Return opened the exact URL through one argv element'
+
 source_buffer
 send_keys g g w v e
 open_actions
@@ -289,6 +326,15 @@ if ! wait_screen 'RELATIVE FILE ACTION TARGET'; then
   die relative-file-visit 'Return did not visit the existing relative file'
 fi
 pass relative-file-visit 'Return visited the exact existing relative target'
+
+goto_source_line 3
+open_actions
+lem_keys "$session" x
+if ! wait_launch_count \
+  "^argc=1 arg=$LEM_YATH_ACTIONS_ROOT"'relative/target\.txt$' 1; then
+  die file-external 'x did not pass the resolved file as one launcher argument'
+fi
+pass file-external 'x opened the resolved file through one argv element'
 
 goto_source_line 4
 open_actions
@@ -451,6 +497,70 @@ if ! record_state ||
   die peek-visit 'Return did not visit the peek result source'
 fi
 pass peek-visit 'Return visited the location returned by peek-source'
+
+lem_keys "$session" F3
+if ! wait_screen '^\.[[:space:]]*$'; then
+  die buffer-action-setup 'the dedicated file-backed buffer did not open'
+fi
+send_keys A
+tmux_cmd send-keys -t "$session" -l '!'
+send_keys Escape
+open_actions
+if ! wait_screen 'save buffer' || ! wait_screen 'revert buffer' ||
+   ! wait_screen 'kill buffer' || ! wait_screen 'copy buffer'; then
+  die buffer-action-menu 'the live file-backed buffer actions were incomplete'
+fi
+lem_keys "$session" w
+sleep 0.25
+if ! record_state ||
+   ! tail -n 1 "$LEM_YATH_ACTIONS_REPORT" | grep -qE \
+     '^STATE buffer=buffer-action\.txt .*kill=buffer-action\.txt .*text=\.!$'; then
+  die buffer-copy 'w did not copy the exact buffer name without changing content'
+fi
+pass buffer-copy 'w copied the exact live buffer name'
+
+open_actions
+lem_keys "$session" s
+sleep 0.35
+if [ "$(cat "$LEM_YATH_ACTIONS_BUFFER")" != '.!' ]; then
+  die buffer-save 's did not persist the modified target buffer'
+fi
+pass buffer-save 's persisted the target buffer through the action menu'
+
+printf 'REVERTED!' >"$LEM_YATH_ACTIONS_BUFFER"
+open_actions
+lem_keys "$session" r
+if ! wait_screen 'REVERTED!'; then
+  die buffer-revert 'r did not replace the clean buffer with its changed file'
+fi
+before=$(report_count '^BUFFER live=')
+lem_keys "$session" F2
+if ! wait_report_count '^BUFFER live=yes modified=no text=REVERTED!$' \
+     "$((before + 1))"; then
+  die buffer-revert 'the reverted target state was not clean and exact'
+fi
+pass buffer-revert 'r reloaded the externally changed file into a clean buffer'
+
+open_actions
+if ! wait_screen 'Identifier:'; then
+  die buffer-kill 'the identifier target did not precede the buffer after revert'
+fi
+open_actions
+if ! wait_screen 'Buffer: buffer-action\.txt'; then
+  die buffer-kill 'repeating SPC e a did not select the buffer target'
+fi
+killed_before=$(report_count '^BUFFER killed=yes name=buffer-action\.txt$')
+lem_keys "$session" k
+if ! wait_report_count '^BUFFER killed=yes name=buffer-action\.txt$' \
+     "$((killed_before + 1))"; then
+  die buffer-kill 'k did not kill the selected clean target buffer'
+fi
+before=$(report_count '^BUFFER live=no$')
+lem_keys "$session" F2
+if ! wait_report_count '^BUFFER live=no$' "$((before + 1))"; then
+  die buffer-kill 'the killed target remained in the live buffer list'
+fi
+pass buffer-kill 'k killed the selected buffer and released its live target'
 
 source_buffer
 before=$(report_count '^STALE origin-gone=')

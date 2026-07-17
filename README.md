@@ -191,7 +191,8 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   completion candidates, and search locations; repeating `SPC e a` cycles every
   valid target at point and wraps before dispatch, while completion-local
   `C-c a` can copy without closing the popup or accept the captured candidate
-  exactly once
+  exactly once; external URL/file opening, buffer copy/save/revert/kill, and
+  ready-project LSP code actions are physically covered
 - exact expansion of the configured private Org `jjs` source-block snippet and
   a bounded Yasnippet compatibility engine over the flake-pinned community corpus;
   numbered, anonymous, and nested fields, defaults, mirrors, escapes, safe

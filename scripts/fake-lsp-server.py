@@ -207,6 +207,10 @@ class FixtureServer:
                         },
                         "workspaceSymbolProvider": True,
                         "documentSymbolProvider": True,
+                        "codeActionProvider": True,
+                        "executeCommandProvider": {
+                            "commands": ["lem-yath.fixture.apply"]
+                        },
                     },
                     "serverInfo": {"name": "lem-yath-fixture", "version": "1"},
                 },
@@ -314,6 +318,45 @@ class FixtureServer:
                     }
                 ],
             )
+
+        if method == "textDocument/codeAction":
+            document = params.get("textDocument") or {}
+            action_range = params.get("range") or {}
+            start = action_range.get("start") or {}
+            end = action_range.get("end") or {}
+            uri = str(document.get("uri") or "")
+            self.log(
+                "CODE_ACTION",
+                uri=uri,
+                start_line=start.get("line", ""),
+                start_character=start.get("character", ""),
+                end_line=end.get("line", ""),
+                end_character=end.get("character", ""),
+            )
+            return self.response(
+                request_id,
+                [
+                    {
+                        "title": "Apply fixture action",
+                        "kind": "quickfix",
+                        "command": {
+                            "title": "Apply fixture action",
+                            "command": "lem-yath.fixture.apply",
+                            "arguments": [uri],
+                        },
+                    }
+                ],
+            )
+
+        if method == "workspace/executeCommand":
+            command = str(params.get("command") or "")
+            arguments = params.get("arguments") or []
+            self.log(
+                "EXECUTE_COMMAND",
+                command=command,
+                argument_count=len(arguments),
+            )
+            return self.response(request_id, None)
 
         if method == "workspace/symbol":
             query = str(params.get("query") or "")

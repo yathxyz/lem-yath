@@ -1000,6 +1000,10 @@
 -  (when-let ((workspace (get-workspace-from-point point)))
 +  (let ((buffer (point-buffer point)))
 +    (when-let ((workspace (get-workspace-from-point point)))
+@@ -1934 +2471,2 @@
+-    (when (provide-document-highlight-p workspace)
++    (when (and (workspace-response-current-p workspace buffer)
++               (provide-document-highlight-p workspace))
 @@ -1944 +2481,2 @@
 -                   (unless (lsp-null-p value)
 +                   (when (and (workspace-response-current-p workspace buffer)

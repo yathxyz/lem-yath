@@ -579,12 +579,16 @@ providers, actions, or keys.
 `scripts/actions-test.sh` exercises the normal/visual leader binding, forward
 and reverse regions, labeled transient dispatch and cancellation, exact-chord
 URL/identifier/buffer cycling and wraparound, action dispatch after cycling,
-shared-origin cleanup including provider abort, URL copying, relative and
-property-backed file navigation, identifier definition/reference delegation,
-native-menu delegation, completion copy/accept lifecycle, Find and peek
-locations, stale-origin cleanup, and reload idempotence through the actual
-ncurses editor.  LSP code-action gating, external opening, and the buffer action
-variants are source-inspected but are not dynamically covered by that suite.
+shared-origin cleanup including provider abort, URL copying, exact one-argument
+external URL/file launching, relative and property-backed file navigation,
+identifier definition/reference delegation, native-menu delegation, all four
+buffer actions, completion copy/accept lifecycle, Find and peek locations,
+stale-origin cleanup, and reload idempotence through the actual ncurses editor.
+`scripts/lsp-project-test.sh` additionally drives `SPC e a`, the code-action
+request, native result selection, and server-side command execution over real
+stdio JSON-RPC.  It proves a starting workspace withholds the action and cannot
+let the document-highlight timer interrupt the transient before capabilities
+are ready.
 
 This is intentionally partial Embark parity.  Visual-block selections are not
 region targets.  Act-all, collect/export/live views, arbitrary Embark action-map

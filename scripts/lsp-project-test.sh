@@ -324,6 +324,55 @@ fi
 invoke_mx lem-yath-test-lsp-activate-project-a >/dev/null ||
   fail workspace-symbol-origin 'could not activate project A'
 
+# The configured Embark entry exposes Eglot code actions for a current
+# identifier only after its project workspace is ready.  Drive the production
+# leader/action transient, the LSP request, the native action menu, and command
+# execution through physical keys.
+lem_keys "$session" 40 G 0
+sleep 0.25
+code_action_before=$(event_count CODE_ACTION \
+  "root_path=${LEM_YATH_LSP_TEST_PROJECT_A%/}")
+execute_before=$(event_count EXECUTE_COMMAND \
+  "root_path=${LEM_YATH_LSP_TEST_PROJECT_A%/}")
+lem_keys "$session" Space e a
+if lem_wait_for "$session" 'LSP code actions' 10 >/dev/null; then
+  lem_keys "$session" a
+  if wait_event_count CODE_ACTION \
+       "root_path=${LEM_YATH_LSP_TEST_PROJECT_A%/}" \
+       "$((code_action_before + 1))" &&
+     lem_wait_for "$session" 'Apply fixture action' 10 >/dev/null; then
+    lem_keys "$session" Enter
+    if wait_event_count EXECUTE_COMMAND \
+         "root_path=${LEM_YATH_LSP_TEST_PROJECT_A%/}" \
+         "$((execute_before + 1))"; then
+      action_event=$(grep -E '^CODE_ACTION[[:space:]]' \
+        "$LEM_YATH_LSP_TEST_EVENTS" | tail -1)
+      execute_event=$(grep -E '^EXECUTE_COMMAND[[:space:]]' \
+        "$LEM_YATH_LSP_TEST_EVENTS" | tail -1)
+      if [[ "$action_event" == *'/project-a/one.fixture'* &&
+            "$action_event" == *'start_line=39'* &&
+            "$action_event" == *'start_character=0'* &&
+            "$action_event" == *'end_line=39'* &&
+            "$action_event" == *'end_character=10'* &&
+            "$execute_event" == *'command=lem-yath.fixture.apply'* &&
+            "$execute_event" == *'argument_count=1'* ]]; then
+        pass embark-code-action \
+          'SPC e a requested and executed the exact ready-workspace code action'
+      else
+        fail embark-code-action \
+          "unexpected request or command: $action_event / $execute_event"
+      fi
+    else
+      fail embark-code-action 'the selected code action did not execute'
+    fi
+  else
+    fail embark-code-action 'the code-action request or native menu did not appear'
+  fi
+else
+  fail embark-code-action \
+    'the ready LSP identifier did not offer its configured action'
+fi
+
 # Eglot overrides native Imenu with one synchronous documentSymbol request.
 # Prove successive hierarchy prompts, full-range placement, configured
 # recenter-only feedback, and the Vi jumplist through physical keys.
@@ -1254,6 +1303,21 @@ pending_report_before=$(report_count '^PENDING phase=done ')
 if invoke_mx lem-yath-test-lsp-start-pending &&
    wait_event_count INITIALIZE \
      "root_path=${LEM_YATH_LSP_TEST_PENDING_ROOT%/}" 1 10; then
+  lem_keys "$session" g g 0
+  sleep 0.2
+  lem_keys "$session" Space e a
+  sleep 0.4
+  if lem_capture "$session" | grep -q 'LSP code actions'; then
+    fail embark-code-action-gating \
+      'a still-starting workspace exposed an unavailable code action'
+  elif lem_capture "$session" | grep -q 'Identifier:'; then
+    pass embark-code-action-gating \
+      'a still-starting workspace withheld the LSP action from its identifier'
+  else
+    fail embark-code-action-gating \
+      'the pending identifier action menu did not open'
+  fi
+  lem_keys "$session" q
   pending_pid=$(latest_event_pid INITIALIZE \
     "root_path=${LEM_YATH_LSP_TEST_PENDING_ROOT%/}")
   pending_change_before=$(event_count DID_CHANGE \
