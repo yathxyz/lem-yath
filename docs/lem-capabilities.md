@@ -3335,6 +3335,21 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   `scripts/llm-backend-test.sh` drives these transports through real ncurses
   Lem with fake executables and no credentials.
 
+  OpenRouter model selection uses the configured account catalog rather than a
+  free-form prompt. Lem loads a bounded JSON cache from
+  `$XDG_CACHE_HOME/lem-yath/openrouter/models.json` before interaction, falls
+  back to `openrouter/auto` and `openrouter/free`, and refreshes once after five
+  idle seconds without blocking the editor. With `OPENROUTER_API_KEY` it calls
+  `/api/v1/models/user`; without a key it calls the public `/api/v1/models`.
+  Model ids are validated, deduplicated in provider order, and written through
+  an owner-only `0700` directory and atomic `0600` regular file. The request
+  URL and authorization header stay in curl's stdin config. `SPC g l`, then
+  `m`, provides Prescient completion, while
+  `M-x lem-yath-openrouter-refresh-models` starts a manual asynchronous
+  refresh. `scripts/llm-models-test.sh` proves cached startup, idle and manual
+  refresh, both endpoints, malformed-entry filtering, argv isolation, private
+  replacement, physical model selection, and offline restart in real Lem.
+
   `SPC g b` also selects **Perplexity** (`sonar` by default) and **Copilot**
   (`gpt-4.1` by default). Perplexity reads `PERPLEXITY_API_KEY`, streams its
   OpenAI-compatible response, and appends bounded final citations. Copilot is

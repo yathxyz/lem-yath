@@ -564,6 +564,12 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   OAuth sessions retain provider-owned history without duplicating it. Ordinary
   buffers retain the shared Markdown transcript, which is also the
   non-destructive read-only fallback
+- cached OpenRouter model discovery matching the Emacs setup: startup uses the
+  private on-disk catalog immediately (or falls back to `openrouter/auto` and
+  `openrouter/free`), then refreshes asynchronously after five idle seconds.
+  Authenticated sessions use `/models/user`; keyless sessions use `/models`.
+  `SPC g l`, then `m`, selects a discovered model, and
+  `M-x lem-yath-openrouter-refresh-models` refreshes explicitly
 - native `chatgpt-codex` and `grok-oauth` HTTP backends with the configured
   `codex-agentic` and `grok-build-oauth-agentic` five-tool presets. ChatGPT
   Codex shares and safely refreshes `~/.codex/auth.json`, streams the Responses
@@ -605,6 +611,12 @@ Saved LLM presets live in `$XDG_CONFIG_HOME/lem-yath/llm-presets.json` (or
 `~/.config/lem-yath/llm-presets.json`) with private directory and file modes.
 They retain the local-tool opt-in and configured MCP server names as well as
 backend, model, system message, temperature, and token cap.
+The OpenRouter catalog lives in
+`$XDG_CACHE_HOME/lem-yath/openrouter/models.json` (or
+`~/.cache/lem-yath/openrouter/models.json`) and uses the same private
+directory/file ownership checks and atomic replacement. Set
+`LEM_YATH_OPENROUTER_MODEL_REFRESH=0` to disable only the automatic idle
+refresh; cached selection and the explicit refresh command remain available.
 `project-readonly` captures the originating
 project before opening the shared output buffer and exposes only
 `project_root`, `list_project_files`, `search_project`, `read_project_file`,
@@ -659,7 +671,8 @@ electric-editing, grouped-buffer-list, UI parity, host-gated business presentati
 project navigation and outline, VCS and Forge,
 persistence, bookmarks,
 retained undo/Vundo, project-scoped LSP lifecycle, LLM key dispatch,
-credential-free backend streaming/resume, private preset persistence, web
+credential-free backend streaming/resume, cached OpenRouter model discovery,
+private preset persistence, web
 handoff, read-only fetch/GitHub MCP client sessions, integrated Claude Code
 interaction, and authenticated MCP diff review,
 cursor/state parity, evil-snipe and Avy parity, screen-line/Evil parity, notes,
@@ -684,6 +697,7 @@ nix run .#completion-lifecycle-test
 nix run .#auto-completion-test
 nix run .#actions-test
 nix run .#llm-keybinding-test
+nix run .#llm-models-test
 nix run .#llm-backend-test
 nix run .#llm-http-test
 nix run .#llm-oauth-test
@@ -761,7 +775,7 @@ worktree to the dedicated cache directory on `ex44` and run the full gate there:
 
 Pass `check`, `compile`, `compilation`, `terminal`, `server`, `boot`, `completion`, `prompt-completion`,
 `completion-lifecycle`, `auto-completion`, `actions`, `editing`,
-`daily-workflows`, `direnv`, `llm-keybinding`, `llm-backend`, `llm-workflow`, `llm-tools`, `claude-code`, `lisp-eval`, `orderless-completion`, `snippets`, `lsp-snippets`,
+`daily-workflows`, `direnv`, `llm-keybinding`, `llm-models`, `llm-backend`, `llm-workflow`, `llm-tools`, `claude-code`, `lisp-eval`, `orderless-completion`, `snippets`, `lsp-snippets`,
 `lsp-project`, `real-lsp`, `tree-sitter`, `dap`, `project-navigation`, `project-outline`, `persistence`, `bookmarks`,
 `vundo`, `electric-editing`, `ui-parity`, `business-visual`, `cursor-state`, `snipe`, `avy`,
 `documents`, `notmuch`, `interactive`, `structural`, `roam`, `roam-backlinks`,

@@ -81,6 +81,7 @@
                (:file "llm-mcp")
                (:file "llm-conversation")
                (:file "llm")
+               (:file "llm-models")
                (:file "indent-guides")
                (:file "theme")
                (:file "centered-view")

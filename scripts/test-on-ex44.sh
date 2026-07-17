@@ -63,6 +63,9 @@ case "$test_name" in
   llm-keybinding)
     remote_command='nix run path:$PWD#llm-keybinding-test'
     ;;
+  llm-models)
+    remote_command='nix run path:$PWD#llm-models-test --option max-jobs 2'
+    ;;
   llm-backend)
     remote_command='nix run path:$PWD#llm-backend-test --option max-jobs 2'
     ;;
@@ -196,7 +199,7 @@ case "$test_name" in
     remote_command='nix run path:$PWD#notmuch-test --option max-jobs 2'
     ;;
   *)
-    echo "Usage: $0 [all|check|compile|compilation|terminal|server|boot|completion|completion-lifecycle|auto-completion|actions|llm-keybinding|llm-backend|llm-http|llm-oauth|llm-workflow|llm-tools|llm-mcp|claude-code|lisp-eval|orderless-completion|snippets|lsp-snippets|lsp-project|real-lsp|tree-sitter|dap|project-navigation|project-outline|prompt-completion|daily-workflows|direnv|electric-editing|ui-parity|business-visual|cursor-state|snipe|avy|documents|notmuch|interactive|structural|notes|roam|roam-backlinks|org|org-modern|org-download|org-nodes-sync|agenda|agenda-undo|agenda-filter|agenda-view|editing]" >&2
+    echo "Usage: $0 [all|check|compile|compilation|terminal|server|boot|completion|completion-lifecycle|auto-completion|actions|llm-keybinding|llm-models|llm-backend|llm-http|llm-oauth|llm-workflow|llm-tools|llm-mcp|claude-code|lisp-eval|orderless-completion|snippets|lsp-snippets|lsp-project|real-lsp|tree-sitter|dap|project-navigation|project-outline|prompt-completion|daily-workflows|direnv|electric-editing|ui-parity|business-visual|cursor-state|snipe|avy|documents|notmuch|interactive|structural|notes|roam|roam-backlinks|org|org-modern|org-download|org-nodes-sync|agenda|agenda-undo|agenda-filter|agenda-view|editing]" >&2
     exit 2
     ;;
 esac

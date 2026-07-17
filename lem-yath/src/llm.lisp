@@ -894,11 +894,3 @@ Read-only conversations follow gptel by falling back to the shared transcript."
             (llm-dispatch-from-current-buffer
              (lambda ()
                (llm-backend-stream *llm-backend* prompt)))))))))
-
-(define-command lem-yath-llm-set-model () ()
-  "Choose the OpenRouter model (gptel preset switching, simplified)."
-  (let ((model (prompt-for-string "Model: " :initial-value *llm-model*
-                                            :history-symbol 'lem-yath-llm-model)))
-    (when (plusp (length model))
-      (setf *llm-model* model)
-      (message "LLM model: ~a" model))))
