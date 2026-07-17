@@ -93,7 +93,7 @@
         (check (= (length (llm-http-response-citations response))
                   *llm-http-citation-count-limit*)
                "bounded-citations"))
-      (check (equal (rest (llm-http-curl-arguments :stream-p t))
+      (check (equal (rest (llm-curl-arguments 300 :stream-p t))
                     '("--silent" "--show-error" "--fail-with-body"
                       "--no-buffer" "--max-time" "300" "--config" "-"))
              "secret-free-curl-argv")

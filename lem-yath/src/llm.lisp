@@ -87,6 +87,67 @@
   (or (uiop:getenv "OPENROUTER_API_KEY")
       (uiop:getenv "OPENAI_API_KEY")))
 
+(defun llm-curl-config-quote (string)
+  "Quote STRING for one double-quoted curl config value."
+  (with-output-to-string (stream)
+    (loop :for character :across string
+          :do (case character
+                (#\\ (write-string "\\\\" stream))
+                (#\" (write-string "\\\"" stream))
+                (#\Newline (write-string "\\n" stream))
+                (#\Return (write-string "\\r" stream))
+                (#\Tab (write-string "\\t" stream))
+                (otherwise (write-char character stream))))))
+
+(defun llm-curl-config (method url headers &optional body)
+  "Build curl configuration for stdin, including URL, headers, and BODY."
+  (with-output-to-string (stream)
+    (flet ((option (name value)
+             (format stream "~a = \"~a\"~%"
+                     name (llm-curl-config-quote value))))
+      (option "request" method)
+      (dolist (header headers)
+        (option "header" (format nil "~a: ~a" (car header) (cdr header))))
+      (when body (option "data-binary" body))
+      (option "url" url))))
+
+(defun llm-curl-executable-path ()
+  "Return the configured curl executable as an existing pathname."
+  (let ((pathname (uiop:parse-native-namestring *llm-curl-executable*)))
+    (or (and (uiop:absolute-pathname-p pathname)
+             (uiop:probe-file* pathname))
+        (executable-find *llm-curl-executable*)
+        (error "curl is unavailable"))))
+
+(defun llm-curl-arguments (timeout &key stream-p status-p)
+  "Return curl argv with all request data reserved for stdin config."
+  (append (list (uiop:native-namestring (llm-curl-executable-path))
+                "--silent" "--show-error" "--fail-with-body")
+          (when stream-p (list "--no-buffer"))
+          (when status-p
+            (list "--write-out"
+                  "\\n__LEM_YATH_HTTP_STATUS__:%{http_code}\\n"))
+          (list "--max-time" (princ-to-string timeout) "--config" "-")))
+
+(defun llm-launch-curl-stream (method url headers body timeout &key status-p)
+  "Launch a curl stream while keeping request data and secrets off argv."
+  (let* ((process
+           (uiop:launch-program
+            (llm-curl-arguments timeout :stream-p t :status-p status-p)
+            :input :stream :output :stream :error-output :output))
+         (input (uiop:process-info-input process)))
+    (handler-case
+        (progn
+          (write-string (llm-curl-config method url headers body) input)
+          (finish-output input)
+          (close input)
+          process)
+      (error (condition)
+        (ignore-errors (close input :abort t))
+        (ignore-errors (uiop:terminate-process process :urgent t))
+        (ignore-errors (uiop:wait-process process))
+        (error condition)))))
+
 (defun llm-initial-messages (prompt &optional (system *llm-system-message*))
   (list (llm-json-object "role" "system" "content" system)
         (llm-json-object "role" "user" "content" prompt)))
@@ -560,13 +621,11 @@ SHARED-HEADING is rendered only for the traditional shared transcript."
           'llm-kill-buffer-hook)
 
 (defun llm-launch-openrouter-process (key body)
-  (uiop:launch-program
-   (list *llm-curl-executable* "-sN" *llm-endpoint*
-         "-H" "Content-Type: application/json"
-         "-H" (format nil "Authorization: Bearer ~a" key)
-         "-d" body)
-   :output :stream
-   :error-output :output))
+  (llm-launch-curl-stream
+   "POST" *llm-endpoint*
+   `(("Content-Type" . "application/json")
+     ("Authorization" . ,(format nil "Bearer ~a" key)))
+   body 300))
 
 (defun llm-openrouter-round (request key body)
   "Run one HTTP/SSE round, returning its parsed response and exit status."

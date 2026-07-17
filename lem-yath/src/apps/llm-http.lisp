@@ -45,57 +45,13 @@
 
 (defvar *llm-copilot-machine-id* (llm-http-random-hex 65))
 
-(defun llm-http-curl-config-quote (string)
-  "Quote STRING for one double-quoted curl config value."
-  (with-output-to-string (stream)
-    (loop :for character :across string
-          :do (case character
-                (#\\ (write-string "\\\\" stream))
-                (#\" (write-string "\\\"" stream))
-                (#\Newline (write-string "\\n" stream))
-                (#\Return (write-string "\\r" stream))
-                (#\Tab (write-string "\\t" stream))
-                (otherwise (write-char character stream))))))
-
-(defun llm-http-curl-config (method url headers &optional body)
-  "Build curl configuration kept on stdin, including URL, headers, and BODY."
-  (with-output-to-string (stream)
-    (flet ((option (name value)
-             (format stream "~a = \"~a\"~%"
-                     name (llm-http-curl-config-quote value))))
-      (option "request" method)
-      (dolist (header headers)
-        (option "header" (format nil "~a: ~a" (car header) (cdr header))))
-      (when body (option "data-binary" body))
-      (option "url" url))))
-
-(defun llm-http-curl-executable ()
-  (let ((pathname (uiop:parse-native-namestring *llm-curl-executable*)))
-    (or (and (uiop:absolute-pathname-p pathname)
-             (uiop:probe-file* pathname))
-        (executable-find *llm-curl-executable*)
-        (error "curl is unavailable"))))
-
-(defun llm-http-curl-arguments (&key stream-p status-p)
-  (append (list (uiop:native-namestring (llm-http-curl-executable))
-                "--silent" "--show-error" "--fail-with-body")
-          (when stream-p (list "--no-buffer"))
-          (when status-p
-            (list "--write-out"
-                  "\\n__LEM_YATH_HTTP_STATUS__:%{http_code}\\n"))
-          (list "--max-time"
-                (princ-to-string (if stream-p
-                                     *llm-http-stream-timeout*
-                                     *llm-http-request-timeout*))
-                "--config" "-")))
-
 (defun llm-http-json-request (method url headers &optional body)
   "Run a bounded JSON HTTP request without putting sensitive data in argv."
   (let ((*project-process-timeout* (+ *llm-http-request-timeout* 2)))
     (multiple-value-bind (output error-output status)
         (run-project-program
-         (llm-http-curl-arguments)
-         :input (llm-http-curl-config method url headers body)
+         (llm-curl-arguments *llm-http-request-timeout*)
+         :input (llm-curl-config method url headers body)
          :output-limit *llm-http-output-limit*)
       (declare (ignore error-output))
       (unless (and (integerp status) (zerop status))
@@ -103,25 +59,6 @@
       (handler-case
           (yason:parse output)
         (error () (error "HTTP service returned malformed JSON"))))))
-
-(defun llm-http-launch-stream (method url headers body &key status-p)
-  "Launch curl for an SSE request; secrets and request data go through stdin."
-  (let* ((process
-           (uiop:launch-program
-            (llm-http-curl-arguments :stream-p t :status-p status-p)
-            :input :stream :output :stream :error-output :output))
-         (input (uiop:process-info-input process)))
-    (handler-case
-        (progn
-          (write-string (llm-http-curl-config method url headers body) input)
-          (finish-output input)
-          (close input)
-          process)
-      (error (condition)
-        (ignore-errors (close input :abort t))
-        (ignore-errors (uiop:terminate-process process :urgent t))
-        (ignore-errors (uiop:wait-process process))
-        (error condition)))))
 
 (defun llm-http-provider-name (provider)
   (ecase provider
@@ -190,7 +127,8 @@
 
 (defun llm-http-stream-round (request provider url headers body)
   "Run one provider SSE request, returning citations and curl status."
-  (let ((process (llm-http-launch-stream "POST" url headers body))
+  (let ((process (llm-launch-curl-stream
+                  "POST" url headers body *llm-http-stream-timeout*))
         (finished-p nil))
     (unless (llm-request-install-process request process)
       (ignore-errors (uiop:terminate-process process :urgent t))

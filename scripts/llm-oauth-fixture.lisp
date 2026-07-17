@@ -140,8 +140,8 @@
                               "x-grok-model-override" headers)
                              "grok-build"))
                "grok-auth-expiry-and-headers"))
-      (check (equal (rest (llm-http-curl-arguments
-                           :stream-p t :status-p t))
+      (check (equal (rest (llm-curl-arguments
+                           300 :stream-p t :status-p t))
                     '("--silent" "--show-error" "--fail-with-body"
                       "--no-buffer" "--write-out"
                       "\\n__LEM_YATH_HTTP_STATUS__:%{http_code}\\n"

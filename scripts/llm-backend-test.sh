@@ -219,18 +219,26 @@ assert_argv grok-resume-argv "$LEM_YATH_LLM_FAKE_LOG/grok.2.argv" \
   -r grok-session-1 -m grok-build --sandbox read-only \
   --permission-mode dontAsk --disable-web-search --no-subagents --no-plan
 
-python3 - "$LEM_YATH_LLM_FAKE_LOG/curl.1.argv" <<'PY'
+python3 - "$LEM_YATH_LLM_FAKE_LOG/curl.1.argv" \
+  "$LEM_YATH_LLM_FAKE_LOG/curl.1.config" <<'PY'
 import json
 import pathlib
+import re
 import sys
 
 args = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")[:-1]
 args = [value.decode() for value in args]
-assert args[:4] == ["-sN", "https://openrouter.ai/api/v1/chat/completions",
-                   "-H", "Content-Type: application/json"]
-assert args[4:6] == ["-H", "Authorization: Bearer test-key-not-a-credential"]
-assert args[6] == "-d"
-body = json.loads(args[7])
+assert args == ["--silent", "--show-error", "--fail-with-body", "--no-buffer",
+                "--max-time", "300", "--config", "-"]
+joined = "\0".join(args)
+assert "test-key-not-a-credential" not in joined
+assert "openrouter prompt" not in joined
+
+config = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
+assert 'url = "https://openrouter.ai/api/v1/chat/completions"' in config
+assert "Authorization: Bearer test-key-not-a-credential" in config
+encoded_body = re.search(r'data-binary = (".*")', config).group(1)
+body = json.loads(json.loads(encoded_body))
 assert body["model"] == "openrouter/auto" and body["stream"] is True
 assert body["temperature"] == 0.2 and body["max_tokens"] == 800
 assert body["messages"] == [
@@ -238,6 +246,6 @@ assert body["messages"] == [
     {"role": "user", "content": "openrouter prompt"},
 ]
 PY
-pass openrouter-request 'endpoint, authorization, and JSON body matched exactly'
+pass openrouter-request 'exact request stayed on curl stdin and off argv'
 
 printf 'All LLM backend tests passed.\n'

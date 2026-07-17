@@ -16,6 +16,7 @@ printf '%s\0' "$@" >"$LEM_YATH_LLM_FAKE_LOG/$backend.$count.argv"
 
 case "$backend" in
   curl)
+    cat >"$LEM_YATH_LLM_FAKE_LOG/curl.$count.config"
     printf '%s\n' \
       'data: {"choices":[{"delta":{"content":"Open"}}]}' \
       'data: {"choices":[{"delta":{"content":"Router"}}]}' \

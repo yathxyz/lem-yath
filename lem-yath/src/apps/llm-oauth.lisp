@@ -596,7 +596,8 @@
 
 (defun llm-oauth-stream-round (request provider url headers body reader)
   (let ((process
-          (llm-http-launch-stream "POST" url headers body :status-p t))
+          (llm-launch-curl-stream
+           "POST" url headers body *llm-http-stream-timeout* :status-p t))
         (finished-p nil))
     (unless (llm-request-install-process request process)
       (ignore-errors (uiop:terminate-process process :urgent t))
