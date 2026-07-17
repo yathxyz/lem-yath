@@ -102,7 +102,6 @@ start_fixture() {
   local fixture
   fixture="$(lem-yath_lisp_string "$here/scripts/llm-models-fixture.lisp")"
   lem_start_lem-yath_eval "$session" "(load #P$fixture)" &&
-    lem_wait_for "$session" 'NORMAL' "$BOOT_TIMEOUT" >/dev/null &&
     wait_report '^READY ' "$BOOT_TIMEOUT"
 }
 

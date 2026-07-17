@@ -359,14 +359,17 @@
   "Apply validated PRESET named NAME to the live LLM settings."
   (unless (llm-preset-valid-p name preset)
     (error "Invalid LLM preset ~s" name))
-  (setf *llm-backend* (getf preset :backend)
-        *llm-model* (getf preset :model)
-        *llm-system-message* (getf preset :system)
-        *llm-temperature* (getf preset :temperature)
-        *llm-max-tokens* (getf preset :max-tokens)
-        *llm-use-tools* (getf preset :use-tools)
-        *llm-mcp-server-names* (copy-list (getf preset :mcp-servers))
-        *llm-current-preset* name)
+  (let* ((backend (getf preset :backend))
+         (model (llm-compatible-model-for-backend
+                 backend (getf preset :model))))
+    (setf *llm-backend* backend
+          *llm-model* model
+          *llm-system-message* (getf preset :system)
+          *llm-temperature* (getf preset :temperature)
+          *llm-max-tokens* (getf preset :max-tokens)
+          *llm-use-tools* (getf preset :use-tools)
+          *llm-mcp-server-names* (copy-list (getf preset :mcp-servers))
+          *llm-current-preset* name))
   preset)
 
 (defun llm-load-preset (name)

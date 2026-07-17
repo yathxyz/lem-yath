@@ -804,6 +804,9 @@
             llm-models-test =
               mkTestAppWithLem lemYath "lem-yath-llm-models-test"
                 "llm-models-test.sh";
+            llm-codex-models-test =
+              mkTestAppWithLem lemYath "lem-yath-llm-codex-models-test"
+                "llm-codex-models-test.sh";
             llm-backend-test = mkTestAppWithLem lemYath "lem-yath-llm-backend-test" "llm-backend-test.sh";
             llm-http-test = mkTestAppWithLem lemYath "lem-yath-llm-http-test" "llm-http-test.sh";
             llm-oauth-test = mkTestAppWithLem lemYath "lem-yath-llm-oauth-test" "llm-oauth-test.sh";
@@ -911,6 +914,9 @@
                 "llm-conversation-test.sh";
             llm-models =
               mkCheckWithLem lemYath "llm-models" "llm-models-test.sh";
+            llm-codex-models =
+              mkCheckWithLem lemYath "llm-codex-models"
+                "llm-codex-models-test.sh";
             llm-backend = mkCheckWithLem lemYath "llm-backend" "llm-backend-test.sh";
             llm-http = mkCheckWithLem lemYath "llm-http" "llm-http-test.sh";
             llm-oauth = mkCheckWithLem lemYath "llm-oauth" "llm-oauth-test.sh";

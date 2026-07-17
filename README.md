@@ -582,7 +582,12 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
 - native `chatgpt-codex` and `grok-oauth` HTTP backends with the configured
   `codex-agentic` and `grok-build-oauth-agentic` five-tool presets. ChatGPT
   Codex shares and safely refreshes `~/.codex/auth.json`, streams the Responses
-  API, and offers `M-x lem-yath-chatgpt-codex-login` for PKCE login. Grok reads
+  API, and offers `M-x lem-yath-chatgpt-codex-login` for PKCE login. Its
+  Emacs-matching model catalog loads a private cache immediately, then probes
+  `gpt-5.4`, `gpt-5.3-codex`, `gpt-5.2-codex`, and `gpt-5-codex` after five
+  idle seconds without opening a login browser. HTTP 200 and rate-limited 429
+  candidates remain selectable; `M-x lem-yath-chatgpt-codex-refresh-models`
+  refreshes explicitly. Grok reads
   `~/.grok/auth.json` and asks the official `grok` CLI to refresh an expiring
   session. On SSH, Codex login needs local forwarding for callback port 1455
 - gptel-style `SPC g l`/`SPC g L` menu with private named presets and
@@ -626,6 +631,12 @@ The OpenRouter catalog lives in
 directory/file ownership checks and atomic replacement. Set
 `LEM_YATH_OPENROUTER_MODEL_REFRESH=0` to disable only the automatic idle
 refresh; cached selection and the explicit refresh command remain available.
+The ChatGPT Codex catalog uses
+`$XDG_CACHE_HOME/lem-yath/chatgpt-codex/models.json` (or
+`~/.cache/lem-yath/chatgpt-codex/models.json`) with the same private atomic
+cache boundary. `LEM_YATH_CODEX_MODEL_CACHE` overrides that path, and
+`LEM_YATH_CODEX_MODEL_REFRESH=0` disables its automatic idle probes without
+disabling cached selection or the explicit refresh command.
 `project-readonly` captures the originating
 project before opening the shared output buffer and exposes only
 `project_root`, `list_project_files`, `search_project`, `read_project_file`,
@@ -680,7 +691,8 @@ electric-editing, grouped-buffer-list, UI parity, host-gated business presentati
 project navigation and outline, VCS and Forge,
 persistence, bookmarks,
 retained undo/Vundo, project-scoped LSP lifecycle, LLM key dispatch,
-credential-free backend streaming/resume, cached OpenRouter model discovery,
+credential-free backend streaming/resume, cached OpenRouter and ChatGPT Codex
+model discovery,
 private preset persistence, web
 handoff, read-only fetch/GitHub MCP client sessions, integrated Claude Code
 interaction, and authenticated MCP diff review,
@@ -707,6 +719,7 @@ nix run .#auto-completion-test
 nix run .#actions-test
 nix run .#llm-keybinding-test
 nix run .#llm-models-test
+nix run .#llm-codex-models-test
 nix run .#llm-backend-test
 nix run .#llm-http-test
 nix run .#llm-oauth-test
@@ -784,7 +797,7 @@ worktree to the dedicated cache directory on `ex44` and run the full gate there:
 
 Pass `check`, `compile`, `compilation`, `terminal`, `server`, `boot`, `completion`, `prompt-completion`,
 `completion-lifecycle`, `auto-completion`, `actions`, `editing`,
-`daily-workflows`, `direnv`, `llm-keybinding`, `llm-models`, `llm-backend`, `llm-workflow`, `llm-tools`, `claude-code`, `lisp-eval`, `orderless-completion`, `snippets`, `lsp-snippets`,
+`daily-workflows`, `direnv`, `llm-keybinding`, `llm-models`, `llm-codex-models`, `llm-backend`, `llm-workflow`, `llm-tools`, `claude-code`, `lisp-eval`, `orderless-completion`, `snippets`, `lsp-snippets`,
 `lsp-project`, `real-lsp`, `tree-sitter`, `dap`, `project-navigation`, `project-outline`, `persistence`, `bookmarks`,
 `vundo`, `electric-editing`, `ui-parity`, `business-visual`, `cursor-state`, `snipe`, `avy`,
 `documents`, `notmuch`, `interactive`, `structural`, `roam`, `roam-backlinks`,

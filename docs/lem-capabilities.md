@@ -3365,6 +3365,21 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   refresh, both endpoints, malformed-entry filtering, argv isolation, private
   replacement, physical model selection, and offline restart in real Lem.
 
+  ChatGPT Codex uses the same catalog-backed model prompt and private-cache
+  discipline. Lem restores
+  `$XDG_CACHE_HOME/lem-yath/chatgpt-codex/models.json` before interaction, then
+  asynchronously probes the configured Emacs candidates `gpt-5.4`,
+  `gpt-5.3-codex`, `gpt-5.2-codex`, and `gpt-5-codex` in order after five idle
+  seconds. HTTP 200 and 429 identify supported candidates. All credentials,
+  headers, URLs, and probe bodies stay in curl's stdin config; an automatic
+  refresh with no auth fails quietly and never starts browser login. Presets
+  choose the first available catalog model when their preferred model is not
+  supported. `M-x lem-yath-chatgpt-codex-refresh-models` starts an explicit
+  asynchronous refresh. `scripts/llm-codex-models-test.sh` proves cache
+  filtering, exact probe policy and payloads, rate-limit acceptance, argv
+  isolation, private atomic replacement, physical model selection, fresh
+  restart, and the missing-auth/no-browser boundary in real Lem.
+
   `SPC g b` also selects **Perplexity** (`sonar` by default) and **Copilot**
   (`gpt-4.1` by default). Perplexity reads `PERPLEXITY_API_KEY`, streams its
   OpenAI-compatible response, and appends bounded final citations. Copilot is
@@ -3394,8 +3409,7 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   same OAuth2 PKCE authorization-code flow as the Emacs backend and atomically
   writes a mode-0600 CLI-compatible file. A remote SSH login must forward the
   registered localhost callback, normally with
-  `ssh -L 1455:127.0.0.1:1455 ex44`. Startup model probing and its Emacs cache
-  file are not reproduced.
+  `ssh -L 1455:127.0.0.1:1455 ex44`.
 
   **Grok OAuth** is a distinct `grok-oauth` backend, separate from the Grok
   CLI agent. It reads the first usable credential in `~/.grok/auth.json`, asks

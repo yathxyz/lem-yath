@@ -118,8 +118,7 @@ fixture="$(lem-yath_lisp_string "$here/scripts/llm-backend-fixture.lisp")"
 if ! lem_start_lem-yath_eval "$session" "(load #P$fixture)"; then
   die boot 'could not start the isolated tmux/Lem process'
 fi
-if ! lem_wait_for "$session" 'NORMAL' "$BOOT_TIMEOUT" >/dev/null ||
-   ! wait_report_count '^READY$' 1 "$BOOT_TIMEOUT"; then
+if ! wait_report_count '^READY$' 1 "$BOOT_TIMEOUT"; then
   die boot 'configured Lem did not load the backend fixture'
 fi
 pass boot 'configured Lem loaded the isolated backend fixture'

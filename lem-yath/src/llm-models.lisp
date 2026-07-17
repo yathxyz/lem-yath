@@ -69,7 +69,7 @@
               (merge-pathnames ".cache/" (user-homedir-pathname)))))
       (merge-pathnames "lem-yath/openrouter/models.json" cache-home))))
 
-(defun llm-openrouter-model-cache-directory-private-p (directory)
+(defun llm-model-cache-directory-private-p (directory)
   #+sbcl
   (let ((stat (sb-posix:stat (uiop:native-namestring directory))))
     (and (= (sb-posix:stat-uid stat) (sb-posix:getuid))
@@ -78,22 +78,22 @@
   (declare (ignore directory))
   #-sbcl nil)
 
-(defun llm-openrouter-prepare-cache-directory ()
-  "Create or validate the private model-cache directory."
-  (let* ((pathname (llm-openrouter-model-cache-pathname))
-         (directory (uiop:pathname-directory-pathname pathname))
+(defun llm-model-cache-prepare-directory (pathname override-p label)
+  "Create or validate PATHNAME's private cache directory for LABEL."
+  (let* ((directory (uiop:pathname-directory-pathname pathname))
          (existed (uiop:directory-exists-p directory)))
     (ensure-directories-exist pathname)
     #+sbcl
-    (if (and (llm-openrouter-model-cache-override) existed)
-        (unless (llm-openrouter-model-cache-directory-private-p directory)
-          (error "OpenRouter model cache override directory must be private and user-owned"))
+    (if (and override-p existed)
+        (unless (llm-model-cache-directory-private-p directory)
+          (error "~a model cache override directory must be private and user-owned"
+                 label))
         (sb-posix:chmod (uiop:native-namestring directory) #o700))
     #-sbcl
-    (error "Safe OpenRouter model caching requires SBCL")
+    (error "Safe ~a model caching requires SBCL" label)
     directory))
 
-(defun llm-openrouter-validate-cache-file (pathname)
+(defun llm-model-cache-validate-file (pathname label)
   (when (uiop:file-exists-p pathname)
     #+sbcl
     (let ((stat (sb-posix:lstat (uiop:native-namestring pathname))))
@@ -101,18 +101,18 @@
                       sb-posix:s-ifreg)
                    (= (sb-posix:stat-uid stat) (sb-posix:getuid))
                    (zerop (logand (sb-posix:stat-mode stat) #o077)))
-        (error "OpenRouter model cache must be a private user-owned regular file")))
+        (error "~a model cache must be a private user-owned regular file" label)))
     #-sbcl
-    (error "Safe OpenRouter model caching requires SBCL")))
+    (error "Safe ~a model caching requires SBCL" label)))
 
-(defun llm-openrouter-read-cache-text (pathname)
+(defun llm-model-cache-read-text (pathname limit label)
   (with-open-file (stream pathname :element-type '(unsigned-byte 8))
     (let ((length (file-length stream)))
-      (when (> length *llm-openrouter-model-cache-limit*)
-        (error "OpenRouter model cache exceeds the size limit"))
+      (when (> length limit)
+        (error "~a model cache exceeds the size limit" label))
       (let ((octets (make-array length :element-type '(unsigned-byte 8))))
         (unless (= length (read-sequence octets stream))
-          (error "Could not read the complete OpenRouter model cache"))
+          (error "Could not read the complete ~a model cache" label))
         #+sbcl (sb-ext:octets-to-string octets :external-format :utf-8)
         #-sbcl (error "UTF-8 model cache decoding requires SBCL")))))
 
@@ -121,9 +121,11 @@
   (handler-case
       (let ((pathname (llm-openrouter-model-cache-pathname)))
         (when (uiop:file-exists-p pathname)
-          (llm-openrouter-validate-cache-file pathname)
+          (llm-model-cache-validate-file pathname "OpenRouter")
           (let* ((object (yason:parse
-                          (llm-openrouter-read-cache-text pathname)))
+                          (llm-model-cache-read-text
+                           pathname *llm-openrouter-model-cache-limit*
+                           "OpenRouter")))
                  (version (and (hash-table-p object)
                                (gethash "version" object)))
                  (models (and (hash-table-p object)
@@ -132,7 +134,7 @@
               (llm-openrouter-normalize-models models :strict t)))))
     (error () nil)))
 
-(defun llm-openrouter-cache-temporary-pathname (pathname)
+(defun llm-model-cache-temporary-pathname (pathname)
   (uiop:parse-native-namestring
    (format nil "~a.tmp.~d.~16,'0x"
            (uiop:native-namestring pathname)
@@ -140,27 +142,26 @@
            #-sbcl 0
            (random (ash 1 60)))))
 
-(defun llm-openrouter-model-cache-json (models)
+(defun llm-model-cache-json (models)
   (with-output-to-string (stream)
     (yason:encode
      (llm-json-object "version" 1 "models" (coerce models 'vector))
      stream)
     (terpri stream)))
 
-(defun llm-openrouter-write-model-cache (models)
-  "Atomically replace the private model cache with MODELS."
-  (let* ((pathname (llm-openrouter-model-cache-pathname))
-         (temporary (llm-openrouter-cache-temporary-pathname pathname))
-         (text (llm-openrouter-model-cache-json models))
+(defun llm-model-cache-write (pathname models limit override-p label)
+  "Atomically replace PATHNAME with a private JSON cache containing MODELS."
+  (let* ((temporary (llm-model-cache-temporary-pathname pathname))
+         (text (llm-model-cache-json models))
          (octets
            #+sbcl (sb-ext:string-to-octets text :external-format :utf-8)
            #-sbcl (error "UTF-8 model cache encoding requires SBCL"))
          (descriptor nil)
          (stream nil))
-    (when (> (length octets) *llm-openrouter-model-cache-limit*)
-      (error "OpenRouter model cache exceeds the size limit"))
-    (llm-openrouter-prepare-cache-directory)
-    (llm-openrouter-validate-cache-file pathname)
+    (when (> (length octets) limit)
+      (error "~a model cache exceeds the size limit" label))
+    (llm-model-cache-prepare-directory pathname override-p label)
+    (llm-model-cache-validate-file pathname label)
     (unwind-protect
          (progn
            #+sbcl
@@ -183,12 +184,20 @@
              (close stream)
              (setf stream nil descriptor nil))
            #-sbcl
-           (error "Safe OpenRouter model caching requires SBCL")
+           (error "Safe ~a model caching requires SBCL" label)
            (uiop:rename-file-overwriting-target temporary pathname))
       (when stream (ignore-errors (close stream :abort t)))
       (when descriptor (ignore-errors (sb-posix:close descriptor)))
       (when (uiop:file-exists-p temporary)
         (ignore-errors (delete-file temporary))))))
+
+(defun llm-openrouter-write-model-cache (models)
+  "Atomically replace the private OpenRouter model cache with MODELS."
+  (llm-model-cache-write
+   (llm-openrouter-model-cache-pathname) models
+   *llm-openrouter-model-cache-limit*
+   (not (null (llm-openrouter-model-cache-override)))
+   "OpenRouter"))
 
 (defun llm-openrouter-fetch-models ()
   "Synchronously fetch a bounded model list; call only off the editor thread."
@@ -310,10 +319,25 @@
       (message "OpenRouter: refreshing models")
       (message "OpenRouter: model refresh already running")))
 
+(defgeneric llm-model-candidates-for-backend (backend)
+  (:documentation "Return BACKEND's selectable model catalog, or NIL."))
+
+(defmethod llm-model-candidates-for-backend ((backend t))
+  nil)
+
+(defmethod llm-model-candidates-for-backend ((backend (eql :openrouter)))
+  *llm-openrouter-models*)
+
+(defun llm-compatible-model-for-backend (backend requested)
+  "Return REQUESTED when available, otherwise BACKEND's first catalog model."
+  (let ((models (llm-model-candidates-for-backend backend)))
+    (if (and models (not (member requested models :test #'string=)))
+        (first models)
+        requested)))
+
 (define-command lem-yath-llm-set-model () ()
-  "Select a discovered OpenRouter model or set another backend's model."
-  (let* ((openrouter-p (eq *llm-backend* :openrouter))
-         (models (and openrouter-p *llm-openrouter-models*))
+  "Select a catalog model, or set a free-form model for other backends."
+  (let* ((models (llm-model-candidates-for-backend *llm-backend*))
          (choice
            (prompt-for-string
             "Model: "
@@ -324,8 +348,8 @@
             :history-symbol 'lem-yath-llm-model)))
     (cond
       ((zerop (length choice)) nil)
-      ((and openrouter-p (not (member choice models :test #'string=)))
-       (message "Unknown OpenRouter model: ~a" choice))
+      ((and models (not (member choice models :test #'string=)))
+       (message "Unknown model for ~(~a~): ~a" *llm-backend* choice))
       (t
        (setf *llm-model* choice)
        (message "LLM model: ~a" choice)))))
