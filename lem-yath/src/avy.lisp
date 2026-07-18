@@ -36,6 +36,13 @@
 (defparameter *avy-spell-output-limit* (* 64 1024))
 (defparameter *avy-spell-suggestion-limit* 64)
 
+;; Emacs keeps `a' decisions in the live Ispell session and sends `i'
+;; decisions to Aspell's personal dictionary.  Lem deliberately runs bounded
+;; one-shot Aspell processes, so retain the former explicitly between calls.
+(defvar *avy-spell-session-words* (make-hash-table :test #'equal))
+(defvar *avy-spell-prompt-decision* nil)
+(defvar *avy-spell-prompt-suggestions* nil)
+
 (defvar *avy-label-windows* nil)
 (defvar *avy-label-buffers* nil)
 (defvar *avy-session-active* nil)
@@ -583,7 +590,8 @@
           (princ-to-string *avy-spell-timeout-seconds*)
           (uiop:native-namestring aspell)
           "-a"
-          (format nil "--lang=~a" *avy-spell-dictionary*)
+          "-d"
+          *avy-spell-dictionary*
           "--encoding=utf-8")))
 
 (defun avy-spell-valid-word-p (word)
@@ -612,6 +620,8 @@
   "Return Aspell status and bounded suggestions for WORD."
   (unless (avy-spell-valid-word-p word)
     (editor-error "Aspell word is empty, non-printing, or too long"))
+  (when (gethash word *avy-spell-session-words*)
+    (return-from avy-spell-suggestions (values :correct nil)))
   (multiple-value-bind (stdout stderr status)
       (with-input-from-string (input (format nil "^~a~%" word))
         (uiop:run-program
@@ -649,6 +659,34 @@
          (values :misspelled nil))
         (otherwise
          (editor-error "Unsupported Aspell response: ~s" result))))))
+
+(defun avy-spell-save-personal-word (word)
+  "Insert WORD into Aspell's configured personal dictionary and save it."
+  (unless (and (avy-spell-valid-word-p word)
+               (every #'alpha-char-p word))
+    (editor-error "A personal spelling must contain only letters"))
+  (multiple-value-bind (stdout stderr status)
+      (with-input-from-string (input (format nil "*~a~%#~%" word))
+        (uiop:run-program
+         (avy-spell-command)
+         :input input
+         :output :string
+         :error-output :string
+         :ignore-error-status t))
+    (unless (zerop status)
+      (editor-error "Aspell could not save the personal dictionary~@[ — ~a~]"
+                    (let ((summary
+                            (string-trim
+                             '(#\Space #\Tab #\Newline #\Return)
+                             (or stderr ""))))
+                      (unless (zerop (length summary))
+                        (subseq summary 0 (min 200 (length summary)))))))
+    (when (> (length stdout) *avy-spell-output-limit*)
+      (editor-error "Aspell produced more than ~d characters"
+                    *avy-spell-output-limit*)))
+  ;; Avoid another subprocess in this Lem session after a successful save.
+  (setf (gethash word *avy-spell-session-words*) t)
+  t)
 
 (defun avy-spell-letter-p (character)
   (and (characterp character) (alpha-char-p character)))
@@ -691,58 +729,130 @@
         (when (eq buffer (current-buffer))
           (setf (lem-vi-mode/core:current-state) state))))))
 
+(defun avy-spell-finish-prompt (decision)
+  "Finish the active correction prompt with DECISION."
+  (setf *avy-spell-prompt-decision* decision)
+  (lem/prompt-window::prompt-execute))
+
+(define-command avy-spell-prompt-keep () ()
+  (avy-spell-finish-prompt :keep))
+
+(define-command avy-spell-prompt-accept-session () ()
+  (avy-spell-finish-prompt :session))
+
+(define-command avy-spell-prompt-add-personal () ()
+  (avy-spell-finish-prompt :personal))
+
+(define-command avy-spell-prompt-manual-replacement () ()
+  (avy-spell-finish-prompt :manual))
+
+(define-command avy-spell-prompt-numbered-suggestion () ()
+  (let* ((name (lem-core::keyseq-to-string (last-read-key-sequence)))
+         (index (and (= 1 (length name))
+                     (digit-char-p (char name 0)))))
+    (alexandria:if-let ((suggestion
+                         (and index
+                              (nth index *avy-spell-prompt-suggestions*))))
+      (avy-spell-finish-prompt suggestion)
+      (message "No spelling suggestion is assigned to ~a" name))))
+
+(defparameter *avy-spell-prompt-keymap*
+  (let ((keymap (make-keymap :description "Ispell correction prompt")))
+    (define-key keymap "Space" 'avy-spell-prompt-keep)
+    (define-key keymap "a" 'avy-spell-prompt-accept-session)
+    (define-key keymap "i" 'avy-spell-prompt-add-personal)
+    (define-key keymap "r" 'avy-spell-prompt-manual-replacement)
+    (dotimes (index 10)
+      (define-key keymap (princ-to-string index)
+        'avy-spell-prompt-numbered-suggestion))
+    keymap))
+
 (defun avy-spell-prompt-replacement (word suggestions)
-  "Prompt for a replacement, keeping WORD as the first no-change choice."
-  (let ((replacement
-          (call-with-avy-spell-prompt-state
-           (lambda ()
-             (if suggestions
-                 (let ((choices
-                         (cons word (remove word suggestions :test #'equal))))
-                   (prompt-for-string
-                    (format nil "Correct ~a: " word)
-                    :completion-function
-                    (lambda (input)
-                      (let ((matches
-                              (prescient-filter input choices :rank-p nil)))
-                        ;; Preserve Aspell's order for partial queries, but do
-                        ;; not let the no-change choice shadow an exact answer.
-                        (alexandria:if-let ((exact
-                                              (find input matches
-                                                    :test #'string=)))
-                          (cons exact (remove exact matches :test #'eq))
-                          matches)))))
-                 ;; A completion provider cannot safely invent arbitrary live
-                 ;; candidates.  Ispell's no-proposal path is free-text.
-                 (prompt-for-string (format nil "Correct ~a: " word)))))))
-    (unless (avy-spell-valid-word-p replacement)
-      (editor-error "Spell replacement is empty, non-printing, or too long"))
-    replacement))
+  "Read an Emacs-Ispell decision for WORD and return action and replacement."
+  (let ((*avy-spell-prompt-decision* nil)
+        (*avy-spell-prompt-suggestions* suggestions))
+    (let ((input
+            (call-with-avy-spell-prompt-state
+             (lambda ()
+               (let ((choices
+                       (cons word (remove word suggestions :test #'equal))))
+                 (prompt-for-string
+                  (format nil
+                          "Correct ~a [SPC once; a session; i personal; r edit]: "
+                          word)
+                  :completion-function
+                  (lambda (query)
+                    (let ((matches
+                            (prescient-filter query choices :rank-p nil)))
+                      ;; Preserve Aspell's order for partial queries, but do
+                      ;; not let the no-change choice shadow an exact answer.
+                      (alexandria:if-let ((exact
+                                            (find query matches
+                                                  :test #'string=)))
+                        (cons exact (remove exact matches :test #'eq))
+                        matches)))
+                  :special-keymap *avy-spell-prompt-keymap*))))))
+      (cond
+        ((stringp *avy-spell-prompt-decision*)
+         (values :replace *avy-spell-prompt-decision*))
+        ((eq *avy-spell-prompt-decision* :manual)
+         (let ((replacement
+                 (call-with-avy-spell-prompt-state
+                  (lambda ()
+                    (prompt-for-string
+                     (format nil "Replacement for ~a: " word))))))
+           (unless (avy-spell-valid-word-p replacement)
+             (editor-error
+              "Spell replacement is empty, non-printing, or too long"))
+           (values :replace replacement)))
+        (*avy-spell-prompt-decision*
+         (values *avy-spell-prompt-decision* nil))
+        (t
+         (unless (avy-spell-valid-word-p input)
+           (editor-error
+            "Spell replacement is empty, non-printing, or too long"))
+         (values (if (equal input word) :keep :replace) input))))))
 
 (defun avy-spell-correct-one (start end)
-  "Offer a correction for START..END and return whether text changed."
+  "Offer a correction for START..END; return replacement and decision."
   (let ((word (points-to-string start end)))
     (multiple-value-bind (status suggestions)
         (avy-spell-suggestions word)
       (ecase status
-        (:correct nil)
+        (:correct (values nil :correct))
         (:misspelled
-         (let ((replacement
-                 (avy-spell-prompt-replacement word suggestions)))
-           (unless (equal replacement word)
-             (avy-spell-preflight-range start end)
-             (delete-between-points start end)
-             (insert-string start replacement)
-             replacement)))))))
+         (multiple-value-bind (decision replacement)
+             (avy-spell-prompt-replacement word suggestions)
+           (ecase decision
+             (:keep (values nil :keep))
+             (:session
+              (setf (gethash word *avy-spell-session-words*) t)
+              (values nil :session))
+             (:personal
+              (avy-spell-save-personal-word word)
+              (values nil :personal))
+             (:replace
+              (if (equal replacement word)
+                  (values nil :keep)
+                  (progn
+                    (avy-spell-preflight-range start end)
+                    (delete-between-points start end)
+                    (insert-string start replacement)
+                    (values replacement :replace)))))))))))
 
 (defun avy-spell-correct-word (point)
   (multiple-value-bind (start end) (avy-spell-word-range point)
     (unless start
       (editor-error "No word at the selected Avy target"))
     (let ((word (points-to-string start end)))
-      (if (avy-spell-correct-one start end)
-          (message "Corrected spelling at Avy target")
-          (message "Kept spelling: ~a" word)))))
+      (multiple-value-bind (replacement decision)
+          (avy-spell-correct-one start end)
+        (declare (ignore replacement))
+        (ecase decision
+          (:replace (message "Corrected spelling at Avy target"))
+          (:session (message "Accepted spelling for this session: ~a" word))
+          (:personal (message "Added spelling to personal dictionary: ~a" word))
+          ((:correct :keep) (message "Kept spelling: ~a" word)))))))
 
 (defun avy-spell-correct-line (candidate)
   "Offer corrections for every misspelled word on CANDIDATE's line."

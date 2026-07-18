@@ -167,7 +167,10 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   kill, teleport, mark, copy, yank, spell-correction, and zap actions, while
   `?` shows the action keys. The flake-packaged `en_US` Aspell backend offers
   Prescient-filtered corrections for a selected word or every word on a
-  selected line, including a free-text fallback when Aspell has no proposal
+  selected line. In the correction prompt, `0`–`9` choose proposals, `Space`
+  keeps the word once, `a` accepts it for the Lem session, `i` saves it to
+  Aspell's personal dictionary shared with Emacs, and `r` opens a free-text
+  replacement (also available when Aspell has no proposal)
 - Prescient-style filtering and persistent learned ranking in command, buffer,
   and custom prompts; `M-s a/f/i/l/P/p/r/'/c` changes anchored, fuzzy,
   initialism, literal, literal-prefix, prefix, regexp, character-fold, and

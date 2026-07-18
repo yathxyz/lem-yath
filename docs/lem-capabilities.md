@@ -292,12 +292,15 @@ stock action map. The `i` action invokes an exact flake-packaged Aspell binary
 with the configured `en_US` dictionary and a bounded timeout. Character and
 symbol targets correct the alphabetic word at or preceding the target; line
 targets inspect every alphabetic word on the selected line. Suggestions retain
-Aspell order under Prescient filtering, an exact typed choice wins, and a
-no-proposal response accepts a validated free-text replacement. The operation
-preserves the Avy origin and Vi state and remains one undo step. Personal and
-session dictionaries, Flyspell presentation, non-alphabetic word syntax,
-exotic display/syntax geometry, and exact Emacs minibuffer presentation remain
-approximate or absent.
+Aspell order under Prescient filtering. `0` through `9` choose the corresponding
+proposal, `Space` accepts the spelling once, `a` records it for the current Lem
+process, `i` saves it through Aspell's personal-dictionary protocol for use by a
+fresh Lem or Emacs process, and `r` opens a validated free-text replacement.
+The operation preserves the Avy origin and Vi state, and a text replacement
+remains one undo step. Buffer-local dictionaries, dictionary switching,
+Flyspell presentation, non-alphabetic word syntax, exotic display/syntax
+geometry, and exact Emacs choices-window presentation remain approximate or
+absent.
 
 ### Options — `extensions/vi-mode/options.lisp`, README §Options
 Vim-like global options via `(setf (lem-vi-mode:option-value "name") val)` or `:set`.

@@ -150,30 +150,54 @@
            (#\i . :ispell)
            (#\z . :zap-to-char))))
 
+(defun avy-test-spell-prompt-bindings-ok-p ()
+  (every #'identity
+         (list
+          (eq (avy-test-key-command *avy-spell-prompt-keymap* "Space")
+              'avy-spell-prompt-keep)
+          (eq (avy-test-key-command *avy-spell-prompt-keymap* "a")
+              'avy-spell-prompt-accept-session)
+          (eq (avy-test-key-command *avy-spell-prompt-keymap* "i")
+              'avy-spell-prompt-add-personal)
+          (eq (avy-test-key-command *avy-spell-prompt-keymap* "r")
+              'avy-spell-prompt-manual-replacement)
+          (eq (avy-test-key-command *avy-spell-prompt-keymap* "0")
+              'avy-spell-prompt-numbered-suggestion))))
+
 (define-command lem-yath-test-avy-static () ()
   (let* ((bindings (avy-test-bindings-ok-p))
          (motions (avy-test-motion-contracts-ok-p))
          (tree (avy-test-tree-contracts-ok-p))
          (dispatch (avy-test-dispatch-defaults-ok-p))
+         (spell (avy-test-spell-prompt-bindings-ok-p))
          (defaults (and (equal *avy-keys*
                                '(#\a #\s #\d #\f #\g #\h #\j #\k #\l))
                         *avy-case-fold-search*
                         *avy-single-candidate-jump*))
          (attribute (ensure-attribute 'lem-yath-avy-lead-attribute nil))
          (failures
-           (count nil (list bindings motions tree dispatch defaults attribute))))
+           (count nil
+                  (list bindings motions tree dispatch spell defaults attribute))))
     (avy-test-log
      (concatenate
       'string
-      "STATIC bindings=~a motions=~a tree=~a dispatch=~a defaults=~a "
+      "STATIC bindings=~a motions=~a tree=~a dispatch=~a spell=~a defaults=~a "
       "attribute=~a failures=~d")
      (if bindings "yes" "no")
      (if motions "yes" "no")
      (if tree "yes" "no")
      (if dispatch "yes" "no")
+     (if spell "yes" "no")
      (if defaults "yes" "no")
      (if attribute "yes" "no")
      failures)))
+
+(define-command lem-yath-test-avy-spell-report () ()
+  (avy-test-log
+   "SPELL keep=~a session=~a personal=~a"
+   (if (gethash "lemkeepword" *avy-spell-session-words*) "yes" "no")
+   (if (gethash "lemsessionword" *avy-spell-session-words*) "yes" "no")
+   (if (gethash "lempersonalword" *avy-spell-session-words*) "yes" "no")))
 
 (define-command lem-yath-test-avy-record () ()
   (let* ((buffer (current-buffer))
@@ -341,5 +365,6 @@
 (define-key *global-keymap* "F5" 'lem-yath-test-avy-enable-wrap)
 (define-key *global-keymap* "F6" 'lem-yath-test-avy-split)
 (define-key *global-keymap* "F7" 'lem-yath-test-avy-goto-marker)
+(define-key *global-keymap* "C-c S" 'lem-yath-test-avy-spell-report)
 
 (avy-test-log "READY")

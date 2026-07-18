@@ -198,6 +198,7 @@ line_file="$root/fixtures/lines.txt"
 wrap_file="$root/fixtures/wrap.txt"
 actions_file="$root/fixtures/actions.txt"
 spell_file="$root/fixtures/spell.txt"
+decisions_file="$root/fixtures/spell-decisions.txt"
 
 for number in $(seq 1 12); do
   printf 'x-target-%02d alpha beta\n' "$number"
@@ -221,6 +222,8 @@ done >"$line_file"
 
 printf 'ORIGIN|\nalpha qone tail\nbeta qtwo tail\n' >"$actions_file"
 printf 'ORIGIN|\nclean text\nqqqqqqqqqqqqqqqqqqqq tail\n' >"$spell_file"
+printf 'ORIGIN|\nlemkeepword tail\nlemsessionword tail\nlempersonalword tail\n' \
+  >"$decisions_file"
 
 # Static contracts, exact 12 -> 4 label narrowing, composited ncurses output,
 # jump history, cancellation, resize cleanup, reload, and read-only invariants.
@@ -230,8 +233,8 @@ if start_session "$primary" "$multi_file" 'x-target-01'; then
   lem_keys "$primary" F11
   if wait_report_count '^STATIC ' "$((static_before + 1))" &&
      tail -1 "$LEM_YATH_AVY_REPORT" \
-       | grep -qE '^STATIC bindings=yes motions=yes tree=yes dispatch=yes defaults=yes attribute=yes failures=0$'; then
-    pass static-contracts "bindings, motion types, tree, defaults, and face agree"
+       | grep -qE '^STATIC bindings=yes motions=yes tree=yes dispatch=yes spell=yes defaults=yes attribute=yes failures=0$'; then
+    pass static-contracts "bindings, motions, tree, dispatch, Ispell keys, defaults, and face agree"
   else
     fail static-contracts "static contracts diverged" "$primary"
   fi
@@ -555,9 +558,8 @@ if start_session "$actions" "$actions_file" 'ORIGIN|'; then
 
   lem_keys "$actions" F7
   send_keys "$actions" ' ' a q i s
-  if lem_wait_for "$actions" 'Correct qtwo:' "$WAIT_TIMEOUT" >/dev/null; then
-    tmux_cmd send-keys -t "$actions" -l two
-    lem_keys "$actions" Enter
+  if lem_wait_for "$actions" 'Correct qtwo .*SPC once' "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$actions" 0
     if lem_wait_for "$actions" 'Corrected spelling at Avy target' \
          "$WAIT_TIMEOUT" >/dev/null; then
       pass dispatch-ispell "stock key offered the configured Aspell correction"
@@ -579,9 +581,8 @@ if start_session "$actions" "$actions_file" 'ORIGIN|'; then
 
   lem_keys "$actions" F7
   send_keys "$actions" ' ' l i d
-  if lem_wait_for "$actions" 'Correct qtwo:' "$WAIT_TIMEOUT" >/dev/null; then
-    tmux_cmd send-keys -t "$actions" -l two
-    lem_keys "$actions" Enter
+  if lem_wait_for "$actions" 'Correct qtwo .*SPC once' "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$actions" 0
     if lem_wait_for "$actions" 'Avy corrected 1 word on the selected line' \
          "$WAIT_TIMEOUT" >/dev/null; then
       pass dispatch-ispell-line \
@@ -618,8 +619,14 @@ if start_session "$spell" "$spell_file" 'ORIGIN|'; then
   lem_keys "$spell" F7
   wait_report_count '^MARKER ' "$((marker_before + 1))" || true
   send_keys "$spell" ' ' l i d
-  if lem_wait_for "$spell" 'Correct qqqqqqqqqqqqqqqqqqqq:' \
+  if lem_wait_for "$spell" 'qqqqqqqqqqqqqqqqqqqq .*SPC once' \
        "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$spell" r
+    if ! lem_wait_for "$spell" 'Replacement for qqqqqqqqqqqqqqqqqqqq:' \
+         "$WAIT_TIMEOUT" >/dev/null; then
+      fail dispatch-ispell-manual-prompt \
+        "r did not open Ispell's free-text replacement prompt" "$spell"
+    fi
     tmux_cmd send-keys -t "$spell" -l queue
     lem_keys "$spell" Enter
     if lem_wait_for "$spell" 'Avy corrected 1 word on the selected line' \
@@ -646,6 +653,111 @@ if start_session "$spell" "$spell_file" 'ORIGIN|'; then
     "$spell"
 fi
 stop_session "$spell"
+
+# Emacs-Ispell decisions reached through Avy's stock i dispatch: SPC keeps
+# once, a stays in this Lem session, and i is saved by Aspell for a fresh
+# editor process (and therefore shared with Emacs).
+decisions="lem-yath-avy-spell-decisions-$id"
+if start_session "$decisions" "$decisions_file" 'ORIGIN|'; then
+  send_keys "$decisions" ' ' l i s
+  if lem_wait_for "$decisions" 'lemkeepword .*SPC once' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$decisions" ' '
+    if lem_wait_for "$decisions" 'Avy corrected 0 words on the selected line' \
+         "$WAIT_TIMEOUT" >/dev/null; then
+      pass dispatch-ispell-keep "SPC kept one spelling without changing it"
+    else
+      fail dispatch-ispell-keep "SPC did not finish the selected-line check" \
+        "$decisions"
+    fi
+  else
+    fail dispatch-ispell-keep-prompt "keep word did not open Ispell decisions" \
+      "$decisions"
+  fi
+
+  send_keys "$decisions" ' ' l i d
+  if lem_wait_for "$decisions" 'lemsessionword .*SPC once' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$decisions" a
+    if lem_wait_for "$decisions" 'Avy corrected 0 words on the selected line' \
+         "$WAIT_TIMEOUT" >/dev/null; then
+      pass dispatch-ispell-session "a accepted the spelling for this Lem session"
+    else
+      fail dispatch-ispell-session "session acceptance did not finish" "$decisions"
+    fi
+  else
+    fail dispatch-ispell-session-prompt \
+      "session word did not open Ispell decisions" "$decisions"
+  fi
+
+  spell_before=$(report_count '^SPELL ')
+  lem_keys "$decisions" C-c S
+  if wait_report_count '^SPELL ' "$((spell_before + 1))" &&
+     grep '^SPELL ' "$LEM_YATH_AVY_REPORT" | tail -1 \
+       | grep -q '^SPELL keep=no session=yes personal=no$'; then
+    pass dispatch-ispell-session-scope \
+      "only a entered the process-local accepted-word set"
+  else
+    fail dispatch-ispell-session-scope \
+      "SPC/a decisions did not retain their distinct scopes" "$decisions"
+  fi
+
+  # Change the visible status before repeating; a broken cache would stop at
+  # the correction prompt instead of producing the line completion message.
+  record_state "$decisions" || fail record "spell decision state timed out" "$decisions"
+  send_keys "$decisions" ' ' l i d
+  if lem_wait_for "$decisions" 'Avy corrected 0 words on the selected line' \
+       "$WAIT_TIMEOUT" >/dev/null &&
+     ! lem_capture "$decisions" | grep -q 'Correct lemsessionword'; then
+    pass dispatch-ispell-session-repeat \
+      "the accepted session word was skipped without prompting"
+  else
+    fail dispatch-ispell-session-repeat \
+      "the accepted session word was checked again" "$decisions"
+  fi
+
+  send_keys "$decisions" ' ' l i f
+  if lem_wait_for "$decisions" 'lempersonalword .*SPC once' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$decisions" i
+    if lem_wait_for "$decisions" 'Avy corrected 0 words on the selected line' \
+         "$WAIT_TIMEOUT" >/dev/null; then
+      pass dispatch-ispell-personal "i saved the spelling through Aspell"
+    else
+      fail dispatch-ispell-personal "personal acceptance did not finish" "$decisions"
+    fi
+  else
+    fail dispatch-ispell-personal-prompt \
+      "personal word did not open Ispell decisions" "$decisions"
+  fi
+fi
+stop_session "$decisions"
+
+personal_dictionary=$(find "$HOME" -maxdepth 1 -type f -name '.aspell*.pws' \
+  -print -quit)
+if [ -n "$personal_dictionary" ] &&
+   grep -qx 'lempersonalword' "$personal_dictionary"; then
+  pass dispatch-ispell-personal-file \
+    "Aspell persisted the exact word in its Emacs-compatible personal dictionary"
+else
+  fail dispatch-ispell-personal-file \
+    "Aspell did not persist the personal word under HOME" ""
+fi
+
+personal_fresh="lem-yath-avy-spell-personal-fresh-$id"
+if start_session "$personal_fresh" "$decisions_file" 'ORIGIN|'; then
+  send_keys "$personal_fresh" ' ' l i f
+  if lem_wait_for "$personal_fresh" 'Avy corrected 0 words on the selected line' \
+       "$WAIT_TIMEOUT" >/dev/null &&
+     ! lem_capture "$personal_fresh" | grep -q 'Correct lempersonalword'; then
+    pass dispatch-ispell-personal-fresh \
+      "a fresh Lem process read the personal dictionary without prompting"
+  else
+    fail dispatch-ispell-personal-fresh \
+      "the personal spelling was not visible in a fresh editor" "$personal_fresh"
+  fi
+fi
+stop_session "$personal_fresh"
 
 # Normal state sees all text windows; Evil visual state remains current-window
 # only.  The two windows deliberately show the same source to make counts exact.
