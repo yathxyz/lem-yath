@@ -11,8 +11,10 @@
   (or (uiop:getenv "LEM_YATH_PERSISTENCE_TEST_PHASE") "unknown"))
 
 (defvar *persistence-test-source*
-  (uiop:parse-native-namestring
-   (uiop:getenv "LEM_YATH_PERSISTENCE_SOURCE")))
+  (alexandria:if-let ((override
+                       (uiop:getenv "LEM_YATH_PERSISTENCE_SOURCE")))
+    (uiop:parse-native-namestring override)
+    (asdf:system-relative-pathname "lem-yath" "src/persistence.lisp")))
 
 (defvar *persistence-test-record-sample* 0)
 (defvar *persistence-test-background-buffer* nil)

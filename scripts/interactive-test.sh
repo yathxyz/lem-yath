@@ -88,6 +88,22 @@ send_text() { # send_text <session> <string>
   tmux_cmd send-keys -t "$1" -l "$2"
 }
 
+# Wait until a screen pattern occurs at least EXPECTED times.  This is used
+# for linewise paste checks where one grep match is already present before the
+# command and a fixed sleep would race the editor's input queue.
+lem_wait_for_count() { # lem_wait_for_count <session> <ere> <expected> [timeout]
+  local s="$1" pat="$2" expected="$3" timeout="${4:-10}" i=0 count
+  while (( i < timeout * 4 )); do
+    count="$(lem_capture "$s" | grep -cE "$pat")"
+    if (( count >= expected )); then
+      return 0
+    fi
+    sleep 0.25
+    i=$((i + 1))
+  done
+  return 1
+}
+
 # ===========================================================================
 # Fixtures
 # ===========================================================================
@@ -319,9 +335,8 @@ if boot_with_file "$S9" "$SNIPEFIX" 'alpha beta gamma' "09-native-change"; then
   send_chord "$S9" "c" "w"
   send_text "$S9" "delta"
   tmux_cmd send-keys -t "$S9" Escape
-  sleep "$KEY_DELAY"
-  if lem_capture "$S9" | grep -qE '^[[:space:][:digit:]]*delta beta gamma[[:space:]]*$' && \
-     lem_capture "$S9" | grep -qE 'NORMAL'; then
+  if lem_wait_for "$S9" '^[[:space:][:digit:]]*delta beta gamma[[:space:]]*$' "$WAIT_TIMEOUT" && \
+     lem_wait_for "$S9" 'NORMAL' "$WAIT_TIMEOUT"; then
     pass "09-native-change" "cw replaced the first word and returned to NORMAL"
   else
     fail "09-native-change" "cw replacement or NORMAL state was wrong" "$S9"
@@ -404,9 +419,8 @@ if boot_with_file "$S12C" "$SNIPEFIX" 'alpha beta gamma' "12-visual-operators"; 
   send_chord "$S12C" "v" "l" "c"
   send_text "$S12C" "XY"
   tmux_cmd send-keys -t "$S12C" Escape
-  sleep "$KEY_DELAY"
-  if lem_capture "$S12C" | grep -qE '^[[:space:][:digit:]]*XYpha beta gamma[[:space:]]*$' && \
-     lem_capture "$S12C" | grep -qE 'NORMAL'; then
+  if lem_wait_for "$S12C" '^[[:space:][:digit:]]*XYpha beta gamma[[:space:]]*$' "$WAIT_TIMEOUT" && \
+     lem_wait_for "$S12C" 'NORMAL' "$WAIT_TIMEOUT"; then
     visual_change_ok=1
   fi
 fi
@@ -431,18 +445,17 @@ double_change_ok=0
 double_yank_ok=0
 if boot_with_file "$S13D" "$SCRATCH" 'first known line' "13-doubled-operators"; then
   send_chord "$S13D" "d" "d"
-  lem_capture "$S13D" | grep -qE '^[[:space:][:digit:]]*second known line[[:space:]]*$' && double_delete_ok=1
+  lem_wait_for "$S13D" '^[[:space:][:digit:]]*second known line[[:space:]]*$' "$WAIT_TIMEOUT" && double_delete_ok=1
 fi
 if boot_with_file "$S13C" "$SCRATCH" 'first known line' "13-doubled-operators"; then
   send_chord "$S13C" "c" "c"
   send_text "$S13C" "replacement"
   tmux_cmd send-keys -t "$S13C" Escape
-  sleep "$KEY_DELAY"
-  lem_capture "$S13C" | grep -qE '^[[:space:][:digit:]]*replacement[[:space:]]*$' && double_change_ok=1
+  lem_wait_for "$S13C" '^[[:space:][:digit:]]*replacement[[:space:]]*$' "$WAIT_TIMEOUT" && double_change_ok=1
 fi
 if boot_with_file "$S13Y" "$SCRATCH" 'first known line' "13-doubled-operators"; then
   send_chord "$S13Y" "y" "y" "p"
-  if [ "$(lem_capture "$S13Y" | grep -c 'first known line')" = 2 ]; then
+  if lem_wait_for_count "$S13Y" 'first known line' 2 "$WAIT_TIMEOUT"; then
     double_yank_ok=1
   fi
 fi
@@ -468,11 +481,11 @@ count_ok=0
 repeat_ok=0
 if boot_with_file "$S14C" "$SNIPEFIX" 'alpha beta gamma' "14-count-repeat"; then
   send_chord "$S14C" "2" "d" "w"
-  lem_capture "$S14C" | grep -qE '^[[:space:][:digit:]]*gamma[[:space:]]*$' && count_ok=1
+  lem_wait_for "$S14C" '^[[:space:][:digit:]]*gamma[[:space:]]*$' "$WAIT_TIMEOUT" && count_ok=1
 fi
 if boot_with_file "$S14R" "$SNIPEFIX" 'alpha beta gamma' "14-count-repeat"; then
   send_chord "$S14R" "d" "w" "."
-  lem_capture "$S14R" | grep -qE '^[[:space:][:digit:]]*gamma[[:space:]]*$' && repeat_ok=1
+  lem_wait_for "$S14R" '^[[:space:][:digit:]]*gamma[[:space:]]*$' "$WAIT_TIMEOUT" && repeat_ok=1
 fi
 if [ "$count_ok" = 1 ] && [ "$repeat_ok" = 1 ]; then
   pass "14-count-repeat" "2dw and dw. both produced gamma"
@@ -526,9 +539,8 @@ if boot_with_file "$S16" "$INDENTFIX" 'alpha beta' "16-insert-C-u"; then
   sleep "$KEY_DELAY"
   send_text "$S16" "omega"
   tmux_cmd send-keys -t "$S16" Escape
-  sleep "$KEY_DELAY"
-  if lem_capture "$S16" | grep -qE '^[[:space:][:digit:]]*omega[[:space:]]*$' && \
-     lem_capture "$S16" | grep -qE 'NORMAL'; then
+  if lem_wait_for "$S16" '^[[:space:][:digit:]]{0,8}    omega[[:space:]]*$' "$WAIT_TIMEOUT" && \
+     lem_wait_for "$S16" 'NORMAL' "$WAIT_TIMEOUT"; then
     pass "16-insert-C-u" "C-u deleted back to indentation"
   else
     fail "16-insert-C-u" "insert-state C-u did not preserve indentation" "$S16"
@@ -557,7 +569,7 @@ fi
 #   heading.
 # ===========================================================================
 S18="lem-yath-it18-$id"
-if boot_with_file "$S18" "$ORGFIX" '\* Heading' "18-org-id"; then
+if boot_with_file "$S18" "$ORGFIX" 'Heading' "18-org-id"; then
   send_chord "$S18" "Space" "m" "I"
   sleep 0.6
   tmux_cmd send-keys -t "$S18" Escape
@@ -585,8 +597,11 @@ if boot_with_file "$S19" "$FILLFIX" 'alpha beta gamma' "19-auto-fill-toggle"; th
   sleep "$KEY_DELAY"
   send_text "$S19" " tail "
   tmux_cmd send-keys -t "$S19" Escape
-  sleep "$KEY_DELAY"
-  auto_fill_screen="$(lem_capture "$S19")"
+  if lem_wait_for "$S19" 'tail' "$WAIT_TIMEOUT"; then
+    auto_fill_screen="$(lem_capture "$S19")"
+  else
+    auto_fill_screen=""
+  fi
   if echo "$auto_fill_screen" | grep -q 'alpha beta gamma' && \
      echo "$auto_fill_screen" | grep -q 'tail' && \
      ! echo "$auto_fill_screen" | grep -qE 'alpha.*tail'; then
@@ -648,8 +663,7 @@ fi
 S22="lem-yath-it22-$id"
 if boot_with_file "$S22" "$SCRATCH" 'first known line' "22-Y-linewise"; then
   send_chord "$S22" "w" "Y" "p"
-  y_line_screen="$(lem_capture "$S22")"
-  if [ "$(echo "$y_line_screen" | grep -c 'first known line')" = 2 ]; then
+  if lem_wait_for_count "$S22" 'first known line' 2 "$WAIT_TIMEOUT"; then
     pass "22-Y-linewise" "Y yanked the whole line from a mid-line cursor"
   else
     fail "22-Y-linewise" "Y behaved like y$ instead of yy" "$S22"
