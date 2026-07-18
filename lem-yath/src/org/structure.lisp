@@ -895,19 +895,20 @@ cannot fall through to a paragraph or section after an inner end marker."
           (%org-table-boundary origin :kind :character)
           (%org-table-row-boundary origin)))))
 
-(defun %org-safe-unordered-item-p (item)
+(defun %org-safe-list-item-p (item)
+  "Whether ITEM has a space-indented list marker handled by this parser."
   (multiple-value-bind (indent content-column text-column)
       (org-list-item-columns item)
     (declare (ignore content-column text-column))
     (and indent
-         (not (org-list-ordered-item-p item))
          (not (org-list-context-tab-p item))
          (let ((bullet (char (line-string item) indent)))
-           (or (member bullet '(#\- #\+))
+           (or (org-list-ordered-item-p item)
+               (member bullet '(#\- #\+))
                (and (plusp indent) (eql bullet #\*)))))))
 
 (defun %org-safe-list-tree-p (item)
-  (when (%org-safe-unordered-item-p item)
+  (when (%org-safe-list-item-p item)
     (alexandria:when-let ((end (org-list-item-tree-end item)))
       (with-point ((point item))
         (line-start point)
@@ -915,7 +916,7 @@ cannot fall through to a paragraph or section after an inner end marker."
               :when (org-list-line-structural-tab-p point)
                 :return nil
               :when (and (org-list-item-line-p point)
-                         (not (%org-safe-unordered-item-p point)))
+                         (not (%org-safe-list-item-p point)))
                 :return nil
               :unless (line-offset point 1)
                 :return t

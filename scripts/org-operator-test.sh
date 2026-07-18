@@ -458,7 +458,7 @@ write_fixtures() {
   printf '%s\n' '* Empty' '* Sibling' >"$WORKDIR/empty-subtree.org"
   printf '%s\n' \
     '1. ordered item' \
-    '2. ordered next' >"$WORKDIR/unsafe-ordered.org"
+    '2. ordered next' >"$WORKDIR/ordered-list.org"
   printf '%s\n' \
     $'-\ttabbed item' \
     '- safe-looking sibling' >"$WORKDIR/unsafe-tabbed.org"
@@ -481,7 +481,27 @@ write_fixtures() {
   printf '%s\n' \
     '1. item' \
     '   continuation body' \
-    '2. next' >"$WORKDIR/unsafe-ordered-continuation.org"
+    '2. next' >"$WORKDIR/ordered-continuation.org"
+  printf '%s\n' \
+    '1. first paragraph' \
+    '' \
+    '   second paragraph' \
+    '2. next' >"$WORKDIR/ordered-blank-paragraph.org"
+  printf '%s\n' \
+    '5. [@5] five' \
+    '6. six' >"$WORKDIR/ordered-counter-object.org"
+  printf '%s\n' \
+    '1) one' \
+    '2) two' >"$WORKDIR/ordered-paren-object.org"
+  printf '%s\n' \
+    '1. parent' \
+    '   - child' \
+    '     child continuation' \
+    '2. sibling' >"$WORKDIR/ordered-mixed-nested.org"
+  printf '%s\n' \
+    '1. one' \
+    '- two' \
+    '2. three' >"$WORKDIR/ordered-mixed-level.org"
   printf '%s\n' '- item' $'\tcontinuation body' '- next' \
     >"$WORKDIR/unsafe-tabbed-continuation.org"
   printf '%s\n' \
@@ -2814,9 +2834,43 @@ if start_case quote-inner "$WORKDIR/quote-inner.org" 'quoted body'; then
   stop_case "$CASE_SESSION"
 fi
 
-if start_case unsafe-ordered "$WORKDIR/unsafe-ordered.org" 'ordered item'; then
-  assert_unsafe_context unsafe-ordered "$CASE_SESSION" \
-    'text=1. ordered item\n2. ordered next\n bytes='
+if start_case ordered-list "$WORKDIR/ordered-list.org" 'ordered item'; then
+  send_keys "$CASE_SESSION" Escape g g 0
+  if operate_and_record ordered-list "$CASE_SESSION" y a E; then
+    assert_state ordered-list-bol-aE ordered-list "$CASE_SESSION" \
+      'register=1. ordered item\n2. ordered next\n register-type=char' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 3 l
+  if operate_and_record ordered-list "$CASE_SESSION" y a e; then
+    assert_state ordered-list-body-ae ordered-list "$CASE_SESSION" \
+      'register=ordered item\n register-type=char' 'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 3 l
+  if operate_and_record ordered-list "$CASE_SESSION" y a r; then
+    assert_state ordered-list-body-ar ordered-list "$CASE_SESSION" \
+      'register=1. ordered item\n register-type=line' 'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 3 l
+  if operate_and_record ordered-list "$CASE_SESSION" d a r; then
+    assert_state ordered-list-body-dar ordered-list "$CASE_SESSION" \
+      'text=1. ordered next\n bytes=' \
+      'register=1. ordered item\n register-type=line' 'modified=yes'
+    send_keys "$CASE_SESSION" u
+    record_state ordered-list "$CASE_SESSION"
+    assert_state ordered-list-body-dar-undo ordered-list "$CASE_SESSION" \
+      'text=1. ordered item\n2. ordered next\n bytes=' 'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 3 l v a r
+  if lem_wait_for "$CASE_SESSION" 'V-LINE' "$WAIT_TIMEOUT" >/dev/null &&
+     record_state ordered-list "$CASE_SESSION"; then
+    assert_state ordered-list-visual-ar ordered-list "$CASE_SESSION" \
+      'state=visual-line selection=line' \
+      'selected=1. ordered item\n' 'modified=no'
+  else
+    fail ordered-list-visual-ar \
+      "ordered Visual ar did not settle or report" "$CASE_SESSION"
+  fi
   stop_case "$CASE_SESSION"
 fi
 
@@ -2962,11 +3016,122 @@ if start_case continuation-blank-paragraph \
   stop_case "$CASE_SESSION"
 fi
 
-if start_case unsafe-ordered-continuation \
-     "$WORKDIR/unsafe-ordered-continuation.org" 'continuation body'; then
+if start_case ordered-continuation \
+     "$WORKDIR/ordered-continuation.org" 'continuation body'; then
   send_keys "$CASE_SESSION" j 0
-  assert_unsafe_context unsafe-ordered-continuation "$CASE_SESSION" \
-    'text=1. item\n   continuation body\n2. next\n bytes='
+  if operate_and_record ordered-continuation "$CASE_SESSION" y a e; then
+    assert_state ordered-continuation-body-ae ordered-continuation \
+      "$CASE_SESSION" \
+      'register=item\n   continuation body\n register-type=char' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 j 0
+  if operate_and_record ordered-continuation "$CASE_SESSION" y a r; then
+    assert_state ordered-continuation-body-ar ordered-continuation \
+      "$CASE_SESSION" \
+      'register=1. item\n   continuation body\n register-type=line' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 j 0
+  if operate_and_record ordered-continuation "$CASE_SESSION" d a r; then
+    assert_state ordered-continuation-body-dar ordered-continuation \
+      "$CASE_SESSION" 'text=1. next\n bytes=' \
+      'register=1. item\n   continuation body\n register-type=line' \
+      'modified=yes'
+    send_keys "$CASE_SESSION" u
+    record_state ordered-continuation "$CASE_SESSION"
+    assert_state ordered-continuation-body-dar-undo \
+      ordered-continuation "$CASE_SESSION" \
+      'text=1. item\n   continuation body\n2. next\n bytes=' \
+      'modified=no'
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case ordered-blank-paragraph \
+     "$WORKDIR/ordered-blank-paragraph.org" 'second paragraph'; then
+  send_keys "$CASE_SESSION" 2 j 0
+  if operate_and_record ordered-blank-paragraph "$CASE_SESSION" y a e; then
+    assert_state ordered-blank-paragraph-ae ordered-blank-paragraph \
+      "$CASE_SESSION" \
+      'register=   second paragraph\n register-type=char' 'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 2 j 0
+  if operate_and_record ordered-blank-paragraph "$CASE_SESSION" d a r; then
+    assert_state ordered-blank-paragraph-dar ordered-blank-paragraph \
+      "$CASE_SESSION" 'text=1. next\n bytes=' \
+      'register=1. first paragraph\n\n   second paragraph\n register-type=line' \
+      'modified=yes'
+    send_keys "$CASE_SESSION" u
+    record_state ordered-blank-paragraph "$CASE_SESSION"
+    assert_state ordered-blank-paragraph-dar-undo \
+      ordered-blank-paragraph "$CASE_SESSION" \
+      'text=1. first paragraph\n\n   second paragraph\n2. next\n bytes=' \
+      'modified=no'
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case ordered-counter-object \
+     "$WORKDIR/ordered-counter-object.org" 'five'; then
+  send_keys "$CASE_SESSION" 8 l
+  if operate_and_record ordered-counter-object "$CASE_SESSION" y a r; then
+    assert_state ordered-counter-object-ar ordered-counter-object \
+      "$CASE_SESSION" \
+      'register=5. [@5] five\n register-type=line' 'modified=no'
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case ordered-paren-object \
+     "$WORKDIR/ordered-paren-object.org" 'two'; then
+  send_keys "$CASE_SESSION" j 3 l
+  if operate_and_record ordered-paren-object "$CASE_SESSION" y a r; then
+    assert_state ordered-paren-object-ar ordered-paren-object \
+      "$CASE_SESSION" 'register=2) two\n register-type=line' 'modified=no'
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case ordered-mixed-nested \
+     "$WORKDIR/ordered-mixed-nested.org" 'child continuation'; then
+  send_keys "$CASE_SESSION" 2 j 0
+  if operate_and_record ordered-mixed-nested "$CASE_SESSION" y a r; then
+    assert_state ordered-mixed-nested-child-ar ordered-mixed-nested \
+      "$CASE_SESSION" \
+      'register=   - child\n     child continuation\n register-type=line' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 2 j 0
+  if operate_and_record ordered-mixed-nested "$CASE_SESSION" 3 y a r; then
+    assert_state ordered-mixed-nested-count-ar ordered-mixed-nested \
+      "$CASE_SESSION" \
+      'register=1. parent\n   - child\n     child continuation\n register-type=line' \
+      'modified=no'
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case ordered-mixed-level \
+     "$WORKDIR/ordered-mixed-level.org" 'two'; then
+  if operate_and_record ordered-mixed-level "$CASE_SESSION" y a E; then
+    assert_state ordered-mixed-level-bol-aE ordered-mixed-level \
+      "$CASE_SESSION" \
+      'register=1. one\n- two\n2. three\n register-type=char' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0
+  send_keys "$CASE_SESSION" j 2 l
+  if operate_and_record ordered-mixed-level "$CASE_SESSION" y a r; then
+    assert_state ordered-mixed-level-ar ordered-mixed-level \
+      "$CASE_SESSION" 'register=- two\n register-type=line' 'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 j 2 l
+  if operate_and_record ordered-mixed-level "$CASE_SESSION" d a r; then
+    assert_state ordered-mixed-level-dar-refused ordered-mixed-level \
+      "$CASE_SESSION" 'text=1. one\n- two\n2. three\n bytes=' \
+      'modified=no'
+  fi
   stop_case "$CASE_SESSION"
 fi
 
