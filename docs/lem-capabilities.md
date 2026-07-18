@@ -3443,9 +3443,18 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   the initial exchange changes its display destination without replacing the
   source buffer's provider context. `J` opens a read-only normalized
   JSON dry run containing the effective context-expanded messages and request
-  settings but no credentials, headers, or dispatch side effect. Gptel's
-  response variants/rewrite and media controls remain unimplemented rather than
-  appearing as inert controls.
+  settings but no credentials, headers, or dispatch side effect. With an active
+  Visual region, conditional `r` runs a mode-aware rewrite request into a
+  private sink and highlights the tracked source while it waits. The completed
+  response opens a selected, read-only terminal preview without changing the
+  source. `A` accepts as one undo group, `K` rejects, `r` iterates on the staged
+  proposal, `D` opens a bounded unified diff, `M` inserts an explicit merge
+  conflict, and `q` closes the preview while retaining the highlighted pending
+  rewrite. Overlapping rewrites, read-only sources, concurrent source requests,
+  oversized responses, late generations, and killed sources fail closed and
+  release their private sinks. Gptel's inline replacement overlay, ediff,
+  multi-region accept/reject, diff switches, response variants, and media
+  controls remain unimplemented rather than appearing as inert controls.
   Handoff context includes
   buffer, mode, file, and non-prompting project metadata; it is capped at
   13,000 characters while retaining the newest text. ChatGPT also receives
@@ -3489,7 +3498,9 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   replacement enforce user ownership and private `0700`/`0600` modes on SBCL.
   `scripts/llm-workflow-test.sh` verifies direct and compact-to-full menu routes,
   persistent live setting changes, private save and fresh-process reload,
-  visual-region Claude handoff, bounded
+  a physical Visual rewrite through staging, focused preview, unified diff,
+  iteration, one-step acceptance/undo, and non-mutating rejection, plus
+  visual-region Claude handoff and bounded
   ChatGPT search handoff, kill-ring copy, and decoded URL parameters without
   opening a real browser.
   `scripts/llm-tools-test.sh` additionally drives a credential-free real

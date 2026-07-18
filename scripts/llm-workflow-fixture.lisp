@@ -10,6 +10,9 @@
 (defvar *llm-workflow-routing-dispatches* 0)
 (defvar *llm-workflow-routing-prompt* nil)
 (defvar *llm-workflow-routing-messages* nil)
+(defvar *llm-workflow-rewrite-dispatches* 0)
+(defvar *llm-workflow-rewrite-prompt* nil)
+(defvar *llm-workflow-rewrite-system* nil)
 (defparameter *llm-workflow-routing-target-name* "*llm-route-target*")
 (defparameter *llm-workflow-routing-session-name* "*llm-route-session*")
 
@@ -51,6 +54,26 @@
     (setf *llm-workflow-routing-prompt* prompt
           *llm-workflow-routing-messages* *llm-conversation-messages*)
     (llm-request-complete-now request "ROUTED-RESPONSE-SENTINEL")))
+
+(defmethod llm-backend-stream
+    ((backend (eql :lem-yath-rewrite-test)) prompt)
+  (declare (ignore backend))
+  (let* ((buffer (llm-output-buffer))
+         (insertion-point
+           (llm-prepare-response buffer "UNEXPECTED-SHARED-REWRITE"))
+         (request
+           (llm-register-request
+            buffer nil :lem-yath-rewrite-test
+            :prompt (llm-visible-prompt prompt)
+            :insertion-point insertion-point))
+         (response
+           (case (incf *llm-workflow-rewrite-dispatches*)
+             (1 "REWRITTEN")
+             (2 "ITERATED")
+             (otherwise "REJECTED"))))
+    (setf *llm-workflow-rewrite-prompt* prompt
+          *llm-workflow-rewrite-system* *llm-system-message*)
+    (llm-request-complete-now request response)))
 
 (setf *llm-handoff-browser-commands*
       (list (uiop:getenv "LEM_YATH_LLM_WORKFLOW_BROWSER"))
@@ -140,6 +163,9 @@
             (eq (nth-value 0 (llm-full-menu-action "J"))
                 'lem-yath-llm-inspect-request-json))
        "gptel-response-and-dry-run-dispatch")
+      (multiple-value-bind (command reopen-p) (llm-full-menu-action "r")
+        (check (and (eq command 'lem-yath-llm-rewrite) (not reopen-p))
+               "gptel-rewrite-dispatch"))
       (check (and (eq (llm-context-menu-command "r")
                       'lem-yath-llm-context-add-region)
                   (eq (llm-context-menu-command "b")
@@ -292,6 +318,23 @@
                       "redirected-request-source-cleanup"))
           (when (member target (buffer-list) :test #'eq)
             (delete-buffer target))))
+      (let ((source (make-buffer "*llm-forward-kill-source-static*"))
+            (target (make-buffer " *llm-forward-kill-target-static*")))
+        (unwind-protect
+             (let* ((*llm-request-source-buffer* source)
+                    (request
+                      (llm-register-request
+                       target nil :lem-yath-routing-test
+                       :prompt "forward-kill-static")))
+               (llm-kill-buffer-hook source)
+               (check
+                (and (llm-request-aborted-now-p request)
+                     (null (llm-active-request target))
+                     (null (llm-forward-request-buffer source)))
+                "redirected-source-kill-aborts"))
+          (dolist (buffer (list source target))
+            (when (llm-buffer-live-p buffer)
+              (delete-buffer buffer)))))
       (let* ((target (make-buffer " *llm-abort-redirect-static*"
                                   :enable-undo-p nil))
              (source *llm-workflow-source-buffer*)
@@ -491,6 +534,67 @@
      (if (or (search "Authorization" text :test #'char-equal)
              (search "api_key" text :test #'char-equal))
          "present" "absent"))))
+
+(define-command lem-yath-test-llm-workflow-rewrite-setup () ()
+  (let ((source *llm-workflow-source-buffer*))
+    (dolist (state (copy-list (llm-rewrite-states source)))
+      (llm-rewrite-remove-state state))
+    (dolist (name (list *llm-rewrite-diff-buffer-name*))
+      (alexandria:when-let ((buffer (get-buffer name)))
+        (when (llm-buffer-live-p buffer)
+          (delete-buffer buffer))))
+    (switch-to-buffer source)
+    (when (lem-vi-mode/visual:visual-p)
+      (lem-vi-mode/visual:vi-visual-end source))
+    (setf (buffer-read-only-p source) nil
+          *llm-backend* :lem-yath-rewrite-test
+          *llm-model* "rewrite-model"
+          *llm-workflow-rewrite-dispatches* 0
+          *llm-workflow-rewrite-prompt* nil
+          *llm-workflow-rewrite-system* nil)
+    (buffer-mark-cancel source)
+    (erase-buffer source)
+    (insert-string (buffer-start-point source) "OLD")
+    (buffer-start (buffer-point source))
+    (buffer-unmark source)
+    (llm-workflow-log "REWRITE ready")))
+
+(define-command lem-yath-test-llm-workflow-rewrite-record () ()
+  (let* ((source *llm-workflow-source-buffer*)
+         (states (llm-rewrite-states source))
+         (state (first states))
+         (preview (and state (llm-rewrite-state-preview-buffer state)))
+         (hidden
+           (find-if
+            (lambda (buffer)
+              (alexandria:starts-with-subseq
+               " *lem-yath-llm-rewrite-" (buffer-name buffer)))
+            (buffer-list))))
+    (llm-workflow-log
+     (concatenate
+      'string
+      "REWRITE source=~a pending=~d response=~a preview=~a focus=~a dispatches=~d "
+      "prompt=~a system=~a forward=~a hidden=~a modified=~a")
+     (llm-workflow-one-line
+      (points-to-string (buffer-start-point source) (buffer-end-point source)))
+     (length states)
+     (llm-workflow-one-line
+      (and state (llm-rewrite-state-response state)))
+     (if (and (llm-buffer-live-p preview)
+              (mode-active-p preview 'lem-yath-llm-rewrite-preview-mode))
+         "yes" "no")
+     (cond
+       ((eq (current-buffer) preview) "preview")
+       ((eq (current-buffer) source) "source")
+       (t (buffer-name (current-buffer))))
+     *llm-workflow-rewrite-dispatches*
+     (llm-workflow-one-line *llm-workflow-rewrite-prompt*)
+     (if (and *llm-workflow-rewrite-system*
+              (search "Generate ONLY" *llm-workflow-rewrite-system*))
+         "rewrite" "wrong")
+     (if (llm-forward-request-buffer source) "yes" "no")
+     (if hidden "yes" "no")
+     (if (buffer-modified-p source) "yes" "no"))))
 
 (define-command lem-yath-test-llm-workflow-record () ()
   (let* ((preset-file (llm-preset-pathname))

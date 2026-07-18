@@ -749,21 +749,28 @@
               ("k" "kill-ring")))
            (llm-menu-display-keymap
             "Actions and diagnostics"
-            (list
-             (list "j" "send")
-             (list "Return" "send")
-             (list "n" "new conversation")
-             (list "a" "abort request")
-             (list "-" (format nil "context sources: ~d"
-                                (llm-context-count)))
-             (list "I" "inspect request context")
-             (list "J" "inspect next request (JSON)")
-             (list "x" (format nil "request tracing: ~:[off~;on~]"
-                                (and (boundp '*llm-request-trace-enabled*)
-                                     (symbol-value
-                                      '*llm-request-trace-enabled*))))
-             (list "L" "inspect request log")
-             (list "q" "cancel")))))
+            (remove
+             nil
+             (list
+              (list "j" "send")
+              (list "Return" "send")
+              (list "n" "new conversation")
+              (list "a" "abort request")
+              (list "-" (format nil "context sources: ~d"
+                                 (llm-context-count)))
+              (list "I" "inspect request context")
+              (list "J" "inspect next request (JSON)")
+              (when (or (buffer-mark-p (current-buffer))
+                        (ignore-errors (llm-rewrite-state-at-point)))
+                (list "r" (if (buffer-mark-p (current-buffer))
+                                "rewrite selected region"
+                                "pending rewrite actions")))
+              (list "x" (format nil "request tracing: ~:[off~;on~]"
+                                 (and (boundp '*llm-request-trace-enabled*)
+                                      (symbol-value
+                                       '*llm-request-trace-enabled*))))
+              (list "L" "inspect request log")
+              (list "q" "cancel"))))))
       (lem-core::keymap-add-child keymap child t))
     keymap))
 
@@ -793,6 +800,7 @@
                   ("-" lem-yath-llm-context-menu t)
                   ("I" lem-yath-llm-context-inspect nil)
                   ("J" lem-yath-llm-inspect-request-json nil)
+                  ("r" lem-yath-llm-rewrite nil)
                   ("x" lem-yath-llm-request-trace-toggle t)
                   ("L" lem-yath-llm-request-trace-open nil))
                 :test #'string=)))

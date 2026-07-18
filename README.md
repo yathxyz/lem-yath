@@ -601,8 +601,12 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   LLM session, `k` copies to the kill ring, and `.` restores the ordinary
   destination before Return sends. `J` opens a read-only, credential-free
   normalized JSON preview of the effective prompt, context, messages, model,
-  limits, tools, and destination without dispatching. Private named presets and region-or-buffer
-  handoff to Claude or ChatGPT remain in the compact menu; the built-in `quick-lookup`
+  limits, tools, and destination without dispatching. With a Visual selection,
+  `r` prompts for a rewrite and stages the provider response without changing
+  source text. Its focused terminal preview supports `A` accept, `K` reject,
+  `r` iterate, `D` unified diff, `M` conflict-marker merge, and `q` keep
+  pending; acceptance is one ordinary undo step. Private named presets and
+  region-or-buffer handoff to Claude or ChatGPT remain in the compact menu; the built-in `quick-lookup`
   preset matches the Emacs startup model, system prompt, temperature, and
   token cap, `project-readonly` opts OpenRouter into the configured five-tool
   project inspection loop, `web-readonly` adds the fetch MCP server,

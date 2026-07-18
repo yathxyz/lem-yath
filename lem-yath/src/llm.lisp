@@ -740,6 +740,15 @@ SHARED-HEADING is rendered only for the traditional shared transcript."
 
 (defun llm-kill-buffer-hook (buffer)
   "Abort asynchronous state owned by BUFFER before BUFFER is deleted."
+  ;; A redirected request is owned by its output buffer, but killing the
+  ;; originating buffer must still stop it.  Complete it while the source is
+  ;; live so routing callbacks can release private sinks and tracked state.
+  (alexandria:when-let* ((target (llm-forward-request-buffer buffer))
+                         (request (llm-active-request target)))
+    (alexandria:when-let ((process (llm-request-abort-now request)))
+      (ignore-errors (uiop:terminate-process process :urgent t))
+      (ignore-errors (uiop:close-streams process)))
+    (llm-request-complete-now request nil))
   (alexandria:when-let ((request (llm-active-request buffer)))
     (llm-run-request-functions
      *llm-request-finish-functions* request :kill)

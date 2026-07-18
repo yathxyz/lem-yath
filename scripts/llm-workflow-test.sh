@@ -115,6 +115,18 @@ send_literal() {
   sleep 0.15
 }
 
+run_mx() {
+  local command=$1
+  send_key C-g
+  send_key Escape
+  send_key M-x
+  if ! lem_wait_for "$session" 'Command:' "$WAIT_TIMEOUT" >/dev/null; then
+    return 1
+  fi
+  send_literal "$command"
+  send_key Enter
+}
+
 wait_browser_count() {
   local expected=$1 index=0
   while ((index < WAIT_TIMEOUT * 4)); do
@@ -356,6 +368,122 @@ if ! wait_report_count '^PREVIEW mode=yes readonly=yes dry=yes backend=lem-yath-
 fi
 send_key q
 pass request-preview 'physical J opened a read-only credential-free dry run without dispatch'
+
+if ! run_mx lem-yath-test-llm-workflow-rewrite-setup ||
+   ! wait_report_count '^REWRITE ready$' 1; then
+  die rewrite-setup 'the staged rewrite fixture was not prepared'
+fi
+send_key v
+send_key '$'
+send_key Space
+send_key g
+send_key L
+if ! lem_wait_for "$session" 'rewrite selected region' "$WAIT_TIMEOUT" >/dev/null; then
+  die rewrite-menu 'the full gptel-style menu did not expose Visual rewrite'
+fi
+send_key r
+if ! lem_wait_for "$session" 'Rewrite instruction:' "$WAIT_TIMEOUT" >/dev/null; then
+  die rewrite-prompt 'r did not prompt for the required change'
+fi
+send_literal 'make better'
+send_key Enter
+if ! lem_wait_for "$session" 'Proposed replacement' "$WAIT_TIMEOUT" >/dev/null ||
+   ! lem_wait_for "$session" 'REWRITTEN' "$WAIT_TIMEOUT" >/dev/null; then
+  die rewrite-preview 'the first replacement was not staged in the preview buffer'
+fi
+if ! run_mx lem-yath-test-llm-workflow-rewrite-record ||
+   ! wait_report_count '^REWRITE source=OLD pending=1 response=REWRITTEN preview=yes focus=preview dispatches=1 prompt=OLD|+What is the required change.*make better system=rewrite forward=no hidden=no ' 1; then
+  die rewrite-contract 'the staged rewrite changed source, leaked state, or used the wrong directive'
+fi
+send_key D
+if ! lem_wait_for "$session" '^--- current:' "$WAIT_TIMEOUT" >/dev/null ||
+   ! lem_wait_for "$session" '^-OLD' "$WAIT_TIMEOUT" >/dev/null ||
+   ! lem_wait_for "$session" '^[+]REWRITTEN' "$WAIT_TIMEOUT" >/dev/null; then
+  die rewrite-diff 'D did not open the bounded unified replacement diff'
+fi
+send_key q
+send_key r
+if ! lem_wait_for "$session" 'Rewrite instruction:' "$WAIT_TIMEOUT" >/dev/null; then
+  die rewrite-iterate-prompt 'r did not prompt to iterate on the staged proposal'
+fi
+send_literal 'make stronger'
+send_key Enter
+if ! lem_wait_for "$session" 'ITERATED' "$WAIT_TIMEOUT" >/dev/null; then
+  die rewrite-iterate 'the second request did not replace the staged proposal'
+fi
+if ! run_mx lem-yath-test-llm-workflow-rewrite-record ||
+   ! wait_report_count '^REWRITE source=OLD pending=1 response=ITERATED preview=yes focus=preview dispatches=2 .*system=rewrite forward=no hidden=no ' 1; then
+  die rewrite-iterate-contract 'iteration did not preserve source and replace only the proposal'
+fi
+send_key A
+if ! lem_wait_for "$session" 'ITERATED' "$WAIT_TIMEOUT" >/dev/null; then
+  die rewrite-accept 'A did not replace the tracked source region'
+fi
+if ! run_mx lem-yath-test-llm-workflow-rewrite-record ||
+   ! wait_report_count '^REWRITE source=ITERATED pending=0 response=none preview=no focus=source dispatches=2 .*forward=no hidden=no ' 1; then
+  die rewrite-accept-contract 'acceptance did not clear all staged state'
+fi
+send_key u
+if ! run_mx lem-yath-test-llm-workflow-rewrite-record ||
+   ! wait_report_count '^REWRITE source=OLD pending=0 response=none preview=no focus=source dispatches=2 ' 1; then
+  die rewrite-undo 'accepted replacement was not one Normal-state undo step'
+fi
+pass rewrite-accept 'Visual menu staged, diffed, iterated, accepted, and undid one replacement'
+
+if ! run_mx lem-yath-test-llm-workflow-rewrite-setup ||
+   ! wait_report_count '^REWRITE ready$' 2; then
+  die rewrite-reject-setup 'the rejection fixture was not prepared'
+fi
+send_key v
+send_key '$'
+send_key Space
+send_key g
+send_key L
+send_key r
+if ! lem_wait_for "$session" 'Rewrite instruction:' "$WAIT_TIMEOUT" >/dev/null; then
+  die rewrite-reject-prompt 'the rejection rewrite did not prompt'
+fi
+send_literal 'discard this'
+send_key Enter
+if ! lem_wait_for "$session" 'REWRITTEN' "$WAIT_TIMEOUT" >/dev/null; then
+  die rewrite-reject-preview 'the rejection proposal was not staged'
+fi
+send_key K
+if ! run_mx lem-yath-test-llm-workflow-rewrite-record ||
+   ! wait_report_count '^REWRITE source=OLD pending=0 response=none preview=no focus=source dispatches=1 .*forward=no hidden=no ' 1; then
+  die rewrite-reject 'K changed source text or retained staged resources'
+fi
+pass rewrite-reject 'K discarded the proposal without changing source text'
+
+if ! run_mx lem-yath-test-llm-workflow-rewrite-setup ||
+   ! wait_report_count '^REWRITE ready$' 3; then
+  die rewrite-merge-setup 'the merge-conflict fixture was not prepared'
+fi
+send_key v
+send_key '$'
+send_key Space
+send_key g
+send_key L
+send_key r
+if ! lem_wait_for "$session" 'Rewrite instruction:' "$WAIT_TIMEOUT" >/dev/null; then
+  die rewrite-merge-prompt 'the merge rewrite did not prompt'
+fi
+send_literal 'merge this'
+send_key Enter
+if ! lem_wait_for "$session" 'REWRITTEN' "$WAIT_TIMEOUT" >/dev/null; then
+  die rewrite-merge-preview 'the merge proposal was not staged'
+fi
+send_key M
+if ! run_mx lem-yath-test-llm-workflow-rewrite-record ||
+   ! wait_report_count '^REWRITE source=<<<<<<< original|OLD|=======|REWRITTEN|>>>>>>> lem-yath-rewrite-test| pending=0 response=none preview=no focus=source dispatches=1 .*forward=no hidden=no ' 1; then
+  die rewrite-merge 'M did not insert and finalize the explicit merge conflict'
+fi
+send_key u
+if ! run_mx lem-yath-test-llm-workflow-rewrite-record ||
+   ! wait_report_count '^REWRITE source=OLD pending=0 response=none preview=no focus=source dispatches=1 ' 2; then
+  die rewrite-merge-undo 'the merge conflict was not one Normal-state undo step'
+fi
+pass rewrite-merge 'M inserted an undoable explicit merge conflict'
 
 send_key F7
 if ! wait_report_count '^CAPTURE ready$' 1; then

@@ -83,6 +83,7 @@
                (:file "llm-context")
                (:file "llm")
                (:file "llm-request-ui")
+               (:file "llm-rewrite")
                (:file "llm-models")
                (:file "indent-guides")
                (:file "theme")
