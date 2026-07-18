@@ -605,7 +605,14 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   `r` prompts for a rewrite and stages the provider response without changing
   source text. Its focused terminal preview supports `A` accept, `K` reject,
   `r` iterate, `D` unified diff, `M` conflict-marker merge, and `q` keep
-  pending; acceptance is one ordinary undo step. Private named presets and
+  pending; acceptance is one ordinary undo step. At point in an Assistant
+  response the same full menu adds `Space` to mark its exact semantic span,
+  `M-Return` to regenerate it with its captured backend/model/request settings,
+  `P`/`N` to rotate bounded response history, and `E` for a terminal unified
+  comparison with the previous variant. Rotation and its semantic metadata are
+  one ordinary undo step. Transcript-backed HTTP providers can regenerate;
+  native Claude Code, Codex, and Grok CLI sessions fail closed because their
+  provider-owned resumable history cannot safely rewind. Private named presets and
   region-or-buffer handoff to Claude or ChatGPT remain in the compact menu; the built-in `quick-lookup`
   preset matches the Emacs startup model, system prompt, temperature, and
   token cap, `project-readonly` opts OpenRouter into the configured five-tool

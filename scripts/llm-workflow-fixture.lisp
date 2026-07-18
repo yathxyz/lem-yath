@@ -13,6 +13,10 @@
 (defvar *llm-workflow-rewrite-dispatches* 0)
 (defvar *llm-workflow-rewrite-prompt* nil)
 (defvar *llm-workflow-rewrite-system* nil)
+(defvar *llm-workflow-variant-dispatches* 0)
+(defvar *llm-workflow-variant-prompt* nil)
+(defvar *llm-workflow-variant-messages* nil)
+(defvar *llm-workflow-variant-settings* nil)
 (defparameter *llm-workflow-routing-target-name* "*llm-route-target*")
 (defparameter *llm-workflow-routing-session-name* "*llm-route-session*")
 
@@ -74,6 +78,34 @@
     (setf *llm-workflow-rewrite-prompt* prompt
           *llm-workflow-rewrite-system* *llm-system-message*)
     (llm-request-complete-now request response)))
+
+(defmethod llm-backend-stream
+    ((backend (eql :lem-yath-variant-test)) prompt)
+  (let* ((buffer (llm-output-buffer))
+         (insertion-point
+           (llm-prepare-response buffer "UNEXPECTED-SHARED-VARIANT"))
+         (request
+           (llm-register-request
+            buffer nil backend
+            :prompt (llm-visible-prompt prompt)
+            :insertion-point insertion-point)))
+    (incf *llm-workflow-variant-dispatches*)
+    (setf *llm-workflow-variant-prompt* prompt
+          *llm-workflow-variant-messages* *llm-conversation-messages*
+          *llm-workflow-variant-settings*
+          (list *llm-backend* *llm-model* *llm-system-message*
+                *llm-temperature* *llm-max-tokens* *llm-use-tools*))
+    (llm-request-complete-now request "VARIANT-TWO")))
+
+(defmethod llm-backend-stream
+    ((backend (eql :lem-yath-variant-fail-test)) prompt)
+  (incf *llm-workflow-variant-dispatches*)
+  (setf *llm-workflow-variant-prompt* prompt
+        *llm-workflow-variant-messages* *llm-conversation-messages*
+        *llm-workflow-variant-settings*
+        (list backend *llm-model* *llm-system-message*
+              *llm-temperature* *llm-max-tokens* *llm-use-tools*))
+  (message "Fixture backend declined to launch"))
 
 (setf *llm-handoff-browser-commands*
       (list (uiop:getenv "LEM_YATH_LLM_WORKFLOW_BROWSER"))
@@ -166,6 +198,27 @@
       (multiple-value-bind (command reopen-p) (llm-full-menu-action "r")
         (check (and (eq command 'lem-yath-llm-rewrite) (not reopen-p))
                "gptel-rewrite-dispatch"))
+      (check
+       (and (eq (nth-value 0 (llm-full-menu-action "Space"))
+                'lem-yath-llm-response-mark)
+            (eq (nth-value 0 (llm-full-menu-action "M-Return"))
+                'lem-yath-llm-response-regenerate)
+            (eq (nth-value 0 (llm-full-menu-action "P"))
+                'lem-yath-llm-response-previous)
+            (eq (nth-value 0 (llm-full-menu-action "N"))
+                'lem-yath-llm-response-next)
+            (eq (nth-value 0 (llm-full-menu-action "E"))
+                'lem-yath-llm-response-diff))
+       "gptel-response-variant-dispatch")
+      (let ((*llm-response-variant-limit* 2)
+            (*llm-response-variant-character-limit* 5))
+        (check
+         (and (equal (llm-response-bounded-history
+                      '("aa" "bb" "cc"))
+                     '("aa" "bb"))
+              (not (llm-response-variants-supported-p :codex))
+              (llm-response-variants-supported-p :openrouter))
+         "response-variant-bounds-and-backend-policy"))
       (check (and (eq (llm-context-menu-command "r")
                       'lem-yath-llm-context-add-region)
                   (eq (llm-context-menu-command "b")
@@ -596,6 +649,85 @@
      (if hidden "yes" "no")
      (if (buffer-modified-p source) "yes" "no"))))
 
+(define-command lem-yath-test-llm-workflow-variant-setup () ()
+  (let ((buffer *llm-workflow-source-buffer*))
+    (switch-to-buffer buffer)
+    (setf (buffer-read-only-p buffer) nil)
+    (buffer-mark-cancel buffer)
+    (when (lem-vi-mode/visual:visual-p)
+      (lem-vi-mode/visual:vi-visual-end buffer))
+    (erase-buffer buffer)
+    (unless (mode-active-p buffer 'org-mode)
+      (change-buffer-mode buffer 'org-mode))
+    (unless (llm-conversation-buffer-p buffer)
+      (lem-yath-llm-conversation-mode t))
+    (insert-string (buffer-end-point buffer) (format nil "* QUESTION~2%")
+                   'lem-yath-llm-role :user)
+    (insert-string (buffer-end-point buffer) "VARIANT-ONE"
+                   'lem-yath-llm-role :assistant)
+    (insert-string (buffer-end-point buffer) (format nil "~2%* ")
+                   'lem-yath-llm-role :user)
+    (buffer-start (buffer-point buffer))
+    (character-offset (buffer-point buffer) 13)
+    (clear-buffer-edit-history buffer)
+    (setf *llm-backend* :lem-yath-variant-test
+          *llm-model* "variant-model"
+          *llm-system-message* "variant system"
+          *llm-temperature* 0.55d0
+          *llm-max-tokens* 321
+          *llm-use-tools* nil
+          *llm-workflow-variant-dispatches* 0
+          *llm-workflow-variant-prompt* nil
+          *llm-workflow-variant-messages* nil
+          *llm-workflow-variant-settings* nil)
+    (llm-role-refresh-static-overlays buffer)
+    (llm-workflow-log "VARIANT ready")))
+
+(define-command lem-yath-test-llm-workflow-variant-cli-setup () ()
+  (call-command 'lem-yath-test-llm-workflow-variant-setup nil)
+  (setf *llm-backend* :codex)
+  (llm-workflow-log "VARIANT cli-ready"))
+
+(define-command lem-yath-test-llm-workflow-variant-fail-setup () ()
+  (call-command 'lem-yath-test-llm-workflow-variant-setup nil)
+  (setf *llm-backend* :lem-yath-variant-fail-test)
+  (llm-workflow-log "VARIANT fail-ready"))
+
+(define-command lem-yath-test-llm-workflow-variant-record () ()
+  (let ((buffer *llm-workflow-source-buffer*))
+    (with-point ((response (buffer-start-point buffer)))
+      (search-forward response "VARIANT-")
+      (let* ((state (llm-response-current-state response))
+             (history (and state (llm-response-state-history state)))
+             (messages *llm-workflow-variant-messages*)
+             (roles (mapcar #'llm-message-role messages))
+             (contents (mapcar #'llm-message-content messages))
+             (selection
+               (when (buffer-mark-p buffer)
+                 (multiple-value-bind (start end)
+                     (let ((global-mode (current-global-mode)))
+                       (values
+                        (region-beginning-using-global-mode global-mode buffer)
+                        (region-end-using-global-mode global-mode buffer)))
+                   (points-to-string start end)))))
+        (multiple-value-bind (start end) (llm-response-span-bounds response)
+          (llm-workflow-log
+           (concatenate
+            'string
+            "VARIANT response=~a history=~{~a~^,~} dispatches=~d prompt=~a "
+            "roles=~{~a~^,~} contents=~{~a~^,~} settings=~{~a~^,~} "
+            "active=~a visual=~a selection=~a")
+           (llm-workflow-one-line (points-to-string start end))
+           (mapcar #'llm-workflow-one-line history)
+           *llm-workflow-variant-dispatches*
+           (llm-workflow-one-line *llm-workflow-variant-prompt*)
+           roles
+           (mapcar #'llm-workflow-one-line contents)
+           *llm-workflow-variant-settings*
+           (if (llm-active-request buffer) "yes" "no")
+           (if (lem-vi-mode/visual:visual-p) "yes" "no")
+           (llm-workflow-one-line selection)))))))
+
 (define-command lem-yath-test-llm-workflow-record () ()
   (let* ((preset-file (llm-preset-pathname))
          (preset-directory (uiop:pathname-directory-pathname preset-file))
@@ -635,6 +767,7 @@
   (define-key keymap "F9" 'lem-yath-test-llm-workflow-routing-setup)
   (define-key keymap "F10" 'lem-yath-test-llm-workflow-routing-record)
   (define-key keymap "F11" 'lem-yath-test-llm-workflow-preview-record)
-  (define-key keymap "F12" 'lem-yath-test-llm-workflow-record))
+  (define-key keymap "F12" 'lem-yath-test-llm-workflow-record)
+  (define-key keymap "F1" 'lem-yath-test-llm-workflow-variant-record))
 
 (llm-workflow-log "READY")

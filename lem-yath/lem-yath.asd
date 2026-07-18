@@ -91,6 +91,7 @@
                (:file "window-history")
                (:file "ui")
                (:file "llm-visuals")
+               (:file "llm-response-history")
                (:module "apps"
                 :components ((:file "documents")
                              (:file "agenda-undo")

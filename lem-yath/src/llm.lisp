@@ -54,6 +54,9 @@
 (defvar *llm-response-finish-function* nil
   "Optional callback captured by one request after routing cleanup.")
 
+(defvar *llm-response-history* nil
+  "Previous response strings to attach to one regenerated response.")
+
 (defvar *llm-response-destination* nil
   "One-shot response destination selected by the full LLM menu.")
 
@@ -110,18 +113,26 @@
                 (buffer process backend
                  &key prompt insertion-point tool-context tools-p
                    source-buffer response-close-function
-                   response-finish-function)))
+                   response-finish-function response-start response-history
+                   model system-message temperature max-tokens use-tools)))
   "One asynchronous LLM request owned by BUFFER."
   buffer
   process
   backend
   prompt
   insertion-point
+  response-start
+  response-history
   source-buffer
   tool-context
   tools-p
   response-close-function
   response-finish-function
+  model
+  system-message
+  temperature
+  max-tokens
+  use-tools
   visual-state
   (aborted-p nil)
   (lock (bt2:make-lock :name "lem-yath/llm-request")))
@@ -610,9 +621,12 @@ SHARED-HEADING is rendered only for the traditional shared transcript."
          *llm-request-insert-functions* request string))))
 
 (defun llm-request-release-insertion-point (request)
-  (alexandria:when-let ((point (llm-request-insertion-point request)))
-    (ignore-errors (delete-point point))
-    (setf (llm-request-insertion-point request) nil)))
+  (dolist (point (list (llm-request-insertion-point request)
+                       (llm-request-response-start request)))
+    (when (and point (alive-point-p point))
+      (ignore-errors (delete-point point))))
+  (setf (llm-request-insertion-point request) nil
+        (llm-request-response-start request) nil))
 
 (defun llm-request-complete-now (request final-text)
   "Complete current REQUEST on the editor thread."
@@ -670,13 +684,23 @@ SHARED-HEADING is rendered only for the traditional shared transcript."
          (request (make-llm-request buffer process backend
                                    :prompt prompt
                                    :insertion-point insertion-point
+                                   :response-start
+                                   (and insertion-point
+                                        (copy-point insertion-point
+                                                    :right-inserting))
+                                   :response-history *llm-response-history*
                                    :source-buffer source
                                    :tool-context tool-context
                                    :tools-p tools-p
                                    :response-close-function
                                    *llm-response-close-function*
                                    :response-finish-function
-                                   *llm-response-finish-function*)))
+                                   *llm-response-finish-function*
+                                   :model *llm-model*
+                                   :system-message *llm-system-message*
+                                   :temperature *llm-temperature*
+                                   :max-tokens *llm-max-tokens*
+                                   :use-tools *llm-use-tools*)))
     (setf (buffer-value buffer *llm-active-request-key*) request)
     (when (and (llm-buffer-live-p source) (not (eq source buffer)))
       (setf (buffer-value source *llm-forward-request-buffer-key*) buffer))

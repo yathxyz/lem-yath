@@ -3444,6 +3444,16 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   source buffer's provider context. `J` opens a read-only normalized
   JSON dry run containing the effective context-expanded messages and request
   settings but no credentials, headers, or dispatch side effect. With an active
+  Assistant response, a conditional fifth column exposes `Space` to mark its
+  exact semantic span, `M-Return` to regenerate from the typed transcript with
+  the original backend/model/system/temperature/token/tool settings, `P` and
+  `N` to rotate a bounded 16-entry/4-MiB variant history, and `E` to open a
+  terminal unified comparison. Rotation is one undo group; undo/redo revives
+  both the Assistant role and response metadata. OpenRouter, Perplexity,
+  Copilot, ChatGPT Codex, Grok OAuth, and other transcript-backed backends can
+  regenerate. Native `claude-code`, `codex`, and `grok` sessions refuse before
+  mutation because their resumable provider histories cannot safely rewind.
+  With an active
   Visual region, conditional `r` runs a mode-aware rewrite request into a
   private sink and highlights the tracked source while it waits. The completed
   response opens a selected, read-only terminal preview without changing the
@@ -3452,9 +3462,10 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   conflict, and `q` closes the preview while retaining the highlighted pending
   rewrite. Overlapping rewrites, read-only sources, concurrent source requests,
   oversized responses, late generations, and killed sources fail closed and
-  release their private sinks. Gptel's inline replacement overlay, ediff,
-  multi-region accept/reject, diff switches, response variants, and media
-  controls remain unimplemented rather than appearing as inert controls.
+  release their private sinks. Gptel's inline replacement overlay, graphical
+  ediff, multi-region accept/reject, diff switches, native-CLI response
+  regeneration, and media controls remain unimplemented rather than appearing
+  as inert controls.
   Handoff context includes
   buffer, mode, file, and non-prompting project metadata; it is capped at
   13,000 characters while retaining the newest text. ChatGPT also receives

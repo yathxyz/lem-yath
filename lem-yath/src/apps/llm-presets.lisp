@@ -717,7 +717,9 @@
           (lem/transient::keymap-display-style keymap) :row)
     (dolist
         (child
-          (list
+          (remove
+           nil
+           (list
            (llm-menu-display-keymap
             "Instructions and presets"
             (list
@@ -770,7 +772,21 @@
                                       (symbol-value
                                        '*llm-request-trace-enabled*))))
               (list "L" "inspect request log")
-              (list "q" "cancel"))))))
+              (list "q" "cancel"))))
+           (when (llm-response-at-point-p)
+             (llm-menu-display-keymap
+              "Tweak response"
+              (remove
+               nil
+               (list
+                (list "Space" "mark response")
+                (list "M-Return" "regenerate")
+                (when (llm-response-history-at-point-p)
+                  (list "P" "previous variant"))
+                (when (llm-response-history-at-point-p)
+                  (list "N" "next variant"))
+                (when (llm-response-history-at-point-p)
+                  (list "E" "compare previous (unified)")))))))))
       (lem-core::keymap-add-child keymap child t))
     keymap))
 
@@ -801,6 +817,11 @@
                   ("I" lem-yath-llm-context-inspect nil)
                   ("J" lem-yath-llm-inspect-request-json nil)
                   ("r" lem-yath-llm-rewrite nil)
+                  ("Space" lem-yath-llm-response-mark nil)
+                  ("M-Return" lem-yath-llm-response-regenerate nil)
+                  ("P" lem-yath-llm-response-previous nil)
+                  ("N" lem-yath-llm-response-next nil)
+                  ("E" lem-yath-llm-response-diff nil)
                   ("x" lem-yath-llm-request-trace-toggle t)
                   ("L" lem-yath-llm-request-trace-open nil))
                 :test #'string=)))

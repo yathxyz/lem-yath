@@ -485,6 +485,128 @@ if ! run_mx lem-yath-test-llm-workflow-rewrite-record ||
 fi
 pass rewrite-merge 'M inserted an undoable explicit merge conflict'
 
+if ! run_mx lem-yath-test-llm-workflow-variant-setup ||
+   ! wait_report_count '^VARIANT ready$' 1; then
+  die variant-setup 'the response-variant conversation was not prepared'
+fi
+send_key Space
+send_key g
+send_key L
+if ! lem_wait_for "$session" 'Tweak response' "$WAIT_TIMEOUT" >/dev/null ||
+   ! lem_wait_for "$session" 'regenerate' "$WAIT_TIMEOUT" >/dev/null; then
+  die variant-menu 'the full menu did not detect the assistant response at point'
+fi
+send_key M-Enter
+if ! lem_wait_for "$session" 'VARIANT-TWO' "$WAIT_TIMEOUT" >/dev/null; then
+  die variant-regenerate 'M-Return did not regenerate the assistant span'
+fi
+send_key F1
+if ! wait_report_count '^VARIANT response=VARIANT-TWO history=VARIANT-ONE dispatches=1 prompt=QUESTION roles=user contents=QUESTION settings=LEM-YATH-VARIANT-TEST,variant-model,variant system,0.55,321,NIL active=no visual=no selection=none$' 1; then
+  die variant-regenerate-contract 'regeneration changed settings, transcript, history, or request ownership'
+fi
+send_key u
+send_key F1
+if ! wait_report_count '^VARIANT response=VARIANT-ONE history= dispatches=1 prompt=QUESTION roles=user contents=QUESTION settings=LEM-YATH-VARIANT-TEST,variant-model,variant system,0.55,321,NIL active=no visual=no selection=none$' 1; then
+  die variant-regenerate-undo 'undo did not revive the original response semantics'
+fi
+send_key C-r
+send_key F1
+if ! wait_report_count '^VARIANT response=VARIANT-TWO history=VARIANT-ONE dispatches=1 .*active=no visual=no selection=none$' 2; then
+  die variant-regenerate-redo 'redo did not revive the regenerated response semantics'
+fi
+send_key Space
+send_key g
+send_key L
+if ! lem_wait_for "$session" 'previous variant' "$WAIT_TIMEOUT" >/dev/null; then
+  die variant-history-menu 'the regenerated response did not expose variant navigation'
+fi
+send_key P
+if ! lem_wait_for "$session" 'VARIANT-ONE' "$WAIT_TIMEOUT" >/dev/null; then
+  die variant-previous 'P did not rotate to the previous response'
+fi
+send_key F1
+if ! wait_report_count '^VARIANT response=VARIANT-ONE history=VARIANT-TWO dispatches=1 .*active=no visual=no selection=none$' 1; then
+  die variant-previous-contract 'P did not rotate response text and history atomically'
+fi
+send_key Space
+send_key g
+send_key L
+send_key N
+if ! lem_wait_for "$session" 'VARIANT-TWO' "$WAIT_TIMEOUT" >/dev/null; then
+  die variant-next 'N did not rotate forward to the regenerated response'
+fi
+send_key F1
+if ! wait_report_count '^VARIANT response=VARIANT-TWO history=VARIANT-ONE dispatches=1 .*active=no visual=no selection=none$' 3; then
+  die variant-next-contract 'N did not restore response text and history atomically'
+fi
+send_key u
+if ! lem_wait_for "$session" 'VARIANT-ONE' "$WAIT_TIMEOUT" >/dev/null; then
+  die variant-undo 'one Normal-state undo did not revert the variant rotation'
+fi
+send_key F1
+if ! wait_report_count '^VARIANT response=VARIANT-ONE history=VARIANT-TWO dispatches=1 .*active=no visual=no selection=none$' 2; then
+  die variant-undo-contract 'variant text and metadata were not one undo group'
+fi
+send_key C-r
+send_key F1
+if ! wait_report_count '^VARIANT response=VARIANT-TWO history=VARIANT-ONE dispatches=1 .*active=no visual=no selection=none$' 4; then
+  die variant-redo-contract 'redo did not revive the regenerated text and metadata'
+fi
+send_key Space
+send_key g
+send_key L
+send_key E
+if ! lem_wait_for "$session" 'current-response$' "$WAIT_TIMEOUT" >/dev/null ||
+   ! lem_wait_for "$session" 'VARIANT-TWO$' "$WAIT_TIMEOUT" >/dev/null ||
+   ! lem_wait_for "$session" 'VARIANT-ONE$' "$WAIT_TIMEOUT" >/dev/null; then
+  die variant-diff 'E did not show the current and previous response variants'
+fi
+send_key q
+send_key Space
+send_key g
+send_key L
+send_key Space
+send_key F1
+if ! wait_report_count '^VARIANT response=VARIANT-TWO history=VARIANT-ONE dispatches=1 .*active=no visual=yes selection=VARIANT-TWO$' 1; then
+  die variant-mark 'Space did not select exactly the assistant response span'
+fi
+pass response-variants 'M-Return, P, N, E, and Space passed through the real full menu'
+
+if ! run_mx lem-yath-test-llm-workflow-variant-cli-setup ||
+   ! wait_report_count '^VARIANT cli-ready$' 1; then
+  die variant-cli-setup 'the native CLI refusal fixture was not prepared'
+fi
+send_key Space
+send_key g
+send_key L
+send_key M-Enter
+if ! lem_wait_for "$session" 'cannot safely regenerate in place' "$WAIT_TIMEOUT" >/dev/null; then
+  die variant-cli-refusal 'native resumable history was not refused explicitly'
+fi
+send_key F1
+if ! wait_report_count '^VARIANT response=VARIANT-ONE history= dispatches=0 prompt=none roles= contents= settings= active=no visual=no selection=none$' 1; then
+  die variant-cli-contract 'refused native CLI regeneration mutated the answer or dispatched a request'
+fi
+pass response-variant-safety 'one undo is exact and native resumable histories fail closed'
+
+if ! run_mx lem-yath-test-llm-workflow-variant-fail-setup ||
+   ! wait_report_count '^VARIANT fail-ready$' 1; then
+  die variant-fail-setup 'the no-launch regeneration fixture was not prepared'
+fi
+send_key Space
+send_key g
+send_key L
+send_key M-Enter
+if ! lem_wait_for "$session" 'original response restored' "$WAIT_TIMEOUT" >/dev/null ||
+   ! lem_wait_for "$session" 'VARIANT-ONE' "$WAIT_TIMEOUT" >/dev/null; then
+  die variant-fail-restore 'a backend that did not launch lost the original response'
+fi
+send_key F1
+if ! wait_report_count '^VARIANT response=VARIANT-ONE history= dispatches=1 prompt=QUESTION roles=user contents=QUESTION settings=LEM-YATH-VARIANT-FAIL-TEST,variant-model,variant system,0.55,321,NIL active=no visual=no selection=none$' 1; then
+  die variant-fail-contract 'failed regeneration changed text, metadata, or request ownership'
+fi
+pass response-variant-launch-failure 'no-launch regeneration restored the exact original answer'
+
 send_key F7
 if ! wait_report_count '^CAPTURE ready$' 1; then
   die capture-setup 'the daily LLM capture fixture was not prepared'
