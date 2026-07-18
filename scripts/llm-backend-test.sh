@@ -10,6 +10,8 @@ export XDG_CACHE_HOME="$root/cache"
 export LEM_YATH_LLM_BACKEND_REPORT="$root/report"
 export LEM_YATH_LLM_FAKE_LOG="$root/log"
 export LEM_YATH_LLM_FAKE_BIN="$root/bin/"
+export LEM_YATH_LLM_CLAUDE_PROJECT_ROOT="$root/project"
+export LEM_YATH_CLAUDE_PROJECTS_DIR="$root/claude-projects"
 export OPENROUTER_API_KEY='test-key-not-a-credential'
 source "$here/scripts/tui-driver.sh"
 export LEM_YATH_SOURCE
@@ -32,7 +34,23 @@ trap cleanup EXIT
 trap 'exit 130' INT TERM
 
 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$LEM_YATH_LLM_FAKE_LOG" \
-  "$LEM_YATH_LLM_FAKE_BIN"
+  "$LEM_YATH_LLM_FAKE_BIN" "$LEM_YATH_LLM_CLAUDE_PROJECT_ROOT" \
+  "$LEM_YATH_CLAUDE_PROJECTS_DIR"
+git -C "$LEM_YATH_LLM_CLAUDE_PROJECT_ROOT" init -q
+encoded_project=$(printf '%s' "$LEM_YATH_LLM_CLAUDE_PROJECT_ROOT" | tr '/.' '--')
+claude_project_dir="$LEM_YATH_CLAUDE_PROJECTS_DIR/$encoded_project"
+mkdir -p "$claude_project_dir"
+chmod 700 "$LEM_YATH_CLAUDE_PROJECTS_DIR" "$claude_project_dir"
+printf '%s\n' \
+  '{"type":"user","uuid":"claude-user-before"}' \
+  '{"type":"assistant","uuid":"claude-message-boundary"}' \
+  '{"type":"user","uuid":"claude-user-after"}' \
+  >"$claude_project_dir/claude-session-1.jsonl"
+printf '%s\n' \
+  "{\"version\":1,\"entries\":[{\"sessionId\":\"claude-session-1\",\"fullPath\":\"$claude_project_dir/claude-session-1.jsonl\",\"firstPrompt\":\"Original session\",\"summary\":\"Original session\",\"modified\":\"2026-07-18T00:00:00Z\"}],\"unknown\":{\"keep\":true}}" \
+  >"$claude_project_dir/sessions-index.json"
+chmod 600 "$claude_project_dir/claude-session-1.jsonl" \
+  "$claude_project_dir/sessions-index.json"
 : >"$LEM_YATH_LLM_BACKEND_REPORT"
 bash_bin=$(command -v bash)
 for executable in curl claude codex grok; do
@@ -94,6 +112,11 @@ send_key() {
   sleep 0.15
 }
 
+send_literal() {
+  tmux_cmd send-keys -t "$session" -l -- "$1"
+  sleep 0.15
+}
+
 assert_argv() {
   local label=$1 file=$2
   shift 2
@@ -136,7 +159,7 @@ fi
 pass openrouter-stream 'fake SSE chunks streamed through the editor queue'
 
 send_key F4
-if ! wait_state 'active=no .*claude1=yes .*thinking=yes tool=yes tool-result=yes .*claude-id=claude-session-1'; then
+if ! wait_state 'active=no .*claude1=yes .*thinking=yes tool=yes tool-result=yes .*claude-id=claude-session-1 .*claude-boundary=yes'; then
   die claude-first 'Claude text, activity, or session metadata was missing'
 fi
 send_key F4
@@ -189,6 +212,76 @@ if ! wait_state 'active=no .*grok2=yes .*grok-id=grok-session-1'; then
   die grok-resume 'Grok resume request did not complete'
 fi
 pass grok-stream 'Grok events rendered and the second request resumed'
+
+send_key F10
+send_key C-c
+send_key C-f
+if ! wait_state 'claude-branch=[0-9A-Fa-f-]{36} .*selected-backend=CLAUDE-CODE'; then
+  die claude-fork 'C-c C-f did not select a newly forked Claude session'
+fi
+
+python3 - "$claude_project_dir" <<'PY'
+import json
+import pathlib
+import re
+import stat
+import sys
+
+directory = pathlib.Path(sys.argv[1])
+index = json.loads((directory / "sessions-index.json").read_text())
+assert index["unknown"] == {"keep": True}
+assert len(index["entries"]) == 2
+fork = index["entries"][-1]
+session_id = fork["sessionId"]
+assert re.fullmatch(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+    session_id,
+    re.IGNORECASE,
+)
+assert fork["messageCount"] == 2
+path = pathlib.Path(fork["fullPath"])
+assert path.parent == directory and path.name == f"{session_id}.jsonl"
+records = [json.loads(line) for line in path.read_text().splitlines()]
+assert [record.get("uuid") for record in records[:2]] == [
+    "claude-user-before", "claude-message-boundary"
+]
+assert records[2] == {
+    "type": "last-prompt", "sessionId": session_id, "lastPrompt": "fork"
+}
+assert stat.S_IMODE(path.stat().st_mode) == 0o600
+assert stat.S_IMODE((directory / "sessions-index.json").stat().st_mode) == 0o600
+assert (directory / "claude-session-1.jsonl").read_text().splitlines()[-1] == \
+    '{"type":"user","uuid":"claude-user-after"}'
+PY
+pass claude-fork 'physical C-c C-f created one bounded registered JSONL fork'
+
+send_key C-c
+send_key C-b
+if ! lem_wait_for "$session" 'Session:' "$WAIT_TIMEOUT" >/dev/null; then
+  die claude-session-picker 'C-c C-b did not open the session picker'
+fi
+send_literal 'Original session'
+send_key Enter
+if ! wait_state 'claude-branch=claude-session-1 .*selected-backend=CLAUDE-CODE'; then
+  die claude-session-picker 'the selected original Claude session was not restored'
+fi
+pass claude-session-picker 'physical C-c C-b restored a registered project session'
+
+fork_count_before=$(find "$claude_project_dir" -maxdepth 1 -name '*.jsonl' -type f | wc -l)
+printf '{malformed\n' >"$claude_project_dir/sessions-index.json"
+chmod 600 "$claude_project_dir/sessions-index.json"
+send_key F10
+send_key C-c
+send_key C-f
+sleep 0.5
+fork_count_after=$(find "$claude_project_dir" -maxdepth 1 -name '*.jsonl' -type f | wc -l)
+if [ "$fork_count_after" -ne "$fork_count_before" ]; then
+  die claude-fork-rollback 'a malformed index left an unregistered fork file'
+fi
+if ! wait_state 'claude-branch=claude-session-1'; then
+  die claude-fork-rollback 'failed fork changed the active Claude session'
+fi
+pass claude-fork-rollback 'index failure removed its fork file and retained session ownership'
 
 system='Short, direct answers. Skip extra context unless it changes correctness.'
 composed_prefix=$'System instructions:\nShort, direct answers. Skip extra context unless it changes correctness.\n\nUser message:\n'

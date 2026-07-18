@@ -3423,6 +3423,22 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   behavior, a real loopback PKCE callback, exact payload/tool histories,
   private persistence, reload, and secret-free argv in a Nix sandbox.
 
+  Claude Code's result session ID and message UUID are attached to the exact
+  completed Assistant span. In an Org LLM conversation, `C-c C-f` uses the
+  nearest preceding captured boundary to create the configured Claude Code
+  project-session fork, while `C-c C-b` selects a registered project session
+  with Prescient completion. Forking reads an owned regular JSONL source under
+  `~/.claude/projects`, truncates only through the selected UUID, appends a new
+  `last-prompt` continuation, and preserves unknown `sessions-index.json`
+  fields during a locked atomic update. New files and the lock are mode 0600;
+  unsafe ownership, symlinks, writable directories/files, oversized records,
+  malformed indexes, and missing boundaries fail closed. If index registration
+  fails, the unregistered fork is removed and the buffer retains its prior
+  session. `LEM_YATH_CLAUDE_PROJECTS_DIR` permits an explicit private history
+  root, which the ncurses gate uses so real user sessions are never touched.
+  Automatic detection of an Org sibling continuation remains absent because
+  Lem's conversation transcript is linear rather than a heading-tree FSM.
+
   `SPC g l` opens the compact three-column Presets/Handoff/Advanced menu used
   by the Emacs configuration. It loads or saves named presets and hands the active region
   (otherwise the complete buffer) to Claude web or ChatGPT normal, search,

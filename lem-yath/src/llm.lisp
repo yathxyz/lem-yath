@@ -114,7 +114,8 @@
                  &key prompt insertion-point tool-context tools-p
                    source-buffer response-close-function
                    response-finish-function response-start response-history
-                   model system-message temperature max-tokens use-tools)))
+                   model system-message temperature max-tokens use-tools
+                   provider-session-id provider-message-id)))
   "One asynchronous LLM request owned by BUFFER."
   buffer
   process
@@ -133,6 +134,8 @@
   temperature
   max-tokens
   use-tools
+  provider-session-id
+  provider-message-id
   visual-state
   (aborted-p nil)
   (lock (bt2:make-lock :name "lem-yath/llm-request")))

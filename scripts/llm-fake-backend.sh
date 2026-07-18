@@ -30,7 +30,7 @@ case "$backend" in
       '{"type":"not-valid"' \
       "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"thinking\",\"thinking\":\"checked context\"},{\"type\":\"tool_use\",\"name\":\"Read\",\"input\":{\"file_path\":\"safe.lisp\"}},{\"type\":\"text\",\"text\":\"Claude answer $count\"}]}}" \
       '{"type":"user","message":{"content":[{"type":"tool_result","content":"read ok","is_error":false}]}}' \
-      '{"type":"result","session_id":"claude-session-1","is_error":false}'
+      '{"type":"result","session_id":"claude-session-1","uuid":"claude-message-boundary","is_error":false}'
     ;;
   codex)
     printf '%s\n' \

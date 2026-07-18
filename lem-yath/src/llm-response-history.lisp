@@ -17,6 +17,8 @@
   temperature
   max-tokens
   use-tools
+  provider-session-id
+  provider-message-id
   (history '()))
 
 (defstruct llm-response-revival
@@ -190,6 +192,8 @@
    :temperature (llm-request-temperature request)
    :max-tokens (llm-request-max-tokens request)
    :use-tools (llm-request-use-tools request)
+   :provider-session-id (llm-request-provider-session-id request)
+   :provider-message-id (llm-request-provider-message-id request)
    :history
    (llm-response-bounded-history (llm-request-response-history request))))
 

@@ -117,6 +117,7 @@
                              (:file "llm-presets")
                              (:file "claude-bridge")
                              (:file "claude-code")))
+               (:file "llm-claude-sessions")
                (:file "llm-codex-models")
                (:file "llm-trace")
                (:file "llm-capture")

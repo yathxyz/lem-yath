@@ -612,7 +612,12 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   comparison with the previous variant. Rotation and its semantic metadata are
   one ordinary undo step. Transcript-backed HTTP providers can regenerate;
   native Claude Code, Codex, and Grok CLI sessions fail closed because their
-  provider-owned resumable history cannot safely rewind. Private named presets and
+  provider-owned resumable history cannot safely rewind. In an Org LLM
+  conversation backed by Claude Code, `C-c C-f` forks the active project
+  session at the nearest preceding Assistant boundary and `C-c C-b` selects a
+  registered project session. Forks truncate a private Claude JSONL history,
+  append its new continuation marker, and update `sessions-index.json`
+  transactionally without touching the source session. Private named presets and
   region-or-buffer handoff to Claude or ChatGPT remain in the compact menu; the built-in `quick-lookup`
   preset matches the Emacs startup model, system prompt, temperature, and
   token cap, `project-readonly` opts OpenRouter into the configured five-tool

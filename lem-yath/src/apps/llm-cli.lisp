@@ -218,6 +218,7 @@
            (list :text (llm-cli-json-get delta "text")))))
       ((string= type "result")
        (list :session-id (llm-cli-json-get json "session_id")
+             :message-id (llm-cli-json-get json "uuid")
              :error (and (llm-cli-json-get json "is_error")
                          (or (llm-cli-json-get json "result")
                              "Claude Code returned an error"))))
@@ -297,11 +298,15 @@
          (let ((buffer (llm-request-buffer request))
                (text (getf event :text))
                (session-id (getf event :session-id))
+               (message-id (getf event :message-id))
                (error-text (getf event :error)))
            (when (stringp text)
              (llm-request-insert-now request text))
            (when session-id
-             (llm-cli-store-session-id buffer backend session-id))
+             (llm-cli-store-session-id buffer backend session-id)
+             (setf (llm-request-provider-session-id request) session-id))
+           (when (and (stringp message-id) (plusp (length message-id)))
+             (setf (llm-request-provider-message-id request) message-id))
            (when error-text
              (llm-request-insert-now
               request (format nil "~%[~a error: ~a]~%"
@@ -333,22 +338,33 @@
                            buffer process backend
                            :prompt visible-prompt
                            :insertion-point insertion-point)))
+            (setf (llm-request-provider-session-id request) session-id)
             (llm-start-request-thread
              request
              (lambda ()
-               (unwind-protect
-                    (with-open-stream (output (uiop:process-info-output process))
-                      (loop :for line := (read-line output nil)
-                            :while line
-                            :do (llm-cli-queue-event
-                                 request backend
-                                 (llm-cli-parse-event backend line))))
-                 (let ((code (ignore-errors (uiop:wait-process process))))
-                   (llm-request-finish
-                    request
-                    (llm-request-finish-text
-                     request code
-                     (format nil "~a failed" (llm-cli-spec backend)))))))
+               (let ((read-failed-p nil))
+                 (unwind-protect
+                      (handler-case
+                          (with-open-stream
+                              (output (uiop:process-info-output process))
+                            (loop :for line := (read-line output nil)
+                                  :while line
+                                  :do (llm-cli-queue-event
+                                       request backend
+                                       (llm-cli-parse-event backend line))))
+                        (error ()
+                          (unless (llm-request-aborted-now-p request)
+                            (setf read-failed-p t))))
+                   (let ((code (ignore-errors (uiop:wait-process process))))
+                     (llm-request-finish
+                      request
+                      (if read-failed-p
+                          (format nil "~%[~a output stream failed]~%"
+                                  (llm-cli-spec backend))
+                          (llm-request-finish-text
+                           request code
+                           (format nil "~a failed"
+                                   (llm-cli-spec backend)))))))))
              (format nil "lem-yath/llm-~(~a~)" backend)
              (format nil "~%[failed to start ~a request]~%"
                      (llm-cli-spec backend))))
