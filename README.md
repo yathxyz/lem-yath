@@ -218,7 +218,9 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   tracked/untracked file finding, cancellable bounded asynchronous regexp search,
   and arbitrary-directory command dispatch on `SPC p f/g/p`; `SPC SPC` combines
   lexical project buffers, recent files, and saved roots in fixed, narrowable
-  groups with reversible preview-on-move. The project switch menu preserves
+  groups with reversible preview-on-move. Project additions, MRU promotions,
+  and removals transact against the latest shared history, so simultaneous Lem
+  instances do not lose or resurrect entries. The project switch menu preserves
   `f/g/d/v/e/o`, with root-correct Git status and close terminal/M-x
   approximations for Emacs's Eshell and arbitrary-command entries
 - the Emacs configuration tree's directory-local `C-c i` opens a

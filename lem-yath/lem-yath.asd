@@ -40,6 +40,7 @@
                (:file "formatting")
                (:file "git")
                (:file "forge")
+               (:file "project-history")
                (:file "project")
                (:file "calc")
                (:file "lint")

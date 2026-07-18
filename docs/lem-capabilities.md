@@ -1253,6 +1253,15 @@ history.
 `.project .projectile Makefile configure.ac TAGS …` (`project.lisp:31-53`). `find-root`
 walks up to the project root. Saved projects persisted to `(lem-home)/history/projects`.
 
+`lem-yath/src/project-history.lisp` replaces that file's single-process writer
+with an owner-validated, bounded reader and mode-0600 atomic replacement under
+in-process and OS-released interprocess locks. Every automatic or stock
+`project-save`/`project-unsave` mutation starts from the latest disk state;
+concurrent additions retain both roots, MRU promotion remains deterministic,
+and a later stale writer cannot resurrect a root another editor removed. If the
+file becomes malformed or symlinked, read-only UI retains its last known-good
+list while mutations refuse the unsafe storage without replacing it.
+
 The configured editor replaces the high-frequency upstream commands in
 `lem-yath/src/project.lisp`. Git roots (including initialized submodules and
 linked worktrees whose `.git` marker is a file) are

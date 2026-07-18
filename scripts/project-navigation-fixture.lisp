@@ -139,6 +139,81 @@
      (project-navigation-test-yes-no
       (uiop:file-exists-p (project-navigation-test-history-pathname))))))
 
+(defun project-navigation-test-log-history-action (action)
+  (let* ((roots (mapcar #'project-navigation-test-root-label
+                        (saved-project-roots)))
+         (display (if roots
+                      (format nil "~{~a~^,~}" roots)
+                      "none")))
+    (project-navigation-test-log
+     "HISTORY-ACTION phase=~a action=~a roots=~a alpha=~d beta=~d gamma=~d"
+     *project-navigation-test-phase*
+     action
+     display
+     (project-navigation-test-root-count "alpha" roots)
+     (project-navigation-test-root-count "beta" roots)
+     (project-navigation-test-root-count "gamma" roots))))
+
+(define-command lem-yath-test-project-navigation-remember-gamma () ()
+  (remember-project-root *project-navigation-test-gamma*)
+  (project-navigation-test-log-history-action "remember-gamma"))
+
+(define-command lem-yath-test-project-navigation-core-remember-alpha () ()
+  (lem-core/commands/project::remember-project
+   (uiop:native-namestring *project-navigation-test-alpha*))
+  (project-navigation-test-log-history-action "core-remember-alpha"))
+
+(define-command lem-yath-test-project-navigation-core-remember-beta () ()
+  (lem-core/commands/project::remember-project
+   (uiop:native-namestring *project-navigation-test-beta*))
+  (project-navigation-test-log-history-action "core-remember-beta"))
+
+(define-command lem-yath-test-project-navigation-core-forget-beta () ()
+  (lem-core/commands/project::forget-project
+   (uiop:native-namestring *project-navigation-test-beta*))
+  (project-navigation-test-log-history-action "core-forget-beta"))
+
+(define-command lem-yath-test-project-navigation-core-forget-gamma () ()
+  (lem-core/commands/project::forget-project
+   (uiop:native-namestring *project-navigation-test-gamma*))
+  (project-navigation-test-log-history-action "core-forget-gamma"))
+
+(defun project-navigation-test-signals-error-p (function)
+  (handler-case
+      (progn (funcall function) nil)
+    (error () t)))
+
+(define-command lem-yath-test-project-navigation-history-parser () ()
+  (project-navigation-test-log
+   "HISTORY-PARSER nil=~a strings=~a displaced=~a dispatch=~a mismatch=~a"
+   (project-navigation-test-yes-no
+    (null (parse-project-history-text (format nil "NIL~%"))))
+   (project-navigation-test-yes-no
+    (equal (parse-project-history-text "(\"/a/\" \"/b/\")")
+           '("/a/" "/b/")))
+   (project-navigation-test-yes-no
+    (equal (parse-project-history-text
+            "(#A((3) BASE-CHAR . \"/a/\"))")
+           '("/a/")))
+   (project-navigation-test-yes-no
+    (project-navigation-test-signals-error-p
+     (lambda () (parse-project-history-text "(#.(error \"unsafe\"))"))))
+   (project-navigation-test-yes-no
+    (project-navigation-test-signals-error-p
+     (lambda ()
+       (parse-project-history-text
+        "(#A((2) BASE-CHAR . \"/a/\"))"))))))
+
+(define-command lem-yath-test-project-navigation-history-refusal () ()
+  (let ((rejected
+          (project-navigation-test-signals-error-p
+           (lambda ()
+             (project-history-add
+              (uiop:native-namestring
+               *project-navigation-test-gamma*))))))
+    (project-navigation-test-log "HISTORY-REFUSAL rejected=~a"
+                                 (project-navigation-test-yes-no rejected))))
+
 (define-command lem-yath-test-project-navigation-open-beta () ()
   (find-file
    (project-navigation-test-path

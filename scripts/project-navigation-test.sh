@@ -400,6 +400,176 @@ else
     "$verify_session"
 fi
 
+# Both editors load the same Beta,Alpha baseline before either writes.  Every
+# later operation must transact against the latest disk state rather than its
+# stale in-memory vector.
+concurrent_session="lem-yath-project-concurrent-$id"
+if start_phase "$concurrent_session" concurrent &&
+   lem_wait_for "$concurrent_session" 'NORMAL|Dashboard' "$BOOT_TIMEOUT" \
+     >/dev/null &&
+   invoke_mx "$concurrent_session" \
+     lem-yath-test-project-navigation-record-history \
+     '^HISTORY phase=concurrent sample=1 ' &&
+   grep -q '^HISTORY phase=concurrent sample=1 roots=beta,alpha count=2 alpha=1 beta=1 gamma=0 disk=yes$' \
+     "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
+  pass project-concurrent-baseline \
+    'two live Lem processes loaded the same persisted MRU baseline'
+else
+  fail project-concurrent-baseline \
+    'the second live process did not load the shared baseline' \
+    "$concurrent_session"
+fi
+
+if invoke_mx "$verify_session" \
+     lem-yath-test-project-navigation-remember-gamma \
+     '^HISTORY-ACTION phase=verify action=remember-gamma ' &&
+   invoke_mx "$concurrent_session" \
+     lem-yath-test-project-navigation-core-remember-alpha \
+     '^HISTORY-ACTION phase=concurrent action=core-remember-alpha ' &&
+   grep -q '^HISTORY-ACTION phase=verify action=remember-gamma roots=gamma,beta,alpha alpha=1 beta=1 gamma=1$' \
+     "$LEM_YATH_PROJECT_NAVIGATION_REPORT" &&
+   grep -q '^HISTORY-ACTION phase=concurrent action=core-remember-alpha roots=alpha,gamma,beta alpha=1 beta=1 gamma=1$' \
+     "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
+  pass project-concurrent-additions \
+    'a stale stock writer preserved the other process addition and updated MRU'
+else
+  fail project-concurrent-additions \
+    'serialized project additions lost an entry or MRU order' \
+    "$concurrent_session"
+fi
+
+if invoke_mx "$verify_session" \
+     lem-yath-test-project-navigation-core-forget-beta \
+     '^HISTORY-ACTION phase=verify action=core-forget-beta ' &&
+   invoke_mx "$concurrent_session" \
+     lem-yath-test-project-navigation-remember-gamma \
+     '^HISTORY-ACTION phase=concurrent action=remember-gamma ' &&
+   grep -q '^HISTORY-ACTION phase=verify action=core-forget-beta roots=alpha,gamma alpha=1 beta=0 gamma=1$' \
+     "$LEM_YATH_PROJECT_NAVIGATION_REPORT" &&
+   grep -q '^HISTORY-ACTION phase=concurrent action=remember-gamma roots=gamma,alpha alpha=1 beta=0 gamma=1$' \
+     "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
+  pass project-concurrent-removal \
+    'a later stale writer retained another process intentional removal'
+else
+  fail project-concurrent-removal \
+    'a stale writer resurrected a deliberately removed project' \
+    "$concurrent_session"
+fi
+
+# Restore the baseline so the remainder of the established interaction gate
+# keeps testing the same candidate and picker state as before.
+if invoke_mx "$concurrent_session" \
+     lem-yath-test-project-navigation-core-remember-beta \
+     '^HISTORY-ACTION phase=concurrent action=core-remember-beta ' &&
+   invoke_mx "$verify_session" \
+     lem-yath-test-project-navigation-core-forget-gamma \
+     '^HISTORY-ACTION phase=verify action=core-forget-gamma ' &&
+   grep -q '^HISTORY-ACTION phase=verify action=core-forget-gamma roots=beta,alpha alpha=1 beta=1 gamma=0$' \
+     "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
+  pass project-concurrent-restore \
+    'the shared history returned to the established Beta,Alpha fixture'
+else
+  fail project-concurrent-restore \
+    'the concurrency fixture did not restore its baseline' "$verify_session"
+fi
+lem_stop "$concurrent_session"
+
+lem_keys "$verify_session" Escape
+sleep 0.2
+send_chord "$verify_session" C-x p u
+if lem_wait_for "$verify_session" 'Project:' "$WAIT_TIMEOUT" >/dev/null; then
+  tmux_cmd send-keys -t "$verify_session" -l \
+    "$LEM_YATH_PROJECT_NAVIGATION_BETA"
+  sleep 0.3
+fi
+if submit_completion_prompt "$verify_session" 'Project:' &&
+   invoke_mx "$verify_session" \
+     lem-yath-test-project-navigation-record-history \
+     '^HISTORY phase=verify sample=2 ' &&
+   grep -q '^HISTORY phase=verify sample=2 roots=alpha count=1 alpha=1 beta=0 gamma=0 disk=yes$' \
+     "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
+  pass project-unsave-binding \
+    'physical C-x p u removed the selected project through the safe stock command'
+else
+  fail project-unsave-binding \
+    'physical C-x p u did not remove exactly the selected project' \
+    "$verify_session"
+fi
+
+if invoke_mx "$verify_session" \
+     lem-yath-test-project-navigation-core-remember-beta \
+     '^HISTORY-ACTION phase=verify action=core-remember-beta ' &&
+   grep -q '^HISTORY-ACTION phase=verify action=core-remember-beta roots=beta,alpha alpha=1 beta=1 gamma=0$' \
+     "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
+  pass project-unsave-restore \
+    'the stock transactional helper restored the established fixture'
+else
+  fail project-unsave-restore \
+    'the stock helper did not restore Beta without disturbing Alpha' \
+    "$verify_session"
+fi
+
+if invoke_mx "$verify_session" \
+     lem-yath-test-project-navigation-history-parser '^HISTORY-PARSER ' &&
+   grep -q '^HISTORY-PARSER nil=yes strings=yes displaced=yes dispatch=yes mismatch=yes$' \
+     "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
+  pass project-history-parser \
+    'the bounded reader accepts pinned legacy forms and rejects dispatch syntax'
+else
+  fail project-history-parser \
+    'the bounded project-history grammar accepted or rejected the wrong form' \
+    "$verify_session"
+fi
+
+history_file="$LEM_HOME/history/projects"
+history_lock="$history_file.lock"
+history_artifacts=$(find "$LEM_HOME/history" -maxdepth 1 -type f \
+  -name 'projects.*' ! -name 'projects.lock' -print -quit)
+if [ "$(stat -c %a "$history_file" 2>/dev/null)" = 600 ] &&
+   [ "$(stat -c %a "$history_lock" 2>/dev/null)" = 600 ] &&
+   [ ! -L "$history_file" ] && [ -z "$history_artifacts" ]; then
+  pass project-history-storage \
+    'state and lock are private regular exact-path files with no temp residue'
+else
+  fail project-history-storage \
+    'project history permissions, type, exact path, or cleanup diverged'
+fi
+
+history_good="$root/project-history-good"
+history_victim="$root/project-history-victim"
+cp -p "$history_file" "$history_good"
+printf 'victim-sentinel\n' >"$history_victim"
+rm -f "$history_file"
+ln -s "$history_victim" "$history_file"
+if invoke_mx "$verify_session" \
+     lem-yath-test-project-navigation-history-refusal \
+     '^HISTORY-REFUSAL rejected=yes$' &&
+   [ -L "$history_file" ] &&
+   grep -qx 'victim-sentinel' "$history_victim"; then
+  pass project-history-symlink-refusal \
+    'a symlinked history was rejected without touching its target'
+else
+  fail project-history-symlink-refusal \
+    'a symlinked history was followed, replaced, or accepted' "$verify_session"
+fi
+rm -f "$history_file"
+cp -p "$history_good" "$history_file"
+
+printf '#.(error "unsafe")\n' >"$history_file"
+chmod 600 "$history_file"
+if invoke_mx "$verify_session" \
+     lem-yath-test-project-navigation-history-refusal \
+     '^HISTORY-REFUSAL rejected=yes$' &&
+   grep -qx '#.(error "unsafe")' "$history_file"; then
+  pass project-history-malformed-refusal \
+    'malformed dispatch syntax was rejected without replacing the file'
+else
+  fail project-history-malformed-refusal \
+    'malformed project history was evaluated, accepted, or overwritten' \
+    "$verify_session"
+fi
+cp -p "$history_good" "$history_file"
+
 if invoke_mx "$verify_session" \
      lem-yath-test-project-navigation-static-checks '^STATIC ' &&
    grep -q '^STATIC normal=yes visual=yes pf=yes pg=yes pp=yes space=yes leader-tree=yes emacs-dispatch=yes$' \

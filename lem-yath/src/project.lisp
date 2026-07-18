@@ -331,28 +331,17 @@ provided, cancellation and process ownership are atomic and request-local."
   (or (project-git-root directory)
       (project-marker-root directory)))
 
-(defun project-history ()
-  "Return Lem's existing persistent project history."
-  (lem-core/commands/project::history))
-
 (defun remember-project-root (root)
   "Canonicalize ROOT and persist it as the most-recently used project."
   (let* ((root (canonical-project-directory root))
-         (name (uiop:native-namestring root))
-         (history (project-history)))
-    (unless (string= name (or (lem/common/history:last-history history) ""))
-      (lem/common/history:add-history history name
-                                      :allow-duplicates nil
-                                      :move-to-top t
-                                      :test #'string=)
-      (lem/common/history:save-file history))
+         (name (uiop:native-namestring root)))
+    (project-history-add name)
     root))
 
 (defun saved-project-roots ()
   "Return live saved project roots in most-recently used order."
   (remove-duplicates
-   (loop :for entry :in
-           (reverse (lem/common/history:history-data-list (project-history)))
+   (loop :for entry :in (reverse (project-history-entries))
          :for root := (handler-case
                           (canonical-project-directory entry)
                         (error () nil))
