@@ -77,7 +77,7 @@
   ;; LLM (gptel)
   ("g j" 'lem-yath-llm-send)                ; SPC g j
   ("g l" 'lem-yath-llm-menu)                ; SPC g l
-  ("g L" 'lem-yath-llm-menu)                ; SPC g L
+  ("g L" 'lem-yath-llm-full-menu)           ; SPC g L
   ("g i" 'lem-yath-llm-ask)                 ; additional ad-hoc instruction
   ("g b" 'lem-yath-llm-set-backend)         ; SPC g b
   ("g n" 'lem-yath-llm-new-session)          ; SPC g n

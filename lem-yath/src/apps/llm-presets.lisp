@@ -207,8 +207,9 @@
        (<= (length (getf preset :model)) *llm-preset-string-limit*)
        (stringp (getf preset :system))
        (<= (length (getf preset :system)) *llm-preset-string-limit*)
-       (realp (getf preset :temperature))
-       (<= 0 (getf preset :temperature) 2)
+       (let ((temperature (getf preset :temperature)))
+         (or (null temperature)
+             (and (realp temperature) (<= 0 temperature 2))))
        (let ((maximum (getf preset :max-tokens)))
          (or (null maximum)
              (and (integerp maximum) (<= 1 maximum 1000000))))
@@ -564,27 +565,228 @@
                              :history-symbol 'lem-yath-llm-model)))
   (llm-chatgpt-handoff :model))
 
+(defun llm-menu-number-string (value)
+  (if value (princ-to-string value) ""))
+
+(defun llm-menu-temperature-value (text)
+  "Parse a decimal temperature in TEXT, returning NIL for the API default."
+  (let ((text (string-trim '(#\Space #\Tab #\Newline #\Return) text)))
+    (cond
+      ((zerop (length text)) nil)
+      ((cl-ppcre:scan "^[0-9]+(?:\\.[0-9]+)?$" text)
+       (let ((*read-eval* nil))
+         (ignore-errors (read-from-string text))))
+      (t :invalid))))
+
+(defun llm-menu-temperature-valid-p (text)
+  (let ((value (llm-menu-temperature-value text)))
+    (or (null value)
+        (and (numberp value) (<= 0 value 2)))))
+
+(defun llm-menu-token-value (text)
+  "Parse a response-token cap in TEXT, returning NIL for the API default."
+  (let ((text (string-trim '(#\Space #\Tab #\Newline #\Return) text)))
+    (cond
+      ((zerop (length text)) nil)
+      ((every #'digit-char-p text)
+       (ignore-errors (parse-integer text :junk-allowed nil)))
+      (t :invalid))))
+
+(defun llm-menu-token-valid-p (text)
+  (let ((value (llm-menu-token-value text)))
+    (or (null value)
+        (and (integerp value) (<= 1 value 1000000)))))
+
+(defun llm-menu-tools-supported-p (&optional (backend *llm-backend*))
+  (member backend '(:openrouter :chatgpt-codex :grok-oauth)))
+
+(define-command lem-yath-llm-set-system-message () ()
+  "Set the system instruction used by subsequent LLM requests."
+  (setf *llm-system-message*
+        (prompt-for-string "System message: "
+                           :initial-value *llm-system-message*
+                           :test-function
+                           (lambda (text)
+                             (<= (length text) *llm-preset-string-limit*))
+                           :history-symbol 'lem-yath-llm-system-message))
+  (llm-mark-settings-custom)
+  (message "LLM system message updated"))
+
+(define-command lem-yath-llm-set-temperature () ()
+  "Set request temperature from 0 through 2, or blank for the API default."
+  (let* ((text (prompt-for-string
+                "Temperature (0-2, blank for API default): "
+                :initial-value (llm-menu-number-string *llm-temperature*)
+                :test-function #'llm-menu-temperature-valid-p
+                :history-symbol 'lem-yath-llm-temperature))
+         (value (llm-menu-temperature-value text)))
+    (setf *llm-temperature* value)
+    (llm-mark-settings-custom)
+    (message "LLM temperature: ~a" (or value "API default"))))
+
+(define-command lem-yath-llm-set-max-tokens () ()
+  "Set the response-token cap, or blank to use the provider default."
+  (let* ((text (prompt-for-string
+                "Response tokens (blank for API default): "
+                :initial-value (llm-menu-number-string *llm-max-tokens*)
+                :test-function #'llm-menu-token-valid-p
+                :history-symbol 'lem-yath-llm-max-tokens))
+         (value (llm-menu-token-value text)))
+    (setf *llm-max-tokens* value)
+    (llm-mark-settings-custom)
+    (message "LLM response tokens: ~a" (or value "API default"))))
+
+(define-command lem-yath-llm-toggle-tools () ()
+  "Toggle bounded LLM tools when the active backend supports them."
+  (if (llm-menu-tools-supported-p)
+      (progn
+        (setf *llm-use-tools* (not *llm-use-tools*))
+        (llm-mark-settings-custom)
+        (unless *llm-use-tools*
+          (setf *llm-mcp-server-names* nil))
+        (message "LLM tools ~:[disabled~;enabled~]" *llm-use-tools*))
+      (progn
+        (setf *llm-use-tools* nil
+              *llm-mcp-server-names* nil)
+        (message "~:(~a~) does not support Lem's LLM tools" *llm-backend*))))
+
+(defun llm-menu-value-label (value)
+  (completion-truncate-display-width
+   (if (and (stringp value) (zerop (length value))) "(empty)" value)
+   56))
+
+(defun llm-menu-display-keymap (description entries)
+  (let ((keymap (make-keymap :description description)))
+    (setf (lem/transient::keymap-display-style keymap) :column)
+    ;; Lem's keymap insertion order is stack-like; reverse the source order so
+    ;; the popup reads top-to-bottom like the corresponding Emacs transient.
+    (dolist (entry (reverse entries))
+      (destructuring-bind (key label) entry
+        (define-key keymap key 'nop-command)
+        (setf (lem-core::prefix-description
+               (lem-core::keymap-find keymap
+                                      (lem-core::parse-keyspec key)))
+              label)))
+    keymap))
+
+(defun llm-full-menu-keymap ()
+  (let ((keymap
+          (make-keymap
+           :description
+           (format nil "LLM: ~a / ~(~a~) / ~a"
+                   *llm-current-preset* *llm-backend* *llm-model*))))
+    (setf (lem/transient::keymap-show-p keymap) t
+          (lem/transient::keymap-display-style keymap) :row)
+    (dolist
+        (child
+          (list
+           (llm-menu-display-keymap
+            "Instructions and presets"
+            (list
+             (list "s" (format nil "system message: ~a"
+                                (llm-menu-value-label *llm-system-message*)))
+             (list "d" "additional directive and send")
+             (list "@" (format nil "load preset: ~a" *llm-current-preset*))
+             (list "S" "save current settings as preset")))
+           (llm-menu-display-keymap
+            "Request parameters"
+            (list
+             (list "b" (format nil "backend: ~(~a~)" *llm-backend*))
+             (list "m" (format nil "model: ~a" *llm-model*))
+             (list "c" (format nil "response tokens: ~a"
+                                (or *llm-max-tokens* "API default")))
+             (list "T" (format nil "temperature: ~a"
+                                (or *llm-temperature* "API default")))
+             (list "t" (format nil "use tools: ~a"
+                                (if (llm-menu-tools-supported-p)
+                                    (if *llm-use-tools* "on" "off")
+                                    "unsupported")))))
+           (llm-menu-display-keymap
+            "Actions and diagnostics"
+            (list
+             (list "j" "send")
+             (list "Return" "send")
+             (list "n" "new conversation")
+             (list "a" "abort request")
+             (list "x" (format nil "request tracing: ~:[off~;on~]"
+                                (and (boundp '*llm-request-trace-enabled*)
+                                     (symbol-value
+                                      '*llm-request-trace-enabled*))))
+             (list "L" "inspect request log")
+             (list "q" "cancel")))))
+      (lem-core::keymap-add-child keymap child t))
+    keymap))
+
+(defun llm-full-menu-action (key)
+  "Return command and whether the full menu should reopen for KEY."
+  (alexandria:when-let
+      ((entry
+         (assoc key
+                '(("s" lem-yath-llm-set-system-message t)
+                  ("d" lem-yath-llm-ask nil)
+                  ("@" lem-yath-llm-load-preset t)
+                  ("S" lem-yath-llm-save-preset t)
+                  ("b" lem-yath-llm-set-backend t)
+                  ("m" lem-yath-llm-set-model t)
+                  ("c" lem-yath-llm-set-max-tokens t)
+                  ("T" lem-yath-llm-set-temperature t)
+                  ("t" lem-yath-llm-toggle-tools t)
+                  ("j" lem-yath-llm-send nil)
+                  ("Return" lem-yath-llm-send nil)
+                  ("n" lem-yath-llm-new-session nil)
+                  ("a" lem-yath-llm-abort nil)
+                  ("x" lem-yath-llm-request-trace-toggle t)
+                  ("L" lem-yath-llm-request-trace-open nil))
+                :test #'string=)))
+    (values (second entry) (third entry))))
+
+(define-command lem-yath-llm-full-menu () ()
+  "Show the supported request settings and lifecycle actions from gptel-menu."
+  (unwind-protect
+       (loop
+         (let ((lem/transient:*transient-popup-delay* 0))
+           (keymap-activate (llm-full-menu-keymap)))
+         (redraw-display)
+         (let* ((key (read-key))
+                (name (lem-core::keyseq-to-string (list key))))
+           (lem/transient::hide-transient)
+           (cond
+             ((or (string= name "q") (string= name "Escape")) (return))
+             (t
+              (multiple-value-bind (command reopen-p)
+                  (llm-full-menu-action name)
+                (if command
+                    (progn
+                      (call-command command nil)
+                      (unless reopen-p (return)))
+                    (message "No full LLM action is bound to ~a" name)))))))
+    (lem/transient::hide-transient)))
+
 (defun llm-menu-keymap ()
   (let ((keymap (make-keymap :description
                              (format nil "LLM preset: ~a"
                                      *llm-current-preset*))))
     (setf (lem/transient::keymap-show-p keymap) t
-          (lem/transient::keymap-display-style keymap) :column)
-    (dolist (entry '(("l" "load preset")
-                     ("s" "save preset")
-                     ("c" "open in Claude")
-                     ("g" "open in ChatGPT")
-                     ("r" "open ChatGPT research")
-                     ("w" "open ChatGPT search")
-                     ("G" "open ChatGPT model")
-                     ("m" "select model")
-                     ("q" "cancel")))
-      (destructuring-bind (key description) entry
-        (define-key keymap key 'nop-command)
-        (setf (lem-core::prefix-description
-               (lem-core::keymap-find keymap
-                                      (lem-core::parse-keyspec key)))
-              description)))
+          (lem/transient::keymap-display-style keymap) :row)
+    (dolist
+        (child
+          (list
+           (llm-menu-display-keymap
+            "Presets"
+            '(("l" "load preset")
+              ("s" "save preset")))
+           (llm-menu-display-keymap
+            "Handoff"
+            '(("c" "open in Claude")
+              ("g" "open in ChatGPT")
+              ("r" "open ChatGPT research")
+              ("w" "open ChatGPT search")
+              ("G" "open ChatGPT model")))
+           (llm-menu-display-keymap
+            "Advanced"
+            '(("m" "open full LLM menu")
+              ("q" "cancel")))))
+      (lem-core::keymap-add-child keymap child t))
     keymap))
 
 (defun llm-menu-command (key)
@@ -596,7 +798,7 @@
                 ("r" . lem-yath-llm-handoff-chatgpt-research)
                 ("w" . lem-yath-llm-handoff-chatgpt-search)
                 ("G" . lem-yath-llm-handoff-chatgpt-model)
-                ("m" . lem-yath-llm-set-model))
+                ("m" . lem-yath-llm-full-menu))
               :test #'string=)))
 
 (define-command lem-yath-llm-menu () ()

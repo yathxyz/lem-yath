@@ -85,8 +85,10 @@
         (check (and (eq *llm-backend* :chatgpt-codex)
                     (string= *llm-model* "gpt-5.3-codex"))
                "preset-compatible-model-fallback"))
-      (check (eq (llm-menu-command "m") 'lem-yath-llm-set-model)
-             "model-menu-dispatch")
+      (check (and (eq (llm-menu-command "m") 'lem-yath-llm-full-menu)
+                  (eq (nth-value 0 (llm-full-menu-action "m"))
+                      'lem-yath-llm-set-model))
+             "compact-to-full-model-dispatch")
       (check (find-command "lem-yath-chatgpt-codex-refresh-models")
              "manual-refresh-command")
       (llm-codex-models-test-log

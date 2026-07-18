@@ -394,7 +394,12 @@
           (unless (eq backend *llm-backend*)
             (setf *llm-model*
                   (or (cdr (assoc backend *llm-backend-default-models*))
-                      *llm-model*)))
+                      *llm-model*))
+            (unless (member backend '(:openrouter :chatgpt-codex :grok-oauth))
+              (setf *llm-use-tools* nil))
+            (unless (eq backend :openrouter)
+              (setf *llm-mcp-server-names* nil)))
           (setf *llm-backend* backend)
+          (llm-mark-settings-custom)
           (message "LLM backend: ~(~a~) (~a)" backend *llm-model*))
         (message "Unknown or unavailable backend: ~a" choice))))

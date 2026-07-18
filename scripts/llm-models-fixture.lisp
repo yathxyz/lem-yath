@@ -63,8 +63,10 @@
                     (1+ *llm-openrouter-model-id-limit*)
                     :initial-element #\x)))
              "model-id-size-bound")
-      (check (eq (llm-menu-command "m") 'lem-yath-llm-set-model)
-             "model-menu-dispatch")
+      (check (and (eq (llm-menu-command "m") 'lem-yath-llm-full-menu)
+                  (eq (nth-value 0 (llm-full-menu-action "m"))
+                      'lem-yath-llm-set-model))
+             "compact-to-full-model-dispatch")
       (llm-models-test-log "SUMMARY STATIC ~a failures=~d"
                            (if (zerop failures) "PASS" "FAIL") failures))))
 

@@ -577,7 +577,8 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   private on-disk catalog immediately (or falls back to `openrouter/auto` and
   `openrouter/free`), then refreshes asynchronously after five idle seconds.
   Authenticated sessions use `/models/user`; keyless sessions use `/models`.
-  `SPC g l`, then `m`, selects a discovered model, and
+  `SPC g L`, then `m` (or compact `SPC g l`, `m`, `m`), selects a discovered
+  model, and
   `M-x lem-yath-openrouter-refresh-models` refreshes explicitly
 - native `chatgpt-codex` and `grok-oauth` HTTP backends with the configured
   `codex-agentic` and `grok-build-oauth-agentic` five-tool presets. ChatGPT
@@ -590,8 +591,12 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   refreshes explicitly. Grok reads
   `~/.grok/auth.json` and asks the official `grok` CLI to refresh an expiring
   session. On SSH, Codex login needs local forwarding for callback port 1455
-- gptel-style `SPC g l`/`SPC g L` menu with private named presets and
-  region-or-buffer handoff to Claude or ChatGPT; the built-in `quick-lookup`
+- gptel-style compact `SPC g l` preset/handoff menu and full `SPC g L`
+  request menu. Compact `m` opens the full menu; it controls system
+  instructions, backend, catalog model, provider-default or explicit
+  temperature/token limits, supported tool policy, presets, send/abort/new
+  session, and request tracing. Private named presets and region-or-buffer
+  handoff to Claude or ChatGPT remain in the compact menu; the built-in `quick-lookup`
   preset matches the Emacs startup model, system prompt, temperature, and
   token cap, `project-readonly` opts OpenRouter into the configured five-tool
   project inspection loop, `web-readonly` adds the fetch MCP server,

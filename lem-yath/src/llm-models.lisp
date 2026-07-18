@@ -352,6 +352,7 @@
        (message "Unknown model for ~(~a~): ~a" *llm-backend* choice))
       (t
        (setf *llm-model* choice)
+       (llm-mark-settings-custom)
        (message "LLM model: ~a" choice)))))
 
 (initialize-editor-feature 'initialize-llm-openrouter-models)

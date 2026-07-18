@@ -122,6 +122,72 @@ if ! wait_report_count '^SUMMARY STATIC PASS failures=0$' 1; then
 fi
 pass static-contracts 'menu, quick preset, and bounded context contracts passed'
 
+send_key Space
+send_key g
+send_key L
+if ! lem_wait_for "$session" 'temperature: 0.2' "$WAIT_TIMEOUT" >/dev/null; then
+  die direct-full-menu 'SPC g L did not open the full settings menu'
+fi
+send_key t
+if ! lem_wait_for "$session" 'use tools: on' "$WAIT_TIMEOUT" >/dev/null; then
+  die full-tools 'the full menu did not toggle supported tools and reopen'
+fi
+send_key T
+if ! lem_wait_for "$session" 'blank for API default' "$WAIT_TIMEOUT" >/dev/null; then
+  die temperature-prompt 'the full menu did not open its temperature prompt'
+fi
+send_key BSpace
+send_key BSpace
+send_key BSpace
+send_literal '1.25'
+send_key Enter
+if ! lem_wait_for "$session" 'temperature: 1.25' "$WAIT_TIMEOUT" >/dev/null; then
+  die temperature-setting 'the validated temperature did not update the live menu'
+fi
+send_key c
+if ! lem_wait_for "$session" 'Response tokens' "$WAIT_TIMEOUT" >/dev/null; then
+  die token-prompt 'the full menu did not open its response-token prompt'
+fi
+send_key BSpace
+send_key BSpace
+send_key BSpace
+send_literal '2048'
+send_key Enter
+if ! lem_wait_for "$session" 'response tokens: 2048' "$WAIT_TIMEOUT" >/dev/null; then
+  die token-setting 'the validated token cap did not update the live menu'
+fi
+send_key x
+if ! lem_wait_for "$session" 'request tracing: on' "$WAIT_TIMEOUT" >/dev/null; then
+  die trace-on 'the full menu did not enable request tracing and reopen'
+fi
+send_key x
+if ! lem_wait_for "$session" 'request tracing: off' "$WAIT_TIMEOUT" >/dev/null; then
+  die trace-off 'the full menu did not disable request tracing and reopen'
+fi
+send_key q
+send_key F12
+if ! wait_report_count 'STATE current=custom backend=OPENROUTER model=openrouter/auto .*temperature=1.25 max=2048 tools=yes ' 1; then
+  die full-menu-state 'full-menu controls did not update live request settings'
+fi
+pass direct-full-menu 'SPC g L changed supported live request settings'
+
+send_key Space
+send_key g
+send_key l
+if ! lem_wait_for "$session" 'open full LLM menu' "$WAIT_TIMEOUT" >/dev/null; then
+  die compact-menu 'SPC g l did not retain the configured compact menu'
+fi
+send_key m
+if ! lem_wait_for "$session" 'response tokens: 2048' "$WAIT_TIMEOUT" >/dev/null; then
+  die compact-to-full 'compact m did not open the full LLM menu'
+fi
+send_key t
+if ! lem_wait_for "$session" 'use tools: off' "$WAIT_TIMEOUT" >/dev/null; then
+  die full-tools-off 'the full menu did not toggle tools back off'
+fi
+send_key q
+pass compact-to-full 'compact m followed the configured Emacs route to full settings'
+
 send_key F3
 if ! wait_report_count '^SETTINGS ready$' 1; then
   die preset-setup 'fixture settings were not applied'
@@ -139,7 +205,7 @@ fi
 send_key Enter
 sleep 0.5
 send_key F12
-if ! wait_report_count 'STATE current=fixture-preset backend=CODEX model=fixture-model system=fixture system temperature=0.7 max=1234 saved=yes file-mode=600 dir-mode=700 ' 1; then
+if ! wait_report_count 'STATE current=fixture-preset backend=CODEX model=fixture-model system=fixture system temperature=0.7 max=1234 tools=no saved=yes file-mode=600 dir-mode=700 ' 1; then
   die preset-save 'preset state or private file permissions differed'
 fi
 pass preset-save 'physical menu saved a private named preset'
@@ -163,7 +229,7 @@ send_literal 'fixture-preset'
 send_key Enter
 sleep 0.5
 send_key F12
-if ! wait_report_count 'STATE current=fixture-preset backend=CODEX model=fixture-model system=fixture system temperature=0.7 max=1234 saved=yes ' 1; then
+if ! wait_report_count 'STATE current=fixture-preset backend=CODEX model=fixture-model system=fixture system temperature=0.7 max=1234 tools=no saved=yes ' 1; then
   die preset-load 'fresh process did not restore every saved setting'
 fi
 pass preset-load 'fresh process loaded backend, model, system, and limits'

@@ -26,6 +26,11 @@
 (defvar *llm-use-tools* nil
   "Whether the active preset exposes the bounded read-only tool registry.")
 
+(defun llm-mark-settings-custom ()
+  "Mark the live request settings as diverged from their loaded preset."
+  (when (boundp '*llm-current-preset*)
+    (setf (symbol-value '*llm-current-preset*) "custom")))
+
 (defvar *llm-buffer-name* "*lem-yath-llm*")
 
 (defvar *llm-output-buffer-override* nil
@@ -179,8 +184,9 @@
     (let ((body (llm-json-object
                  "model" model
                  "stream" t
-                 "temperature" temperature
                  "messages" (coerce messages 'vector))))
+      (when temperature
+        (setf (gethash "temperature" body) temperature))
       (when max-tokens
         (setf (gethash "max_tokens" body) max-tokens))
       (when tools

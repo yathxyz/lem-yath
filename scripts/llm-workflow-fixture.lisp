@@ -38,18 +38,35 @@
                   (eq 'lem-yath-llm-menu
                       (leader-binding-command
                        lem-vi-mode:*visual-keymap* "g l"))
-                  (eq 'lem-yath-llm-menu
+                  (eq 'lem-yath-llm-full-menu
                       (leader-binding-command
-                       lem-vi-mode:*normal-keymap* "g L")))
-             "preset-menu-leader")
+                       lem-vi-mode:*normal-keymap* "g L"))
+                  (eq 'lem-yath-llm-full-menu
+                      (leader-binding-command
+                       lem-vi-mode:*visual-keymap* "g L")))
+             "compact-and-full-menu-leaders")
       (check (eq 'lem-yath-llm-ask
                  (leader-binding-command lem-vi-mode:*normal-keymap* "g i"))
              "ad-hoc-instruction-retained")
       (check (and (eq 'lem-yath-llm-save-preset (llm-menu-command "s"))
                   (eq 'lem-yath-llm-handoff-claude (llm-menu-command "c"))
                   (eq 'lem-yath-llm-handoff-chatgpt-search
-                      (llm-menu-command "w")))
-             "menu-dispatch")
+                      (llm-menu-command "w"))
+                  (eq 'lem-yath-llm-full-menu (llm-menu-command "m")))
+             "compact-menu-dispatch")
+      (multiple-value-bind (command reopen-p) (llm-full-menu-action "T")
+        (check (and (eq command 'lem-yath-llm-set-temperature) reopen-p)
+               "full-menu-setting-dispatch"))
+      (multiple-value-bind (command reopen-p) (llm-full-menu-action "j")
+        (check (and (eq command 'lem-yath-llm-send) (not reopen-p))
+               "full-menu-send-dispatch"))
+      (check (and (null (llm-menu-temperature-value ""))
+                  (= (llm-menu-temperature-value "1.25") 1.25d0)
+                  (not (llm-menu-temperature-valid-p "2.1"))
+                  (null (llm-menu-token-value ""))
+                  (= (llm-menu-token-value "2048") 2048)
+                  (not (llm-menu-token-valid-p "0")))
+             "full-menu-number-validation")
       (check (and (assoc "quick-lookup" *llm-builtin-presets* :test #'string=)
                   (assoc "grok-build" *llm-builtin-presets* :test #'string=))
              "implemented-builtins")
@@ -61,6 +78,13 @@
                     (string= (gethash "content" (elt messages 0))
                              *llm-system-message*))
                "quick-lookup-request-settings"))
+      (let ((*llm-temperature* nil))
+        (check (not (nth-value 1
+                               (gethash
+                                "temperature"
+                                (yason:parse
+                                 (llm-request-body "default temperature")))))
+               "temperature-default-omitted"))
       (let* ((text (concatenate 'string "old" (make-string 14000
                                                             :initial-element #\x)))
              (truncated (llm-handoff-truncate text 13000)))
@@ -116,9 +140,10 @@
      (concatenate
       'string
       "STATE current=~a backend=~a model=~a system=~a temperature=~a max=~a "
-      "saved=~a file-mode=~a dir-mode=~a kill-length=~d kill-truncated=~a")
+      "tools=~a saved=~a file-mode=~a dir-mode=~a kill-length=~d kill-truncated=~a")
      *llm-current-preset* *llm-backend* *llm-model* *llm-system-message*
      *llm-temperature* (or *llm-max-tokens* "none")
+     (if *llm-use-tools* "yes" "no")
      (if saved "yes" "no")
      (if (uiop:file-exists-p preset-file)
          (llm-workflow-mode-bits preset-file) "none")

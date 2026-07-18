@@ -3358,8 +3358,8 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   `/api/v1/models/user`; without a key it calls the public `/api/v1/models`.
   Model ids are validated, deduplicated in provider order, and written through
   an owner-only `0700` directory and atomic `0600` regular file. The request
-  URL and authorization header stay in curl's stdin config. `SPC g l`, then
-  `m`, provides Prescient completion, while
+  URL and authorization header stay in curl's stdin config. `SPC g L`, then
+  `m` (or compact `SPC g l`, `m`, `m`), provides Prescient completion, while
   `M-x lem-yath-openrouter-refresh-models` starts a manual asynchronous
   refresh. `scripts/llm-models-test.sh` proves cached startup, idle and manual
   refresh, both endpoints, malformed-entry filtering, argv isolation, private
@@ -3423,10 +3423,20 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   behavior, a real loopback PKCE callback, exact payload/tool histories,
   private persistence, reload, and secret-free argv in a Nix sandbox.
 
-  `SPC g l` and `SPC g L` open the compact preset/handoff menu used by the
-  Emacs configuration. It loads or saves named presets, selects a model, and
-  hands the active region (otherwise the complete buffer) to Claude web or
-  ChatGPT normal, search, research, or model-hint URLs. Context includes
+  `SPC g l` opens the compact three-column Presets/Handoff/Advanced menu used
+  by the Emacs configuration. It loads or saves named presets and hands the active region
+  (otherwise the complete buffer) to Claude web or ChatGPT normal, search,
+  research, or model-hint URLs. Its `m` action opens the same full request menu
+  as direct `SPC g L`. That three-column menu reflects and edits the live
+  system instruction, backend, catalog model, response-token cap, temperature,
+  and supported tool policy; loads or saves presets; and exposes additional
+  directive/send, send, abort, fresh-session, and request-trace actions. Setting
+  controls reopen the menu with their updated values. Blank temperature and
+  token inputs select provider defaults, while backend changes clear tool/MCP
+  state that the destination cannot apply. Gptel's external context attachments,
+  alternate response destinations, response variants/rewrite, media, and dry-run
+  query inspection remain unimplemented rather than appearing as inert controls.
+  Handoff context includes
   buffer, mode, file, and non-prompting project metadata; it is capped at
   13,000 characters while retaining the newest text. ChatGPT also receives
   the exact handoff prompt in Lem's kill ring. Brave is preferred and
@@ -3467,8 +3477,9 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   local-tool opt-in, and configured MCP server names in
   `$XDG_CONFIG_HOME/lem-yath/llm-presets.json`; creation, locking, and atomic
   replacement enforce user ownership and private `0700`/`0600` modes on SBCL.
-  `scripts/llm-workflow-test.sh` verifies the menu through physical keys,
-  private save and fresh-process reload, visual-region Claude handoff, bounded
+  `scripts/llm-workflow-test.sh` verifies direct and compact-to-full menu routes,
+  persistent live setting changes, private save and fresh-process reload,
+  visual-region Claude handoff, bounded
   ChatGPT search handoff, kill-ring copy, and decoded URL parameters without
   opening a real browser.
   `scripts/llm-tools-test.sh` additionally drives a credential-free real

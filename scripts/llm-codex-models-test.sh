@@ -194,12 +194,16 @@ pass secure-refresh 'credentials stayed off argv and cache replacement stayed pr
 send_key Space
 send_key g
 send_key l
-if ! lem_wait_for "$session" 'select model' "$WAIT_TIMEOUT" >/dev/null; then
-  die model-menu 'SPC g l did not open the model menu'
+if ! lem_wait_for "$session" 'open full LLM menu' "$WAIT_TIMEOUT" >/dev/null; then
+  die compact-menu 'SPC g l did not open the compact preset menu'
+fi
+send_key m
+if ! lem_wait_for "$session" 'response tokens:' "$WAIT_TIMEOUT" >/dev/null; then
+  die full-menu 'compact m did not open the full LLM menu'
 fi
 send_key m
 if ! lem_wait_for "$session" 'Model:' "$WAIT_TIMEOUT" >/dev/null; then
-  die model-prompt 'model action did not open catalog completion'
+  die model-prompt 'full-menu model action did not open catalog completion'
 fi
 for _ in $(seq 1 20); do send_key BSpace; done
 send_literal 5.4
@@ -207,6 +211,7 @@ if ! lem_wait_for "$session" 'gpt-5.4' "$WAIT_TIMEOUT" >/dev/null; then
   die model-completion 'partial input did not expose the supported candidate'
 fi
 send_key Enter
+send_key q
 if ! wait_state 'model=gpt-5.4 running=no timer=no$'; then
   die model-selection 'completion did not select the supported Codex model'
 fi

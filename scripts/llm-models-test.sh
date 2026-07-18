@@ -165,12 +165,16 @@ pass secure-refresh 'request stayed off argv and cache replacement remained priv
 send_key Space
 send_key g
 send_key l
-if ! lem_wait_for "$session" 'select model' "$WAIT_TIMEOUT" >/dev/null; then
-  die model-menu 'SPC g l did not show model selection'
+if ! lem_wait_for "$session" 'open full LLM menu' "$WAIT_TIMEOUT" >/dev/null; then
+  die compact-menu 'SPC g l did not show the compact preset menu'
+fi
+send_key m
+if ! lem_wait_for "$session" 'response tokens:' "$WAIT_TIMEOUT" >/dev/null; then
+  die full-menu 'compact m did not open the full LLM menu'
 fi
 send_key m
 if ! lem_wait_for "$session" 'Model:' "$WAIT_TIMEOUT" >/dev/null; then
-  die model-prompt 'model action did not open completion'
+  die model-prompt 'full-menu model action did not open completion'
 fi
 for _ in $(seq 1 15); do send_key BSpace; done
 send_literal second
@@ -178,6 +182,7 @@ if ! lem_wait_for "$session" 'provider/second' "$WAIT_TIMEOUT" >/dev/null; then
   die model-completion 'partial model input did not expose the discovered candidate'
 fi
 send_key Enter
+send_key q
 send_key F3
 if ! wait_report 'model=provider/second running=no'; then
   die model-selection 'completion did not select the discovered model'
