@@ -3,8 +3,9 @@
 ;;;; The Emacs config used `M-x notmuch` / `notmuch-search` over a
 ;;;; Proton Bridge -> mbsync (isync) -> notmuch pipeline. This port keeps the
 ;;;; daily read path: a newest-first thread search list, opening a thread into
-;;;; a headers+plain-text view, owner-private PDF attachment preview, and a
-;;;; `mbsync -a && notmuch new` fetch.
+;;;; a headers+plain-text view, Evil-collection-compatible archive/tag triage,
+;;;; owner-private PDF attachment preview, and a `mbsync -a && notmuch new`
+;;;; fetch.
 ;;;;
 ;;;; All notmuch interaction is via the CLI with --format=json, parsed by yason
 ;;;; (JSON arrays -> lists, objects -> hash-tables with string keys, null -> NIL).
@@ -58,6 +59,33 @@ second value distinguishes a valid empty JSON array from a failed command."
               (values nil nil))))
     (error () (values nil nil))))
 
+(defun notmuch-run-command (args)
+  "Run notmuch with direct argv ARGS and return true only on exit status zero."
+  (handler-case
+      (let ((program (executable-find "notmuch"))
+            (*project-process-timeout* *notmuch-process-timeout*))
+        (unless program (return-from notmuch-run-command nil))
+        (multiple-value-bind (out err code)
+            (run-project-program
+             (cons (uiop:native-namestring program) args)
+             :directory (or (ignore-errors (buffer-directory (current-buffer)))
+                            (uiop:getcwd))
+             :output-limit *notmuch-output-limit*)
+          (declare (ignore out))
+          (if (eql code 0)
+              t
+              (progn
+                (message "notmuch failed~@[: ~a~]"
+                         (alexandria:when-let
+                             ((text (string-trim '(#\Space #\Tab #\Newline
+                                                   #\Return)
+                                                 err)))
+                           (and (plusp (length text)) text)))
+                nil))))
+    (error (condition)
+      (message "notmuch failed: ~a" condition)
+      nil)))
+
 (defun notmuch-string (value)
   "Coerce a JSON-derived VALUE to a display string (NIL -> \"\")."
   (cond ((null value) "")
@@ -69,6 +97,93 @@ second value distinguishes a valid empty JSON array from a failed command."
   (if (and (listp tags) tags)
       (format nil "(~{~a~^ ~})" (mapcar #'notmuch-string tags))
       ""))
+
+(defun notmuch-query-value (prefix value label)
+  "Return PREFIX followed by an exactly quoted notmuch VALUE.
+
+LABEL names VALUE in validation errors.  Direct argv prevents shell parsing;
+quoting here prevents notmuch's query parser from interpreting metacharacters."
+  (unless (and (stringp value)
+               (plusp (length value))
+               (<= (length value) 4096)
+               (notany (lambda (character)
+                         (or (char= character #\Null)
+                             (char= character #\Newline)
+                             (char= character #\Return)))
+                       value))
+    (editor-error "The ~a is invalid" label))
+  (with-output-to-string (stream)
+    (write-string prefix stream)
+    (write-char #\" stream)
+    (loop :for character :across value
+          :do (when (or (char= character #\\) (char= character #\"))
+                (write-char #\\ stream))
+              (write-char character stream))
+    (write-char #\" stream)))
+
+(defun notmuch-bare-thread-id (thread-id)
+  "Return THREAD-ID without an optional `thread:' query prefix."
+  (if (and (stringp thread-id) (eql 0 (search "thread:" thread-id)))
+      (subseq thread-id 7)
+      thread-id))
+
+(defun notmuch-thread-id-query (thread-id)
+  "Return an exact query for bare or legacy-prefixed THREAD-ID."
+  (notmuch-query-value "thread:" (notmuch-bare-thread-id thread-id)
+                       "thread ID"))
+
+(defun notmuch-message-id-query (message-id)
+  "Return an exact, quoted notmuch id: query for MESSAGE-ID."
+  (notmuch-query-value "id:" message-id "Message-ID"))
+
+(defun notmuch-message-ids-query (message-ids)
+  "Return one exact disjunction covering MESSAGE-IDS."
+  (unless message-ids
+    (editor-error "No messages are available for this operation"))
+  (if (null (rest message-ids))
+      (notmuch-message-id-query (first message-ids))
+      (format nil "(~{~a~^ or ~})"
+              (mapcar #'notmuch-message-id-query message-ids))))
+
+(defun notmuch-tag-name-valid-p (tag)
+  "True for one bounded tag that is safe to pass as a direct argv value."
+  (and (stringp tag)
+       (plusp (length tag))
+       (<= (length tag) 4096)
+       (notany (lambda (character)
+                 (or (char= character #\Null)
+                     (char= character #\Newline)
+                     (char= character #\Return)))
+               tag)))
+
+(defun notmuch-prompt-tag (action)
+  "Read one tag for ACTION, rejecting empty and control-bearing values."
+  (prompt-for-string (format nil "Tag to ~a: " action)
+                     :history-symbol 'lem-yath-notmuch-tag
+                     :test-function #'notmuch-tag-name-valid-p))
+
+(defun notmuch-change-tags (query tag-changes)
+  "Apply TAG-CHANGES to the exact notmuch QUERY through direct argv."
+  (and tag-changes
+       (notmuch-run-command
+        (append (list "tag") tag-changes (list "--" query)))))
+
+(defun notmuch-updated-tags (tags tag-changes)
+  "Return TAGS after applying +tag/-tag strings from TAG-CHANGES."
+  (let ((result (copy-list (if (listp tags) tags '()))))
+    (dolist (change tag-changes result)
+      (when (and (stringp change) (> (length change) 1))
+        (let ((operation (char change 0))
+              (tag (subseq change 1)))
+          (cond ((char= operation #\+)
+                 (pushnew tag result :test #'string=))
+                ((char= operation #\-)
+                 (setf result (remove tag result :test #'string=)))))))))
+
+(defun notmuch-next-id (ids current-id)
+  "Return the ID after CURRENT-ID in IDS, or NIL at the end."
+  (let ((tail (member current-id ids :test #'string=)))
+    (second tail)))
 
 ;;; --- thread list buffer ----------------------------------------------------
 
@@ -97,9 +212,23 @@ second value distinguishes a valid empty JSON array from a failed command."
 (define-key *notmuch-search-mode-keymap* "Return" 'lem-yath-notmuch-open-thread)
 (define-key *notmuch-search-mode-keymap* "q" 'quit-active-window)
 (define-key *notmuch-search-mode-keymap* "g" 'lem-yath-notmuch-refresh)
+(define-key *notmuch-search-mode-keymap* "a" 'lem-yath-notmuch-archive-thread)
+(define-key *notmuch-search-mode-keymap* "d" 'lem-yath-notmuch-toggle-deleted)
+(define-key *notmuch-search-mode-keymap* "!" 'lem-yath-notmuch-toggle-unread)
+(define-key *notmuch-search-mode-keymap* "=" 'lem-yath-notmuch-toggle-flagged)
+(define-key *notmuch-search-mode-keymap* "+" 'lem-yath-notmuch-add-tag)
+(define-key *notmuch-search-mode-keymap* "-" 'lem-yath-notmuch-remove-tag)
 (define-key *notmuch-show-mode-keymap* "q" 'quit-active-window)
 (define-key *notmuch-show-mode-keymap* "g" 'lem-yath-notmuch-show-refresh)
 (define-key *notmuch-show-mode-keymap* "Return" 'lem-yath-notmuch-open-part)
+(define-key *notmuch-show-mode-keymap* "a" 'lem-yath-notmuch-show-archive-message-next-thread)
+(define-key *notmuch-show-mode-keymap* "x" 'lem-yath-notmuch-show-archive-message-next-exit)
+(define-key *notmuch-show-mode-keymap* "A" 'lem-yath-notmuch-show-archive-thread-next)
+(define-key *notmuch-show-mode-keymap* "X" 'lem-yath-notmuch-show-archive-thread-exit)
+(define-key *notmuch-show-mode-keymap* "d" 'lem-yath-notmuch-show-toggle-deleted)
+(define-key *notmuch-show-mode-keymap* "=" 'lem-yath-notmuch-show-toggle-flagged)
+(define-key *notmuch-show-mode-keymap* "+" 'lem-yath-notmuch-show-add-tag)
+(define-key *notmuch-show-mode-keymap* "-" 'lem-yath-notmuch-show-remove-tag)
 
 (defun notmuch-render-search (buffer threads query &optional selected-id)
   "Fill BUFFER with one line per thread in THREADS (parsed search JSON).
@@ -109,6 +238,7 @@ makes the buffer read-only and switches it to `notmuch-search-mode'."
     (erase-buffer buffer)
     (let ((point (buffer-point buffer))
           (line->id (make-hash-table :test 'eql))
+          (thread-ids '())
           (selected-line nil))
       (if (null threads)
           (insert-string point (format nil "No threads for query: ~a~%" query))
@@ -120,6 +250,7 @@ makes the buffer read-only and switches it to `notmuch-search-mode'."
                           (subject (notmuch-string (gethash "subject" thread)))
                           (tags (notmuch-tags-string (gethash "tags" thread))))
                       (setf (gethash line line->id) id)
+                      (push id thread-ids)
                       (when (and selected-id (string= selected-id id))
                         (setf selected-line line))
                       (insert-string
@@ -128,6 +259,8 @@ makes the buffer read-only and switches it to `notmuch-search-mode'."
                                date authors subject tags)))))
       (setf (buffer-value buffer 'notmuch-line->id) line->id)
       (setf (buffer-value buffer 'notmuch-query) query)
+      (setf (buffer-value buffer 'notmuch-threads) threads)
+      (setf (buffer-value buffer 'notmuch-thread-ids) (nreverse thread-ids))
       (buffer-start point)
       (when selected-line (move-to-line point selected-line))))
   (change-buffer-mode buffer 'notmuch-search-mode)
@@ -177,6 +310,65 @@ Defaults to \"tag:inbox\"; results are newest-first, one thread per line."
           (notmuch-search query selected-id)
           (message "No notmuch query to refresh")))))
 
+(defun notmuch-search-tag-current (tag-changes &optional advance-p)
+  "Apply TAG-CHANGES to the current thread and optionally advance one row."
+  (let* ((buffer (current-buffer))
+         (thread-id (notmuch-thread-id-at-point))
+         (threads (buffer-value buffer 'notmuch-threads))
+         (thread-ids (buffer-value buffer 'notmuch-thread-ids))
+         (query (buffer-value buffer 'notmuch-query)))
+    (unless thread-id
+      (message "No thread on this line")
+      (return-from notmuch-search-tag-current nil))
+    (when (notmuch-change-tags (notmuch-thread-id-query thread-id) tag-changes)
+      (notmuch-update-object-tags (notmuch-thread-object buffer thread-id)
+                                  tag-changes)
+      (notmuch-render-search buffer threads query
+                             (or (and advance-p
+                                      (notmuch-next-id thread-ids thread-id))
+                                 thread-id))
+      t)))
+
+(defun notmuch-search-toggle-current-tag (tag)
+  "Toggle TAG on the current search thread and advance like Evil-collection."
+  (let* ((thread-id (notmuch-thread-id-at-point))
+         (thread (and thread-id
+                      (notmuch-thread-object (current-buffer) thread-id)))
+         (tags (and thread (gethash "tags" thread)))
+         (change (format nil "~c~a"
+                         (if (member tag tags :test #'string=) #\- #\+)
+                         tag)))
+    (if thread
+        (notmuch-search-tag-current (list change) t)
+        (message "No thread on this line"))))
+
+(define-command lem-yath-notmuch-archive-thread () ()
+  "Remove `inbox' from the selected thread and advance (`a')."
+  (when (notmuch-search-tag-current '("-inbox") t)
+    (message "Thread archived")))
+
+(define-command lem-yath-notmuch-toggle-deleted () ()
+  "Toggle `deleted' on the selected thread and advance (`d')."
+  (notmuch-search-toggle-current-tag "deleted"))
+
+(define-command lem-yath-notmuch-toggle-unread () ()
+  "Toggle `unread' on the selected thread and advance (`!')."
+  (notmuch-search-toggle-current-tag "unread"))
+
+(define-command lem-yath-notmuch-toggle-flagged () ()
+  "Toggle `flagged' on the selected thread and advance (`=')."
+  (notmuch-search-toggle-current-tag "flagged"))
+
+(define-command lem-yath-notmuch-add-tag () ()
+  "Prompt for one tag to add to the selected thread (`+')."
+  (let ((tag (notmuch-prompt-tag "add")))
+    (notmuch-search-tag-current (list (concatenate 'string "+" tag)))))
+
+(define-command lem-yath-notmuch-remove-tag () ()
+  "Prompt for one tag to remove from the selected thread (`-')."
+  (let ((tag (notmuch-prompt-tag "remove")))
+    (notmuch-search-tag-current (list (concatenate 'string "-" tag)))))
+
 ;;; --- thread show buffer ----------------------------------------------------
 
 (defun notmuch-thread-id-at-point ()
@@ -191,6 +383,35 @@ Defaults to \"tag:inbox\"; results are newest-first, one thread per line."
   (let ((map (buffer-value (current-buffer) 'notmuch-line->message-id)))
     (when (hash-table-p map)
       (gethash (line-number-at-point (current-point)) map))))
+
+(defun notmuch-thread-object (buffer thread-id)
+  "Return THREAD-ID's mutable search result object in BUFFER."
+  (find thread-id (buffer-value buffer 'notmuch-threads)
+        :test #'string=
+        :key (lambda (thread) (notmuch-string (gethash "thread" thread)))))
+
+(defun notmuch-message-object (buffer message-id)
+  "Return MESSAGE-ID's mutable show result object in BUFFER."
+  (find message-id (buffer-value buffer 'notmuch-messages)
+        :test #'string=
+        :key (lambda (message) (notmuch-string (gethash "id" message)))))
+
+(defun notmuch-update-object-tags (object tag-changes)
+  "Apply TAG-CHANGES to OBJECT's JSON `tags' member in memory."
+  (when (hash-table-p object)
+    (setf (gethash "tags" object)
+          (notmuch-updated-tags (gethash "tags" object) tag-changes))))
+
+(defun notmuch-update-search-thread (buffer thread-id tag-changes)
+  "Update THREAD-ID's visible tags in live Notmuch search BUFFER."
+  (when (and buffer (not (deleted-buffer-p buffer)))
+    (alexandria:when-let ((thread (notmuch-thread-object buffer thread-id)))
+      (notmuch-update-object-tags thread tag-changes)
+      (notmuch-render-search
+       buffer
+       (buffer-value buffer 'notmuch-threads)
+       (buffer-value buffer 'notmuch-query)
+       thread-id))))
 
 (defun notmuch-attachment-at-point ()
   "The PDF attachment descriptor on the current show-buffer line, or NIL."
@@ -295,6 +516,9 @@ ATTACHMENT-MAP records the exact selectable line for every rendered PDF part."
           (when value
             (insert-string point (format nil "~a: ~a~%" field
                                          (notmuch-string value))))))))
+  (let ((tags (gethash "tags" message)))
+    (when (listp tags)
+      (insert-string point (format nil "Tags: ~a~%" (notmuch-tags-string tags)))))
   (insert-string point (format nil "~%"))
   (let* ((body (gethash "body" message))
          (parts (nreverse (notmuch-collect-text-parts body '()))))
@@ -323,44 +547,83 @@ ATTACHMENT-MAP records the exact selectable line for every rendered PDF part."
                                  filename))))))
   (insert-string point (format nil "~%~a~%~%" (make-string 60 :initial-element #\-))))
 
-(defun notmuch-show (thread-id)
-  "Run `notmuch show' for THREAD-ID and render headers + text/plain bodies."
+(defun notmuch-show (thread-id &optional selected-message-id parent-buffer)
+  "Render THREAD-ID, restoring SELECTED-MESSAGE-ID and PARENT-BUFFER.
+
+Real search JSON carries a bare thread ID, so the CLI receives an exact
+`thread:' query.  Every rendered message is visible; like Emacs Notmuch's
+post-command hook, opening it removes `unread' from those messages once."
   (unless (notmuch-available-p)
     (message "notmuch not found on PATH")
     (return-from notmuch-show))
-  (multiple-value-bind (tree success-p)
-      (notmuch-run-json
-       (list "show" "--format=json" "--include-html=false" thread-id))
-    (unless success-p
-      (message "notmuch show failed for ~a" thread-id)
-      (return-from notmuch-show))
-    (let* ((messages (nreverse (notmuch-collect-messages tree '())))
-           (buffer (make-buffer (format nil "*lem-yath-mail: ~a*" thread-id)))
+  (let* ((bare-thread-id (notmuch-bare-thread-id thread-id))
+         (parent-buffer
+           (or parent-buffer
+               (and (eq (buffer-major-mode (current-buffer)) 'notmuch-show-mode)
+                    (buffer-value (current-buffer) 'notmuch-parent-buffer)))))
+    (multiple-value-bind (tree success-p)
+        (notmuch-run-json
+         (list "show" "--format=json" "--include-html=false" "--exclude=false"
+               (notmuch-thread-id-query bare-thread-id)))
+      (unless success-p
+        (message "notmuch show failed for ~a" bare-thread-id)
+        (return-from notmuch-show))
+      (let* ((messages (nreverse (notmuch-collect-messages tree '())))
+             (message-ids
+               (remove "" (mapcar (lambda (message)
+                                     (notmuch-string (gethash "id" message)))
+                                   messages)
+                       :test #'string=))
+             (unread-ids
+               (loop :for message :in messages
+                     :for message-id := (notmuch-string (gethash "id" message))
+                     :when (member "unread" (gethash "tags" message)
+                                   :test #'string=)
+                       :collect message-id))
+             (buffer
+               (make-buffer (format nil "*lem-yath-mail: ~a*" bare-thread-id)))
            (line->message-id (make-hash-table :test 'eql))
            (line->attachment (make-hash-table :test 'eql)))
-      (with-buffer-read-only buffer nil
-        (erase-buffer buffer)
-        (let ((point (buffer-point buffer)))
-          (if messages
-              (dolist (message messages)
-                (let ((start-line (line-number-at-point point))
-                      (message-id (notmuch-string (gethash "id" message))))
-                  (notmuch-render-message point message line->attachment)
-                  (when (plusp (length message-id))
-                    (loop :for line :from start-line
-                          :to (line-number-at-point point)
-                          :do (setf (gethash line line->message-id)
-                                    message-id)))))
-              (insert-string point (format nil "No messages in thread ~a~%" thread-id)))
-          (setf (buffer-value buffer 'notmuch-thread-id) thread-id)
-          (setf (buffer-value buffer 'notmuch-line->message-id)
-                line->message-id)
-          (setf (buffer-value buffer 'notmuch-line->attachment)
-                line->attachment)
-          (buffer-start point)))
-      (change-buffer-mode buffer 'notmuch-show-mode)
-      (setf (buffer-read-only-p buffer) t)
-      (switch-to-window (pop-to-buffer buffer)))))
+        (when (and unread-ids
+                   (notmuch-change-tags (notmuch-message-ids-query unread-ids)
+                                        '("-unread")))
+          (dolist (message messages)
+            (notmuch-update-object-tags message '("-unread")))
+          (notmuch-update-search-thread parent-buffer bare-thread-id
+                                        '("-unread")))
+        (with-buffer-read-only buffer nil
+          (erase-buffer buffer)
+          (let ((point (buffer-point buffer))
+                (selected-line nil))
+            (if messages
+                (dolist (message messages)
+                  (let ((start-line (line-number-at-point point))
+                        (message-id (notmuch-string (gethash "id" message))))
+                    (when (and selected-message-id
+                               (string= selected-message-id message-id))
+                      (setf selected-line start-line))
+                    (notmuch-render-message point message line->attachment)
+                    (when (plusp (length message-id))
+                      (loop :for line :from start-line
+                            :to (line-number-at-point point)
+                            :do (setf (gethash line line->message-id)
+                                      message-id)))))
+                (insert-string point
+                               (format nil "No messages in thread ~a~%"
+                                       bare-thread-id)))
+            (setf (buffer-value buffer 'notmuch-thread-id) bare-thread-id)
+            (setf (buffer-value buffer 'notmuch-parent-buffer) parent-buffer)
+            (setf (buffer-value buffer 'notmuch-messages) messages)
+            (setf (buffer-value buffer 'notmuch-message-ids) message-ids)
+            (setf (buffer-value buffer 'notmuch-line->message-id)
+                  line->message-id)
+            (setf (buffer-value buffer 'notmuch-line->attachment)
+                  line->attachment)
+            (buffer-start point)
+            (when selected-line (move-to-line point selected-line))))
+        (change-buffer-mode buffer 'notmuch-show-mode)
+        (setf (buffer-read-only-p buffer) t)
+        (switch-to-window (pop-to-buffer buffer))))))
 
 ;;; --- PDF attachment preview ----------------------------------------------
 
@@ -398,25 +661,6 @@ ATTACHMENT-MAP records the exact selectable line for every rendered PDF part."
         :finally (editor-error "Could not create a private attachment directory"))
   #-sbcl
   (editor-error "Secure attachment preview requires the supported SBCL runtime"))
-
-(defun notmuch-message-id-query (message-id)
-  "Return an exact, quoted notmuch id: query for MESSAGE-ID."
-  (unless (and (stringp message-id)
-               (plusp (length message-id))
-               (<= (length message-id) 4096)
-               (notany (lambda (character)
-                         (or (char= character #\Null)
-                             (char= character #\Newline)
-                             (char= character #\Return)))
-                       message-id))
-    (editor-error "The attachment Message-ID is invalid"))
-  (with-output-to-string (stream)
-    (write-string "id:\"" stream)
-    (loop :for character :across message-id
-          :do (when (or (char= character #\\) (char= character #\"))
-                (write-char #\\ stream))
-              (write-char character stream))
-    (write-char #\" stream)))
 
 (defun notmuch-extract-raw-part (attachment pathname)
   "Extract ATTACHMENT's decoded raw bytes into a new private PATHNAME."
@@ -547,17 +791,140 @@ ATTACHMENT-MAP records the exact selectable line for every rendered PDF part."
 
 (define-command lem-yath-notmuch-open-thread () ()
   "Open the thread on the current *lem-yath-mail* line in a read-only view (Return)."
-  (let ((id (notmuch-thread-id-at-point)))
+  (let ((id (notmuch-thread-id-at-point))
+        (parent-buffer (current-buffer)))
     (if id
-        (notmuch-show id)
+        (notmuch-show id nil parent-buffer)
         (message "No thread on this line"))))
 
 (define-command lem-yath-notmuch-show-refresh () ()
   "Refresh the currently displayed Notmuch thread (g)."
-  (alexandria:if-let ((thread-id
-                       (buffer-value (current-buffer) 'notmuch-thread-id)))
-    (notmuch-show thread-id)
-    (message "No Notmuch thread to refresh")))
+  (let ((buffer (current-buffer)))
+    (alexandria:if-let ((thread-id (buffer-value buffer 'notmuch-thread-id)))
+      (notmuch-show thread-id
+                    (notmuch-message-id-at-point)
+                    (buffer-value buffer 'notmuch-parent-buffer))
+      (message "No Notmuch thread to refresh"))))
+
+(defun notmuch-select-search-thread (buffer thread-id)
+  "Select THREAD-ID in live search BUFFER without querying Notmuch."
+  (when (and buffer (not (deleted-buffer-p buffer)))
+    (notmuch-render-search buffer
+                           (buffer-value buffer 'notmuch-threads)
+                           (buffer-value buffer 'notmuch-query)
+                           thread-id)))
+
+(defun notmuch-show-next-thread-id (buffer)
+  "Return the parent search row after BUFFER's current thread."
+  (let ((parent (buffer-value buffer 'notmuch-parent-buffer))
+        (thread-id (buffer-value buffer 'notmuch-thread-id)))
+    (and parent
+         (notmuch-next-id (buffer-value parent 'notmuch-thread-ids)
+                          thread-id))))
+
+(defun notmuch-leave-show (show-next-p)
+  "Exit the current show buffer, selecting or opening its next search thread."
+  (let* ((show-buffer (current-buffer))
+         (parent (buffer-value show-buffer 'notmuch-parent-buffer))
+         (thread-id (buffer-value show-buffer 'notmuch-thread-id))
+         (next-thread-id (notmuch-show-next-thread-id show-buffer)))
+    (when parent
+      (notmuch-select-search-thread parent (or next-thread-id thread-id)))
+    (quit-active-window)
+    (when (and show-next-p next-thread-id parent)
+      (notmuch-show next-thread-id nil parent))))
+
+(defun notmuch-show-tag-current (tag-changes &optional advance-p end-action)
+  "Apply TAG-CHANGES to the current message.
+
+When ADVANCE-P is true, select the next message.  At the final message,
+END-ACTION is `next-thread', `exit', or NIL to remain on that message."
+  (let* ((buffer (current-buffer))
+         (message-id (notmuch-message-id-at-point))
+         (thread-id (buffer-value buffer 'notmuch-thread-id))
+         (parent (buffer-value buffer 'notmuch-parent-buffer))
+         (message-ids (buffer-value buffer 'notmuch-message-ids))
+         (next-message-id (and message-id
+                               (notmuch-next-id message-ids message-id))))
+    (unless message-id
+      (message "No message at point")
+      (return-from notmuch-show-tag-current nil))
+    (when (notmuch-change-tags (notmuch-message-id-query message-id)
+                               tag-changes)
+      (notmuch-update-object-tags (notmuch-message-object buffer message-id)
+                                  tag-changes)
+      (cond
+        ((and advance-p next-message-id)
+         (notmuch-show thread-id next-message-id parent))
+        ((and advance-p (eq end-action 'next-thread))
+         (notmuch-leave-show t))
+        ((and advance-p (eq end-action 'exit))
+         (notmuch-leave-show nil))
+        (t
+         (notmuch-show thread-id message-id parent)))
+      t)))
+
+(defun notmuch-show-toggle-current-tag (tag)
+  "Toggle TAG on the current message and advance like Evil-collection."
+  (let* ((buffer (current-buffer))
+         (message-id (notmuch-message-id-at-point))
+         (message (and message-id (notmuch-message-object buffer message-id)))
+         (tags (and message (gethash "tags" message)))
+         (change (format nil "~c~a"
+                         (if (member tag tags :test #'string=) #\- #\+)
+                         tag)))
+    (if message
+        (notmuch-show-tag-current (list change) t)
+        (message "No message at point"))))
+
+(defun notmuch-show-archive-thread (show-next-p)
+  "Archive the messages rendered in this thread, then exit or show the next."
+  (let* ((buffer (current-buffer))
+         (thread-id (buffer-value buffer 'notmuch-thread-id))
+         (parent (buffer-value buffer 'notmuch-parent-buffer))
+         (message-ids (buffer-value buffer 'notmuch-message-ids)))
+    (when (and message-ids
+               (notmuch-change-tags (notmuch-message-ids-query message-ids)
+                                    '("-inbox")))
+      (dolist (message (buffer-value buffer 'notmuch-messages))
+        (notmuch-update-object-tags message '("-inbox")))
+      (notmuch-update-search-thread parent thread-id '("-inbox"))
+      (notmuch-leave-show show-next-p)
+      t)))
+
+(define-command lem-yath-notmuch-show-archive-message-next-thread () ()
+  "Archive this message, then open the next message or next thread (`a')."
+  (notmuch-show-tag-current '("-inbox") t 'next-thread))
+
+(define-command lem-yath-notmuch-show-archive-message-next-exit () ()
+  "Archive this message, then open the next message or exit (`x')."
+  (notmuch-show-tag-current '("-inbox") t 'exit))
+
+(define-command lem-yath-notmuch-show-archive-thread-next () ()
+  "Archive all rendered messages and open the next search thread (`A')."
+  (notmuch-show-archive-thread t))
+
+(define-command lem-yath-notmuch-show-archive-thread-exit () ()
+  "Archive all rendered messages and return to the search list (`X')."
+  (notmuch-show-archive-thread nil))
+
+(define-command lem-yath-notmuch-show-toggle-deleted () ()
+  "Toggle `deleted' on the current message and advance (`d')."
+  (notmuch-show-toggle-current-tag "deleted"))
+
+(define-command lem-yath-notmuch-show-toggle-flagged () ()
+  "Toggle `flagged' on the current message and advance (`=')."
+  (notmuch-show-toggle-current-tag "flagged"))
+
+(define-command lem-yath-notmuch-show-add-tag () ()
+  "Prompt for one tag to add to the current message (`+')."
+  (let ((tag (notmuch-prompt-tag "add")))
+    (notmuch-show-tag-current (list (concatenate 'string "+" tag)))))
+
+(define-command lem-yath-notmuch-show-remove-tag () ()
+  "Prompt for one tag to remove from the current message (`-')."
+  (let ((tag (notmuch-prompt-tag "remove")))
+    (notmuch-show-tag-current (list (concatenate 'string "-" tag)))))
 
 ;;; --- fetch mail ------------------------------------------------------------
 

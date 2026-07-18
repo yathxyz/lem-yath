@@ -35,7 +35,7 @@ mkdir -p "$HOME" "$XDG_CACHE_HOME" "$fakebin"
 : >"$LEM_YATH_NOTMUCH_LOG"
 : >"$LEM_YATH_MBSYNC_LOG"
 : >"$LEM_YATH_NOTMUCH_OPEN_LOG"
-printf '{"searches": 0, "news": 0}\n' >"$LEM_YATH_NOTMUCH_STATE"
+printf '%s\n' '{"searches":0,"news":0,"tags":{"alpha@example.invalid":["inbox","unread"],"payment+safe;touch PWNED@example.invalid":["inbox","unread"],"reply/second?value@example.invalid":["inbox","unread"]}}' >"$LEM_YATH_NOTMUCH_STATE"
 cp "$here/scripts/fake-notmuch.py" "$fakebin/notmuch"
 cp "$here/scripts/fake-mbsync.sh" "$fakebin/mbsync"
 cp "$here/scripts/fake-notmuch-xdg-open.py" "$fakebin/xdg-open"
@@ -118,6 +118,13 @@ wait_log_count() {
   done
   return 1
 }
+notmuch_tag_prompt() {
+  local key=$1 tag=$2
+  tmux_cmd send-keys -t "$session" -l -- "$key"
+  sleep 0.3
+  tmux_cmd send-keys -t "$session" -l -- "$tag"
+  lem_keys "$session" Enter
+}
 
 fixture="$(lem-yath_lisp_string "$here/scripts/notmuch-fixture.lisp")"
 lem_start "$session" "$source_file" --eval "(load #P$fixture)"
@@ -132,20 +139,21 @@ fi
 
 lem_keys "$session" F3
 if lem_wait_for "$session" 'First thread' 20 >/dev/null && invoke_report &&
-   [[ $(latest STATE) == 'STATE mode=list query=yes row=thread:alpha thread=none message=none read-only=yes keys=yes body=no html-hidden=no source-live=yes source-exact=yes' ]]; then
+   [[ $(latest STATE) == 'STATE mode=list query=yes row=alpha thread=none message=none read-only=yes keys=yes body=no html-hidden=no source-live=yes source-exact=yes' ]]; then
   pass search 'the query opened and focused a read-only newest-first list'
 else
   fail search 'search rendering, focus, row identity, or keymaps diverged'
 fi
 
-lem_keys "$session" j
-sleep 0.4
 lem_keys "$session" Enter
+if lem_wait_for "$session" 'First plain body' 20 >/dev/null; then
+  lem_keys "$session" A
+fi
 if lem_wait_for "$session" 'Primary plain body' 20 >/dev/null && invoke_report &&
-   [[ $(latest STATE) == 'STATE mode=show query=no row=none thread=thread:beta message=payment+safe;touch PWNED@example.invalid read-only=yes keys=yes body=yes html-hidden=yes source-live=yes source-exact=yes' ]]; then
-  pass read 'j and Return opened both plain-text messages without HTML'
+   [[ $(latest STATE) == 'STATE mode=show query=no row=none thread=beta message=payment+safe;touch PWNED@example.invalid read-only=yes keys=yes body=yes html-hidden=yes source-live=yes source-exact=yes' ]]; then
+  pass read 'Return opened a bare-ID thread and A archived it before opening the next thread'
 else
-  fail read 'thread navigation, nested message parsing, or show focus failed'
+  fail read 'bare-ID show query, thread archive navigation, nested parsing, or focus failed'
 fi
 
 lem_keys "$session" /
@@ -213,7 +221,7 @@ fi
 before_show=$(wc -l <"$LEM_YATH_NOTMUCH_LOG")
 lem_keys "$session" g
 if wait_log_count "$LEM_YATH_NOTMUCH_LOG" "$((before_show + 1))" &&
-   invoke_report && [[ $(latest STATE) == *'mode=show '*'thread=thread:beta '* ]]; then
+   invoke_report && [[ $(latest STATE) == *'mode=show '*'thread=beta '* ]]; then
   pass show-refresh 'g refreshed the current thread in place'
 else
   fail show-refresh 'show refresh did not retain the thread view'
@@ -223,10 +231,148 @@ lem_keys "$session" q
 sleep 0.5
 lem_keys "$session" g
 if lem_wait_for "$session" 'Second thread refreshed' 20 >/dev/null && invoke_report &&
-   [[ $(latest STATE) == 'STATE mode=list query=yes row=thread:beta thread=none message=none read-only=yes keys=yes body=no html-hidden=no source-live=yes source-exact=yes' ]]; then
+   [[ $(latest STATE) == 'STATE mode=list query=yes row=beta thread=none message=none read-only=yes keys=yes body=no html-hidden=no source-live=yes source-exact=yes' ]]; then
   pass list-refresh 'q returned and g refreshed while preserving the selected thread'
 else
   fail list-refresh 'list return, refresh, or row preservation failed'
+fi
+
+triage_ok=1
+lem_keys "$session" Enter
+lem_wait_for "$session" 'Primary plain body' 20 >/dev/null || triage_ok=0
+
+before_tag=$(wc -l <"$LEM_YATH_NOTMUCH_LOG")
+notmuch_tag_prompt + 'showtag;safe'
+wait_log_count "$LEM_YATH_NOTMUCH_LOG" "$((before_tag + 2))" || triage_ok=0
+lem_wait_for "$session" 'showtag;safe' 20 >/dev/null || triage_ok=0
+
+before_tag=$(wc -l <"$LEM_YATH_NOTMUCH_LOG")
+notmuch_tag_prompt - 'showtag;safe'
+wait_log_count "$LEM_YATH_NOTMUCH_LOG" "$((before_tag + 2))" || triage_ok=0
+
+before_tag=$(wc -l <"$LEM_YATH_NOTMUCH_LOG")
+lem_keys "$session" =
+wait_log_count "$LEM_YATH_NOTMUCH_LOG" "$((before_tag + 2))" || triage_ok=0
+invoke_report || triage_ok=0
+[[ $(latest STATE) == *'mode=show '*'message=reply/second?value@example.invalid '* ]] || triage_ok=0
+
+before_tag=$(wc -l <"$LEM_YATH_NOTMUCH_LOG")
+lem_keys "$session" d
+wait_log_count "$LEM_YATH_NOTMUCH_LOG" "$((before_tag + 2))" || triage_ok=0
+before_tag=$(wc -l <"$LEM_YATH_NOTMUCH_LOG")
+lem_keys "$session" d
+wait_log_count "$LEM_YATH_NOTMUCH_LOG" "$((before_tag + 2))" || triage_ok=0
+
+lem_keys "$session" 1 G
+sleep 0.4
+before_tag=$(wc -l <"$LEM_YATH_NOTMUCH_LOG")
+lem_keys "$session" a
+wait_log_count "$LEM_YATH_NOTMUCH_LOG" "$((before_tag + 2))" || triage_ok=0
+invoke_report || triage_ok=0
+[[ $(latest STATE) == *'mode=show '*'message=reply/second?value@example.invalid '* ]] || triage_ok=0
+before_tag=$(wc -l <"$LEM_YATH_NOTMUCH_LOG")
+lem_keys "$session" x
+wait_log_count "$LEM_YATH_NOTMUCH_LOG" "$((before_tag + 1))" || triage_ok=0
+invoke_report || triage_ok=0
+[[ $(latest STATE) == *'mode=list '*'row=beta '* ]] || triage_ok=0
+
+if ((triage_ok)) && python3 - "$LEM_YATH_NOTMUCH_LOG" "$LEM_YATH_NOTMUCH_STATE" <<'PY'
+import json, sys
+
+calls = [json.loads(line) for line in open(sys.argv[1])]
+expected = [
+    ["tag", "+showtag;safe", "--", 'id:"payment+safe;touch PWNED@example.invalid"'],
+    ["tag", "-showtag;safe", "--", 'id:"payment+safe;touch PWNED@example.invalid"'],
+    ["tag", "+flagged", "--", 'id:"payment+safe;touch PWNED@example.invalid"'],
+    ["tag", "+deleted", "--", 'id:"reply/second?value@example.invalid"'],
+    ["tag", "-deleted", "--", 'id:"reply/second?value@example.invalid"'],
+    ["tag", "-inbox", "--", 'id:"payment+safe;touch PWNED@example.invalid"'],
+    ["tag", "-inbox", "--", 'id:"reply/second?value@example.invalid"'],
+]
+positions = iter(range(len(calls)))
+for wanted in expected:
+    assert any(calls[index] == wanted for index in positions), wanted
+state = json.load(open(sys.argv[2]))
+assert state["tags"]["payment+safe;touch PWNED@example.invalid"] == ["flagged"]
+assert state["tags"]["reply/second?value@example.invalid"] == []
+PY
+then
+  pass show-triage 'physical +, -, =, d, a, and x mutated exact messages and advanced like Evil-collection'
+else
+  fail show-triage 'show tag/archive argv, toggle direction, prompt handling, or cursor transition diverged'
+fi
+
+x_ok=1
+before_tag=$(wc -l <"$LEM_YATH_NOTMUCH_LOG")
+notmuch_tag_prompt + inbox
+wait_log_count "$LEM_YATH_NOTMUCH_LOG" "$((before_tag + 1))" || x_ok=0
+lem_keys "$session" Enter
+lem_wait_for "$session" 'Primary plain body' 20 >/dev/null || x_ok=0
+before_tag=$(wc -l <"$LEM_YATH_NOTMUCH_LOG")
+lem_keys "$session" X
+wait_log_count "$LEM_YATH_NOTMUCH_LOG" "$((before_tag + 1))" || x_ok=0
+invoke_report || x_ok=0
+[[ $(latest STATE) == *'mode=list '*'row=beta '* ]] || x_ok=0
+if ((x_ok)); then
+  pass show-thread-archive 'X archived only the rendered message IDs and returned to the parent search row'
+else
+  fail show-thread-archive 'X query scope, exit restoration, or parent selection diverged'
+fi
+
+search_triage_ok=1
+before_tag=$(wc -l <"$LEM_YATH_NOTMUCH_LOG")
+notmuch_tag_prompt + inbox
+wait_log_count "$LEM_YATH_NOTMUCH_LOG" "$((before_tag + 1))" || search_triage_ok=0
+before_tag=$(wc -l <"$LEM_YATH_NOTMUCH_LOG")
+notmuch_tag_prompt + failtag
+wait_log_count "$LEM_YATH_NOTMUCH_LOG" "$((before_tag + 1))" || search_triage_ok=0
+invoke_report || search_triage_ok=0
+[[ $(latest STATE) == *'mode=list '*'row=beta '* ]] || search_triage_ok=0
+before_tag=$(wc -l <"$LEM_YATH_NOTMUCH_LOG")
+notmuch_tag_prompt + 'triage;safe'
+wait_log_count "$LEM_YATH_NOTMUCH_LOG" "$((before_tag + 1))" || search_triage_ok=0
+before_tag=$(wc -l <"$LEM_YATH_NOTMUCH_LOG")
+notmuch_tag_prompt - 'triage;safe'
+wait_log_count "$LEM_YATH_NOTMUCH_LOG" "$((before_tag + 1))" || search_triage_ok=0
+for key in '!' '=' d d a; do
+  before_tag=$(wc -l <"$LEM_YATH_NOTMUCH_LOG")
+  lem_keys "$session" "$key"
+  wait_log_count "$LEM_YATH_NOTMUCH_LOG" "$((before_tag + 1))" || search_triage_ok=0
+done
+lem_keys "$session" g
+lem_wait_for "$session" 'No threads for query:' 20 >/dev/null || search_triage_ok=0
+
+if ((search_triage_ok)) && python3 - "$LEM_YATH_NOTMUCH_LOG" "$LEM_YATH_NOTMUCH_STATE" <<'PY'
+import json, sys
+
+calls = [json.loads(line) for line in open(sys.argv[1])]
+thread = 'thread:"beta"'
+assert ["tag", "+failtag", "--", thread] in calls
+expected = [
+    ["tag", "+inbox", "--", thread],
+    ["tag", "+triage;safe", "--", thread],
+    ["tag", "-triage;safe", "--", thread],
+    ["tag", "+unread", "--", thread],
+    ["tag", "+flagged", "--", thread],
+    ["tag", "+deleted", "--", thread],
+    ["tag", "-deleted", "--", thread],
+    ["tag", "-inbox", "--", thread],
+]
+positions = iter(range(len(calls)))
+for wanted in expected:
+    assert any(calls[index] == wanted for index in positions), wanted
+state = json.load(open(sys.argv[2]))
+for message_id in (
+    "payment+safe;touch PWNED@example.invalid",
+    "reply/second?value@example.invalid",
+):
+    assert sorted(state["tags"][message_id]) == ["flagged", "unread"]
+    assert "failtag" not in state["tags"][message_id]
+PY
+then
+  pass search-triage 'physical +, -, !, =, d, and a performed exact atomic thread triage and refresh removed archived rows'
+else
+  fail search-triage 'search tag prompts, toggle direction, archive movement, or refresh filtering diverged'
 fi
 
 lem_keys "$session" F4
@@ -239,7 +385,7 @@ fi
 
 lem_keys "$session" F3
 before_notmuch=$(wc -l <"$LEM_YATH_NOTMUCH_LOG")
-if lem_wait_for "$session" 'First thread' 20 >/dev/null; then
+if lem_wait_for "$session" 'No threads for query:' 20 >/dev/null; then
   lem_keys "$session" F5
 fi
 if wait_log_count "$LEM_YATH_MBSYNC_LOG" 1 &&

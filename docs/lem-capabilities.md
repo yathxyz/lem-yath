@@ -3259,6 +3259,15 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   deliberate terminal approximation: PDF pixel layout, images, links,
   annotations, and forms, plus EPUB HTML/CSS layout and images, remain in the
   external viewer selected with `o`.
+
+  The same Notmuch gate drives the configured Evil-collection triage keys
+  through real ncurses. Search `a`, `d`, `!`, `=`, `+`, and `-` operate on an
+  exact thread query; show `a`/`x` and `d`/`=`/`+`/`-` operate on the current
+  Message-ID, while `A`/`X` archive only the Message-IDs already rendered.
+  Opening visible messages removes `unread`, successful actions preserve the
+  matching next-message/next-thread/exit behavior, and failed mutations leave
+  the read-only projection and cursor untouched. The fake backend intentionally
+  emits real bare JSON thread IDs so query-prefix regressions cannot hide.
 - **which-key / transient menus**: `extensions/transient/` (`lem/transient`,
   `define-transient`) provides magit-style popup menus with columns and descriptions
   (`transient/transient.lisp`). Lem-yath's global `which-key-mode`

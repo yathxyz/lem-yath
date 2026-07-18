@@ -789,7 +789,7 @@ automatic thinking/result and long-tool collapse, and conversation-local
 `C-c C-t` result toggling without changing transcript bytes.
 
 ### Tier 3 — apps / bespoke integrations with likely no Lem equivalent (document as gaps)
-- **notmuch mail** (+ Proton Bridge/mbsync pipeline, PDF preview) — a CLI-backed Lem reader covers search/read/refresh and owner-private PDF extraction into the shared page-text reader; composition, sending, non-PDF attachment actions, and Outlook integration remain gaps.
+- **notmuch mail** (+ Proton Bridge/mbsync pipeline, PDF preview) — a CLI-backed Lem reader covers search/read/refresh, automatic read marking, the configured Evil-collection message/thread archive and tag toggles, and owner-private PDF extraction into the shared page-text reader. Its stateful ncurses gate uses real bare thread IDs and proves exact direct-argv mutation scope plus failure atomicity; composition, sending, non-PDF attachment actions, and Outlook integration remain gaps.
 - **elfeed RSS** (Miniflux/fever) — the Fever listing/reading/archive path is ported; full Elfeed filtering and local-database behavior remain gaps.
 - **pdf-tools, nov (EPUB)** — bounded text-first Lem readers cover ordinary opening, PDF page and EPUB chapter navigation, refresh, and external fallback. Pixel PDF semantics and EPUB HTML/CSS/images remain terminal-specific divergences.
 - **citar/ebib/reftex/org-ref bibliography**, **org publishing**, **org-modern/super-agenda** — Citar-like lookup, bounded publishing and grouped agenda workflows, and a source-preserving terminal org-modern projection are ported. The wider bibliography, exact graphical org-modern/agenda styling, and arbitrary agenda interfaces remain gaps.

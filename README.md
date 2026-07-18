@@ -654,6 +654,12 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
 - app ports under `lem-yath/src/apps/`: agenda, citar, devdocs, elfeed
   (Miniflux fever), notmuch, PDF/EPUB documents, pg, salta, timemachine,
   llm-cli, llm-http, llm-oauth, llm-presets, claude-code
+- the Notmuch port accepts real bare thread IDs, marks rendered mail read, and
+  mirrors the configured Evil-collection triage keys. Search buffers use `a`
+  to archive, `d`/`!`/`=` to toggle deleted/unread/flagged, and `+`/`-` for
+  tags; show buffers retain message-level `a`/`x`/`d`/`=`/`+`/`-` plus
+  thread-level `A`/`X`. Mutations are bounded direct argv calls and update the
+  read-only view only after Notmuch succeeds
 - ordinary `.pdf` and `.epub` opens stay inside Lem: PDFs expose bounded
   Poppler text one page at a time, while EPUBs become bounded Markdown with
   chapter navigation. Both are read-only, never visit or overwrite the binary
