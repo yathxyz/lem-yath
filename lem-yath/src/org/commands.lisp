@@ -1956,21 +1956,187 @@ The second value is the length of SECOND in its new leading position."
     (declare (ignore start))
     (and end
          (with-point ((point end))
-           (loop :while (line-offset point 1)
-                 :for line := (line-string point)
-                 :unless (cl-ppcre:scan "^\\s*$" line)
-                   :do (return
-                         (not (null
-                               (cl-ppcre:scan "(?i)^\\s*#\\+TBLFM:"
-                                              line))))
-                 :finally (return nil))))))
+           (and (line-offset point 1)
+                (not (null
+                      (cl-ppcre:scan "(?i)^\\s*#\\+TBLFM:"
+                                     (line-string point)))))))))
 
-(defun org-table-structural-editable-p ()
-  (if (org-table-formula-after-p)
-      (progn
-        (message "Table structure is unchanged because #+TBLFM repair is unavailable")
-        nil)
-      t))
+(defun org-table-formula-points (&optional (origin (current-point)))
+  "Return consecutive formula-line starts associated with the table at ORIGIN."
+  (multiple-value-bind (start end) (org-table-bounds origin)
+    (declare (ignore start))
+    (when end
+      (with-point ((point end))
+        (when (line-offset point 1)
+          (loop :while (cl-ppcre:scan "(?i)^\\s*#\\+TBLFM:"
+                                      (line-string point))
+                :collect (copy-point point :temporary)
+                :while (line-offset point 1)))))))
+
+(defun org-table-reference-in-remote-p (folded-line index)
+  "Whether INDEX in case-folded LINE lies inside a bounded remote(...)."
+  (let ((search-from 0))
+    (loop
+      (let ((start (search "remote(" folded-line :start2 search-from)))
+        (unless start
+          (return nil))
+        (let ((end (position #\) folded-line :start (+ start 7))))
+          (unless end
+            (return nil))
+          (when (and (<= start index) (< index (1+ end)))
+            (return t))
+          (setf search-from (1+ end)))))))
+
+(defun org-table-rewrite-numeric-references
+    (line key replace &optional limit delta)
+  "Rewrite numeric KEY references in LINE according to GNU Org's repair rules."
+  (let ((key-character (char key 0))
+        (length (length line))
+        (folded-line (string-downcase line)))
+    (with-output-to-string (output)
+      (loop :with index := 0
+            :while (< index length)
+            :do
+               (if (and (eql (char line index) key-character)
+                        (< (1+ index) length)
+                        (digit-char-p (char line (1+ index)))
+                        (not (org-table-reference-in-remote-p
+                              folded-line index)))
+                   (let ((end (1+ index)))
+                     (loop :while (and (< end length)
+                                       (digit-char-p (char line end)))
+                           :do (incf end))
+                     (let* ((source (subseq line (1+ index) end))
+                            (number (parse-integer source))
+                            (mapped (assoc source replace :test #'string=))
+                            (target
+                              (cond
+                                (mapped (cdr mapped))
+                                ((and limit (> number limit))
+                                 (write-to-string (+ number delta)))
+                                (t source))))
+                       (write-char key-character output)
+                       (write-string target output)
+                       (setf index end)))
+                   (progn
+                     (write-char (char line index) output)
+                     (incf index)))))))
+
+(defun org-table-split-formula-terms (body)
+  "Split BODY on GNU Org's formula separator while retaining empty terms."
+  (let ((terms '())
+        (start 0))
+    (loop
+      (let ((separator (search "::" body :start2 start)))
+        (if separator
+            (progn
+              (push (subseq body start separator) terms)
+              (setf start (+ separator 2)))
+            (progn
+              (push (subseq body start) terms)
+              (return (nreverse terms))))))))
+
+(defun org-table-formula-target-p (term key remove)
+  "Whether TERM directly assigns the numeric KEY reference REMOVE."
+  (let ((trimmed (string-left-trim '(#\Space #\Tab) term)))
+    (not
+     (null
+      (cl-ppcre:scan
+       (if (string= key "$")
+           (format nil "^(?:@[0-9]+)?\\$~d=" remove)
+           (format nil "^@~d\\$[0-9]+=" remove))
+       trimmed)))))
+
+(defun org-table-formula-range-target-p (term key remove)
+  "Whether TERM ends a range target at numeric KEY reference REMOVE."
+  (let* ((trimmed (string-left-trim '(#\Space #\Tab) term))
+         (assignment (position #\= trimmed))
+         (target (and assignment (subseq trimmed 0 (1+ assignment)))))
+    (and target
+         (not
+          (null
+           (cl-ppcre:scan
+            (if (string= key "$")
+                (format nil "^.*\\.\\.(?:@[0-9]+)?\\$~d=" remove)
+                (format nil "^.*\\.\\.@~d\\$[0-9]+=" remove))
+            target))))))
+
+(defun org-table-formula-delete-safe-p
+    (key remove &optional (origin (current-point)))
+  "Whether deleting numeric KEY reference REMOVE preserves formula targets."
+  (dolist (formula (org-table-formula-points origin) t)
+    (multiple-value-bind (prefix-start prefix-end)
+        (cl-ppcre:scan "(?i)^\\s*#\\+TBLFM:" (line-string formula))
+      (declare (ignore prefix-start))
+      (when prefix-end
+        (dolist (term (org-table-split-formula-terms
+                       (subseq (line-string formula) prefix-end)))
+          (when (org-table-formula-range-target-p term key remove)
+            (message
+             "Cannot delete table field: a #+TBLFM range target would become invalid")
+            (return-from org-table-formula-delete-safe-p nil)))))))
+
+(defun org-table-remove-target-formulas (line key remove)
+  "Remove direct formulas for numeric KEY reference REMOVE from LINE."
+  (multiple-value-bind (prefix-start prefix-end)
+      (cl-ppcre:scan "(?i)^\\s*#\\+TBLFM:" line)
+    (declare (ignore prefix-start))
+    (unless prefix-end
+      (return-from org-table-remove-target-formulas line))
+    (let* ((prefix (subseq line 0 prefix-end))
+           (terms (org-table-split-formula-terms
+                   (subseq line prefix-end)))
+           (last-index (1- (length terms)))
+           (kept '())
+           (first-removed-p nil)
+           (removed-final-p nil))
+      (loop :for term :in terms
+            :for index :from 0
+            :if (org-table-formula-target-p term key remove)
+              :do (when (zerop index)
+                    (setf first-removed-p t))
+                  (when (= index last-index)
+                    (setf removed-final-p t))
+            :else
+              :do (push term kept))
+      (setf kept (nreverse kept))
+      (let* ((first-term (first terms))
+             (first-content
+               (position-if-not (lambda (character)
+                                  (member character '(#\Space #\Tab)))
+                                first-term))
+             (leading (if first-content
+                          (subseq first-term 0 first-content)
+                          first-term)))
+        (concatenate
+         'string prefix
+         (if first-removed-p leading "")
+         (format nil "~{~a~^::~}" kept)
+         (if (and removed-final-p kept) "::" ""))))))
+
+(defun org-table-rewrite-formula-line
+    (line key replace &key limit delta remove)
+  "Return LINE with local numeric references repaired after a table edit."
+  (org-table-rewrite-numeric-references
+   (if remove
+       (org-table-remove-target-formulas line key remove)
+       line)
+   key replace limit delta))
+
+(defun org-table-fix-formulas
+    (key replace &key limit delta remove (origin (current-point)))
+  "Repair associated formula references after a structural table edit."
+  (dolist (formula (reverse (org-table-formula-points origin)))
+    (let ((rewritten
+            (org-table-rewrite-formula-line
+             (line-string formula) key replace
+             :limit limit :delta delta :remove remove)))
+      (with-point ((start formula)
+                   (end formula))
+        (line-start start)
+        (line-end end)
+        (delete-between-points start end)
+        (insert-string start rewritten)))))
 
 (defun org-table-column-widths (lines)
   (let ((widths '()))
@@ -2109,27 +2275,34 @@ The second value is the length of SECOND in its new leading position."
                       (return))))))
 
 (defun org-table-insert-row (above-p)
-  (unless (org-table-structural-editable-p)
-    (return-from org-table-insert-row nil))
   (multiple-value-bind (start end) (org-table-bounds)
     (let* ((lines (org-table-row-lines start end))
+           (row (- (line-number-at-point (current-point))
+                   (line-number-at-point start)))
+           (insertion-index (if above-p row (1+ row)))
+           (data-line
+             (1+ (count-if-not #'org-table-separator-line-p
+                               lines :end insertion-index)))
            (columns (max 1 (or (org-table-data-column-count lines)
                                (length (org-table-column-widths lines)))))
            (indentation (org-table-line-indentation
                          (line-string (current-point))))
-           (row (org-table-raw-data-line
-                 indentation (make-list columns :initial-element ""))))
+           (row-text (org-table-raw-data-line
+                      indentation (make-list columns :initial-element ""))))
       (if above-p
           (progn
             (line-start (current-point))
             (insert-string (current-point)
-                           (concatenate 'string row (string #\Newline)))
+                           (concatenate 'string row-text (string #\Newline)))
             (line-offset (current-point) -1))
           (progn
             (line-end (current-point))
             (insert-string
-             (current-point) (concatenate 'string (string #\Newline) row))))
+             (current-point)
+             (concatenate 'string (string #\Newline) row-text))))
       (org-table-move-to-cell (current-point) 1)
+      (org-table-fix-formulas "@" nil
+                              :limit (1- data-line) :delta 1)
       t)))
 
 (defun org-table-row-indentation (line)
@@ -2161,8 +2334,6 @@ The second value is the length of SECOND in its new leading position."
     t))
 
 (defun org-table-transform-columns (transform target-cell)
-  (unless (org-table-structural-editable-p)
-    (return-from org-table-transform-columns nil))
   (multiple-value-bind (raw-start raw-end) (org-table-bounds)
     (unless (org-table-data-column-count
              (org-table-row-lines raw-start raw-end))
@@ -2200,8 +2371,6 @@ The second value is the length of SECOND in its new leading position."
 
 (defun org-table-move-column (direction)
   "Move the current table column one place in DIRECTION."
-  (unless (org-table-structural-editable-p)
-    (return-from org-table-move-column nil))
   (multiple-value-bind (raw-start raw-end) (org-table-bounds)
     (unless (org-table-data-column-count
              (org-table-row-lines raw-start raw-end))
@@ -2218,17 +2387,22 @@ The second value is the length of SECOND in its new leading position."
          (message "Cannot move table column further")
          nil)
         (t
-         (org-table-transform-columns
-          (lambda (cells)
-            (org-swap-list-elements cells (1- cell) (1- target)))
-          (lambda (old-cell old-columns)
-            (declare (ignore old-cell old-columns))
-            target)))))))
+         (when
+             (org-table-transform-columns
+              (lambda (cells)
+                (org-swap-list-elements cells (1- cell) (1- target)))
+              (lambda (old-cell old-columns)
+                (declare (ignore old-cell old-columns))
+                target))
+           (org-table-fix-formulas
+            "$" (list (cons (write-to-string cell)
+                             (write-to-string target))
+                      (cons (write-to-string target)
+                            (write-to-string cell))))
+           t))))))
 
 (defun org-table-insert-column ()
   "Insert an empty table column immediately before the current column."
-  (unless (org-table-structural-editable-p)
-    (return-from org-table-insert-column nil))
   (multiple-value-bind (raw-start raw-end) (org-table-bounds)
     (unless (org-table-data-column-count
              (org-table-row-lines raw-start raw-end))
@@ -2240,17 +2414,18 @@ The second value is the length of SECOND in its new leading position."
                      (org-table-row-lines start end)))
            (cell (min (or columns 1) (max 1 (org-table-cell-index))))
            (index (1- cell)))
-      (org-table-transform-columns
-       (lambda (cells)
-         (append (subseq cells 0 index) (list "") (subseq cells index)))
-       (lambda (old-cell old-columns)
-         (declare (ignore old-cell old-columns))
-         cell)))))
+      (when
+          (org-table-transform-columns
+           (lambda (cells)
+             (append (subseq cells 0 index) (list "") (subseq cells index)))
+           (lambda (old-cell old-columns)
+             (declare (ignore old-cell old-columns))
+             cell))
+        (org-table-fix-formulas "$" nil :limit (1- cell) :delta 1)
+        t))))
 
 (defun org-table-delete-column ()
   "Delete the current table column without touching its enclosing subtree."
-  (unless (org-table-structural-editable-p)
-    (return-from org-table-delete-column nil))
   (multiple-value-bind (raw-start raw-end) (org-table-bounds)
     (let ((columns (org-table-data-column-count
                     (org-table-row-lines raw-start raw-end))))
@@ -2260,51 +2435,85 @@ The second value is the length of SECOND in its new leading position."
          (return-from org-table-delete-column nil))
         ((= columns 1)
          (message "Cannot delete the only table column safely")
-         (return-from org-table-delete-column nil)))))
+         (return-from org-table-delete-column nil)))
+      (let ((cell (min columns (max 1 (org-table-cell-index)))))
+        (unless (org-table-formula-delete-safe-p "$" cell)
+          (return-from org-table-delete-column nil)))))
   (org-table-align)
   (multiple-value-bind (start end) (org-table-bounds)
     (let* ((columns (org-table-data-column-count
                      (org-table-row-lines start end)))
            (cell (min (or columns 1) (max 1 (org-table-cell-index))))
            (index (1- cell)))
-      (org-table-transform-columns
-       (lambda (cells)
-         (append (subseq cells 0 index) (subseq cells (1+ index))))
-       (lambda (old-cell old-columns)
-         (declare (ignore old-cell))
-         (max 1 (min cell (max 1 (1- old-columns)))))))))
+      (when
+          (org-table-transform-columns
+           (lambda (cells)
+             (append (subseq cells 0 index) (subseq cells (1+ index))))
+           (lambda (old-cell old-columns)
+             (declare (ignore old-cell))
+             (max 1 (min cell (max 1 (1- old-columns))))))
+        (org-table-fix-formulas
+         "$" (list (cons (write-to-string cell) "INVALID"))
+         :limit cell :delta -1 :remove cell)
+        t))))
+
+(defun org-table-data-line-number (lines row)
+  "Return ROW's one-based data-line number in LINES, or NIL for a rule."
+  (unless (org-table-separator-line-p (nth row lines))
+    (count-if-not #'org-table-separator-line-p lines :end (1+ row))))
 
 (defun org-table-move-row (direction)
   "Move the current literal table row one line in DIRECTION."
-  (unless (org-table-structural-editable-p)
-    (return-from org-table-move-row nil))
   (org-table-align)
   (multiple-value-bind (start end) (org-table-bounds)
     (let* ((row (- (line-number-at-point (current-point))
                    (line-number-at-point start)))
            (cell (max 1 (org-table-cell-index)))
            (lines (org-table-row-lines start end))
-           (target (+ row direction)))
+           (target (+ row direction))
+           (data-line (org-table-data-line-number lines row))
+           (target-data-line
+             (and (<= 0 target) (< target (length lines))
+                  (org-table-data-line-number lines target))))
       (if (or (< target 0) (>= target (length lines)))
           (progn (message "Cannot move table row further") nil)
-          (org-table-rewrite-lines
-           (org-swap-list-elements lines row target) target cell)))))
+          (when (org-table-rewrite-lines
+                 (org-swap-list-elements lines row target) target cell)
+            (when (and data-line target-data-line)
+              (org-table-fix-formulas
+               "@" (list (cons (write-to-string data-line)
+                                (write-to-string target-data-line))
+                         (cons (write-to-string target-data-line)
+                               (write-to-string data-line)))))
+            t)))))
 
 (defun org-table-delete-row ()
   "Delete the current table row or horizontal separator."
-  (unless (org-table-structural-editable-p)
-    (return-from org-table-delete-row nil))
+  (multiple-value-bind (raw-start raw-end) (org-table-bounds)
+    (let* ((row (- (line-number-at-point (current-point))
+                   (line-number-at-point raw-start)))
+           (lines (org-table-row-lines raw-start raw-end))
+           (data-line (org-table-data-line-number lines row)))
+      (when (and data-line
+                 (not (org-table-formula-delete-safe-p "@" data-line)))
+        (return-from org-table-delete-row nil))))
   (org-table-align)
   (multiple-value-bind (start end) (org-table-bounds)
     (let* ((row (- (line-number-at-point (current-point))
                    (line-number-at-point start)))
            (cell (max 1 (org-table-cell-index)))
            (lines (org-table-row-lines start end))
+           (data-line (org-table-data-line-number lines row))
            (remaining (append (subseq lines 0 row)
                               (subseq lines (1+ row)))))
       (if remaining
-          (org-table-rewrite-lines remaining
-                                   (min row (1- (length remaining))) cell)
+          (when (org-table-rewrite-lines
+                 remaining (min row (1- (length remaining))) cell)
+            (when data-line
+              (org-table-fix-formulas
+               "@" (list (cons (write-to-string data-line) "INVALID"))
+               :limit data-line :delta -1 :remove data-line))
+            t)
           (progn
             (when (eql (character-at end) #\Newline)
               (character-offset end 1))
@@ -2502,8 +2711,6 @@ does move the column once per selected boundary."
 (defun org-shift-table-column-range (start end direction)
   "Move the current table column according to the one-line range."
   (let ((steps (org-table-range-column-count start end)))
-    (unless (org-table-structural-editable-p)
-      (return-from org-shift-table-column-range nil))
     ;; Pinned evil-org-table-move-column anchors a rightward move at BEG and a
     ;; leftward move at END, independent of the active Visual endpoint.
     (move-point (current-point) (if (plusp direction) start end))

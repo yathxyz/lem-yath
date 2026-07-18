@@ -167,6 +167,40 @@
      point-text point-column
      (if (buffer-modified-p (current-buffer)) "yes" "no"))))
 
+(defun org-test-table-snapshot (needle)
+  (alexandria:when-let ((point (org-test-location-copy needle)))
+    (multiple-value-bind (start end) (org-table-bounds point)
+      (values (org-table-row-lines start end)
+              (mapcar #'line-string (org-table-formula-points point))))))
+
+(defun org-test-first-following-formula (needle)
+  (alexandria:when-let ((point (org-test-location-copy needle)))
+    (multiple-value-bind (start end) (org-table-bounds point)
+      (declare (ignore start))
+      (with-point ((line end))
+        (loop :while (line-offset line 1)
+              :for text := (line-string line)
+              :unless (cl-ppcre:scan "^\\s*$" text)
+                :do (return
+                      (and (cl-ppcre:scan "(?i)^\\s*#\\+TBLFM:" text)
+                           text)))))))
+
+(define-command lem-yath-test-org-formula-report () ()
+  "Report immediate and blank-separated formula-table state exactly."
+  (multiple-value-bind (rows formulas)
+      (org-test-table-snapshot "| formula")
+    (multiple-value-bind (spaced-rows spaced-formulas)
+        (org-test-table-snapshot "| spaced formula")
+      (let ((spaced-raw
+              (org-test-first-following-formula "| spaced formula")))
+        (org-test-log
+         (concatenate
+          'string
+          "FORMULA rows=~s formulas=~s spaced=~s spaced-formulas=~s "
+          "spaced-raw=~s")
+         rows formulas spaced-rows spaced-formulas
+         (or spaced-raw "MISSING"))))))
+
 (defmacro define-org-test-goto-command (name text &optional line-start-p)
   `(define-command ,name () ()
      (move-point (current-point)
@@ -225,9 +259,19 @@
 (define-org-test-goto-command lem-yath-test-org-goto-edge-real-after-literal-begin
   "Real after literal begin" t)
 (define-org-test-goto-command lem-yath-test-org-goto-edge-formula
-  "| formula | result |" t)
+  "| formula | middle | result |" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-formula-first
+  "| 1       | 2" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-formula-second
+  "| 4       | 5" t)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-formula-middle
+  "middle" nil)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-range-column
+  "range result" nil)
+(define-org-test-goto-command lem-yath-test-org-goto-edge-range-row
+  "range row second" nil)
 (define-org-test-goto-command lem-yath-test-org-goto-edge-spaced-formula
-  "| spaced formula | result |" nil)
+  "| spaced formula | result |" t)
 (define-org-test-goto-command lem-yath-test-org-goto-edge-sparse-data
   "| -     |" nil)
 (define-org-test-goto-command lem-yath-test-org-goto-edge-clock "CLOCK:" t)

@@ -1297,6 +1297,10 @@ if start_case shift-table-formula \
   send_keys "$CASE_SESSION" 2 l
   if operate_and_record shift-table-formula "$CASE_SESSION" '>' l; then
     assert_state shift-table-formula shift-table-formula "$CASE_SESSION" \
+      'text=| b | a |\n| d | c |\n#+TBLFM: $2=1\n bytes=' 'modified=yes'
+    send_keys "$CASE_SESSION" u
+    record_state shift-table-formula "$CASE_SESSION"
+    assert_state shift-table-formula-undo shift-table-formula "$CASE_SESSION" \
       'text=| a | b |\n| c | d |\n#+TBLFM: $1=1\n bytes=' 'modified=no'
   fi
   stop_case "$CASE_SESSION"

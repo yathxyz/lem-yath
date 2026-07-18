@@ -126,7 +126,9 @@
            (org-operator-test-binding-in-state operator "M-l"))
          (normal-ok
            (and (string= normal-a "VI-APPEND")
-                (string= normal-i "VI-INSERT")
+                ;; Staged project-grep editing owns the global `i' route and
+                ;; delegates to native Vi insert outside its result buffer.
+                (string= normal-i "LEM-YATH-PROJECT-GREP-NORMAL-INSERT")
                 (string= normal-d "LEM-YATH-ORG-DELETE-OR-SURROUND")
                 (string= normal-x "LEM-YATH-ORG-DELETE-NEXT-CHAR")
                 (string= normal-big-x

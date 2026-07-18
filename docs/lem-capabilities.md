@@ -2520,7 +2520,7 @@ The bounded editing layer supplies visible-row `j/k`, GNU-style
 and context-dispatched Meta editing. `M-h/l` changes one heading or list item
 and moves a table column, while falling back to prose-word motion. `M-k/j`
 moves heading/simple unordered-list trees or table rows. `M-H/L` uses complete
-subtree/list-tree scope or deletes/inserts a formula-free table column;
+subtree/list-tree scope or deletes/inserts a table column;
 `M-K/J` deletes/inserts a table row or drags one literal non-CLOCK line.
 In Visual state, `M-h/l` changes every selected heading or contiguous list
 zone and retains the selection; table-column dispatch follows GNU Org's
@@ -2530,7 +2530,7 @@ keeping the selection on the text that moved. Visual Block retains Block state.
 The shifted `M-H/L/K/J` commands reproduce GNU Org's expanded-endpoint
 dispatch and exit Visual state only after a successful edit; region lists
 include continuation and child lines. Top-level promotion, unsafe ordered or
-tab-structured lists, formula-table structure edits, and CLOCK-line dragging
+tab-structured lists, and CLOCK-line dragging
 fail byte-identically with the selection intact. Type-matched source blocks,
 including mismatched nested end markers, are excluded from heading, list, and
 table dispatch; literal `M-K/J` line dragging remains available.
@@ -2542,6 +2542,19 @@ property drawers, nested list items and plain lists, table rows and formulas,
 and matched quote/source blocks; `gH` climbs to the top ancestor headline.
 Counts, Normal and Visual destinations, exclusive operator shapes, empty
 elements, and malformed blocks follow the pinned Emacs oracle.
+
+Immediate consecutive `#+TBLFM:` lines participate in structural table edits
+like pinned GNU Org. Column insertion, deletion, and movement repair local
+numeric `$N` references; row insertion, deletion, and movement repair numeric
+`@N` references using data-row rather than horizontal-rule ordinals. A deleted
+direct field formula is removed, other deleted references become `INVALID`,
+and references after the edit shift numerically. Numeric references inside
+`remote(...)` and named references remain unchanged. A blank line severs the
+association, so the following formula text is left byte-identical. Normal,
+Visual, and multi-cell operator paths share this repair pass, and one Vi undo
+restores the table and every associated formula line together. Deleting the
+terminal field of a formula range would make its target invalid, so that rare
+case is refused before mutation instead of requiring GNU Org's recovery undo.
 `(`/`)` use the pinned Emacs double-space sentence rules across wrapped prose;
 inside tables they use GNU Org field boundaries and its complete-count behavior.
 `{`/`}` use structural paragraph units rather than generic blank-line motion:
@@ -2592,7 +2605,8 @@ star-bullet conversion, source-block fake-heading boundaries, hline column
 targeting/navigation, plus fail-closed ordered and structurally tabbed lists,
 point-only continuation indentation, blank-separated list movement,
 source-block structural dispatch, immediate/blank-gap formulas, CLOCK-line
-dragging, and degenerate tables. Mouse hit-testing,
+dragging, degenerate tables, GNU numeric formula repair, `remote(...)`
+exclusion, direct-formula removal, and one-step formula/table undo. Mouse hit-testing,
 overlapping nested folds, non-file link variants, and several broader commands
 above remain outside this focused gate.
 
@@ -2609,7 +2623,8 @@ dynamically verifies doubled, counted, motion, and Visual `<`/`>` ranges across
 headings, safe unordered and ordered lists, the top-level whole-list special
 case, table columns and whole tables, and prose, including leftward movement,
 wide Visual cell ranges, count nonmultiplication, undo, and fail-closed
-top-level/formula boundaries. It dynamically exercises all eight text-object
+top-level boundaries. Its formula case proves range-driven column movement,
+numeric reference repair, and one-step undo. It dynamically exercises all eight text-object
 bindings with delete/yank operators over
 opaque/nested markup, bracket/plain links, timestamps, table cells/rules and
 formula ownership, paragraphs, headlines, flat leaf and recursive blocks,

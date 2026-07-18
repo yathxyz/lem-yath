@@ -112,9 +112,18 @@ write_fixture() {
     '#+end_src' \
     '* Real after literal begin' \
     '' \
-    '| formula | result |' \
-    '| 1       | 2      |' \
-    '#+TBLFM: $2=$1' \
+    '| formula | middle | result |' \
+    '| 1       | 2      | 3      |' \
+    '| 4       | 5      | 6      |' \
+    '#+TBLFM: $2=$1+$3::@1$3=@2$1::@2$2=remote(foo,$2)+$3' \
+    '' \
+    '| range column | range result |' \
+    '| 1            | 2      |' \
+    '#+TBLFM: $1..$2=$1' \
+    '' \
+    '| range row first  | 1 |' \
+    '| range row second | 2 |' \
+    '#+TBLFM: @1$1..@2$1=$2' \
     '' \
     '| spaced formula | result |' \
     '| 3              | 4      |' \
@@ -213,6 +222,12 @@ context_report() {
 
 context_hash() {
   sed -n 's/^CONTEXT hash=\([^ ]*\).*/\1/p' <<<"$1"
+}
+
+formula_report() {
+  : >"$LEM_YATH_ORG_REPORT"
+  mx "$ORG_SESSION" lem-yath-test-org-formula-report || return 1
+  grep '^FORMULA ' "$LEM_YATH_ORG_REPORT" | tail -n1
 }
 
 screen_has() { lem_capture "$1" | grep -qE "$2"; }
@@ -882,6 +897,67 @@ if start_org structure-edge; then
   [ "$(context_hash "$sparse_data_report")" = "$edge_baseline_hash" ] &&
     sparse_data_ok=1
 
+  # Associated formula lines follow GNU Org's numeric-reference repair pass.
+  # Each production key is followed by one physical Vi undo so the cases are
+  # independent and the complete table/formula edit remains one transaction.
+  formula_repairs_ok=1
+  formula_case() {
+    local command="$1" key="$2" expected="$3" report changed restore
+    mx "$ORG_SESSION" "$command"
+    tmux_cmd send-keys -t "$ORG_SESSION" "$key"
+    sleep 0.3
+    report=$(formula_report)
+    changed=$(context_report)
+    if ! grep -qF "$expected" <<<"$report" ||
+       [ "$(context_hash "$changed")" = "$edge_baseline_hash" ]; then
+      formula_repairs_ok=0
+      guard_report="$report"
+      return
+    fi
+    tmux_cmd send-keys -t "$ORG_SESSION" u
+    sleep 0.3
+    restore=$(context_report)
+    if [ "$(context_hash "$restore")" != "$edge_baseline_hash" ]; then
+      formula_repairs_ok=0
+      guard_report="$restore"
+    fi
+  }
+
+  formula_case lem-yath-test-org-goto-edge-formula M-l \
+    'formulas=("#+TBLFM: $1=$2+$3::@1$3=@2$2::@2$1=remote(foo,$2)+$3")'
+  formula_case lem-yath-test-org-goto-edge-formula M-L \
+    'formulas=("#+TBLFM: $3=$2+$4::@1$4=@2$2::@2$3=remote(foo,$2)+$4")'
+  formula_case lem-yath-test-org-goto-edge-formula-middle M-H \
+    'formulas=("#+TBLFM: @1$2=@2$1::")'
+  formula_case lem-yath-test-org-goto-edge-formula-first M-j \
+    'formulas=("#+TBLFM: $2=$1+$3::@1$3=@3$1::@3$2=remote(foo,$2)+$3")'
+  formula_case lem-yath-test-org-goto-edge-formula-first M-J \
+    'formulas=("#+TBLFM: $2=$1+$3::@1$3=@3$1::@3$2=remote(foo,$2)+$3")'
+  formula_case lem-yath-test-org-goto-edge-formula-first M-K \
+    'formulas=("#+TBLFM: $2=$1+$3::@1$3=@INVALID$1::")'
+
+  # A blank line severs table/formula association in pinned GNU Org.  The
+  # table remains editable, while the separated formula is byte-identical.
+  mx "$ORG_SESSION" lem-yath-test-org-goto-edge-spaced-formula
+  tmux_cmd send-keys -t "$ORG_SESSION" M-l
+  sleep 0.3
+  spaced_formula_report=$(formula_report)
+  spaced_formula_context=$(context_report)
+  spaced_formula_ok=0
+  if grep -qF 'spaced=("| result | spaced formula |"' \
+       <<<"$spaced_formula_report" &&
+     grep -qF 'spaced-formulas=NIL' <<<"$spaced_formula_report" &&
+     grep -qF 'spaced-raw="#+TBLFM: $2=$1"' \
+       <<<"$spaced_formula_report" &&
+     [ "$(context_hash "$spaced_formula_context")" != "$edge_baseline_hash" ]; then
+    spaced_formula_ok=1
+  fi
+  tmux_cmd send-keys -t "$ORG_SESSION" u
+  sleep 0.3
+  spaced_formula_restore=$(context_report)
+  [ "$(context_hash "$spaced_formula_restore")" = "$edge_baseline_hash" ] ||
+    spaced_formula_ok=0
+
   edge_guards_ok=1
   for spec in \
     'lem-yath-test-org-goto-edge-tab-child M-h' \
@@ -899,19 +975,9 @@ if start_org structure-edge; then
     'lem-yath-test-org-goto-edge-source-fake-after-begin M-l' \
     'lem-yath-test-org-goto-edge-source-fake-after-begin M-L' \
     'lem-yath-test-org-goto-edge-source-fake-after-begin M-k' \
-    'lem-yath-test-org-goto-edge-formula M-l' \
-    'lem-yath-test-org-goto-edge-formula M-L' \
-    'lem-yath-test-org-goto-edge-formula M-j' \
-    'lem-yath-test-org-goto-edge-formula M-K' \
-    'lem-yath-test-org-goto-edge-spaced-formula M-h' \
-    'lem-yath-test-org-goto-edge-spaced-formula M-l' \
-    'lem-yath-test-org-goto-edge-spaced-formula M-k' \
-    'lem-yath-test-org-goto-edge-spaced-formula M-j' \
-    'lem-yath-test-org-goto-edge-spaced-formula M-H' \
-    'lem-yath-test-org-goto-edge-spaced-formula M-L' \
-    'lem-yath-test-org-goto-edge-spaced-formula M-K' \
-    'lem-yath-test-org-goto-edge-spaced-formula M-J' \
     'lem-yath-test-org-goto-edge-clock M-J' \
+    'lem-yath-test-org-goto-edge-range-column M-H' \
+    'lem-yath-test-org-goto-edge-range-row M-K' \
     'lem-yath-test-org-goto-edge-one-column M-H'; do
     command=${spec% *}
     key=${spec##* }
@@ -947,9 +1013,10 @@ if start_org structure-edge; then
      [ "$real_after_literal_ok" = 1 ] &&
      [ "$real_after_literal_restore_ok" = 1 ] &&
      [ "$sparse_data_ok" = 1 ] &&
+     [ "$formula_repairs_ok" = 1 ] && [ "$spaced_formula_ok" = 1 ] &&
      [ "$edge_guards_ok" = 1 ] && [ "$one_row_delete_ok" = 1 ] &&
      [ "$one_row_restore_ok" = 1 ]; then
-    pass structure-edge "unsafe list, block, formula, clock, and degenerate-table edits fail closed"
+    pass structure-edge "table formulas repair exactly while unsafe structural edits fail closed"
   else
     fail structure-edge "an edge operation crossed scope or changed guarded bytes" "$ORG_SESSION"
     printf '%s\n' "$nested_outdent_report" "$nested_restore_report" \
@@ -958,6 +1025,7 @@ if start_org structure-edge; then
       "$source_subtree_restore" \
       "$real_after_literal_report" "$real_after_literal_restore" \
       "$sparse_data_report" \
+      "${spaced_formula_report:-}" "${spaced_formula_restore:-}" \
       "${guard_report:-}" "$one_row_delete_report" "$one_row_restore_report"
   fi
 fi
