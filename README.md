@@ -188,12 +188,15 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   character, word, kill, yank, and transpose keys remain prompt-local while
   completion is visible
 - bounded, display-only Marginalia-style context for commands, Lisp symbols,
-  buffers, files, loadable Lisp libraries, themes, and bookmarks; metadata
+  faces, buffers, files, loadable Lisp libraries, themes, and bookmarks; metadata
   failures do not alter candidate identity or prevent ordinary selection.
   Annotation columns use the pinned 20-column/10-cell Marginalia alignment
   policy for wide and narrow labels, while documentation and path fields use
   terminal-relative, direction-aware ellipsis. Already-open prompt popups
   reflow after terminal resizing without changing their input or focused item
+- exact `M-x describe-face` selection over live Lem attributes, with effective
+  theme properties in the candidate row and a styled, read-only Helpful buffer
+  whose `s` command visits the defining form
 - completion candidates keep display, filtering, and insertion text separate;
   final insertion and post-accept callbacks are explicit, tracked replacement
   ranges survive filtering, and stale asynchronous results are rejected

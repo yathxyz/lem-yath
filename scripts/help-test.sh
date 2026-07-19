@@ -324,6 +324,54 @@ else
 fi
 
 return_to_origin
+lem_keys "$session" Escape Escape M-x
+if lem_wait_for "$session" 'Command:' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l 'describe-face'
+  lem_keys "$session" Enter
+  if lem_wait_for "$session" 'Face:' 20 >/dev/null; then
+    tmux_cmd send-keys -t "$session" -l 'lem-yath::lem-yath-help-test-face'
+    sleep 0.8
+    screen=$(lem_capture "$session")
+    if grep -Fq 'AaBbYyZz' <<<"$screen" &&
+       grep -Fq 'fg #12ab34' <<<"$screen" &&
+       grep -Fq 'bg #251144' <<<"$screen" &&
+       grep -Fq 'bold' <<<"$screen" &&
+       grep -Fq 'underline' <<<"$screen"; then
+      pass face-metadata 'M-x describe-face showed the effective face sample and style'
+    else
+      fail face-metadata 'the face candidate lacked Marginalia-style metadata' "$session"
+    fi
+    lem_keys "$session" Enter
+    if lem_wait_for "$session" 'Helpful: q quit' 30 >/dev/null; then
+      screen=$(lem_capture "$session")
+      if grep -Fq 'Foreground: #12ab34' <<<"$screen" &&
+         grep -Fq 'Background: #251144' <<<"$screen" &&
+         grep -Fq 'Bold: yes' <<<"$screen" &&
+         grep -Fq 'Underline: T' <<<"$screen" &&
+         grep -Fq 'Sample' <<<"$screen"; then
+        pass face-selection 'Return opened a themed, read-only face help buffer'
+      else
+        fail face-selection 'the selected face help omitted effective properties' "$session"
+      fi
+      lem_keys "$session" s
+      sleep 0.8
+      if report_state '^HELP-STATE buffer=help-fixture\.lisp .* token=face$'; then
+        pass face-source 's visited the defining face form'
+      else
+        fail face-source 'face help did not retain its source definition' "$session"
+      fi
+      return_to_origin
+    else
+      fail face-selection 'Return did not open face help' "$session"
+    fi
+  else
+    fail face-command 'M-x describe-face did not open the Face prompt' "$session"
+  fi
+else
+  fail face-command 'M-x did not open for describe-face' "$session"
+fi
+
+return_to_origin
 if open_help_prompt k 'Callable:'; then
   tmux_cmd send-keys -t "$session" -l 'lem-yath::lem-yath-help-test-callabl'
   sleep 0.7

@@ -1,4 +1,4 @@
-;;;; Helpful-style callable, variable, and key inspection.
+;;;; Helpful-style callable, variable, face, and key inspection.
 ;;;;
 ;;;; Completion rows retain the Marginalia-style metadata from the original
 ;;;; port.  Accepted symbols open ordinary read-only buffers whose source and
@@ -121,6 +121,65 @@
    (completion-field (help-variable-value symbol) :truncate 0.5)
    (completion-field
     (help-symbol-documentation symbol 'variable) :truncate 1.0)))
+
+(defun help-face-attribute (symbol)
+  "Return SYMBOL's effective attribute under the current theme, or NIL."
+  (ignore-errors (ensure-attribute symbol nil)))
+
+(defun help-face-candidates ()
+  "Return unique qualified labels for the currently defined Lem faces."
+  (sort
+   (loop :for symbol :in (remove-duplicates lem-core::*attributes* :test #'eq)
+         :when (and (symbolp symbol)
+                    (symbol-package symbol)
+                    (help-face-attribute symbol))
+           :collect (cons (help-symbol-label symbol) symbol))
+   #'string-lessp :key #'car))
+
+(defun help-face-value-string (value)
+  (cond
+    ((null value) "default")
+    ((stringp value) value)
+    ((typep value 'lem/common/color:color)
+     (lem/common/color:color-to-hex-string value))
+    (t (princ-to-string value))))
+
+(defun help-face-style-fields (symbol)
+  "Return bounded human-readable fields for SYMBOL's effective face."
+  (alexandria:when-let ((attribute (help-face-attribute symbol)))
+    (remove
+     nil
+     (list
+      (format nil "fg ~a"
+              (help-face-value-string
+               (lem-core:attribute-foreground attribute)))
+      (format nil "bg ~a"
+              (help-face-value-string
+               (lem-core:attribute-background attribute)))
+      (and (lem-core:attribute-bold attribute) "bold")
+      (and (lem-core:attribute-reverse attribute) "reverse")
+      (alexandria:when-let ((underline
+                             (lem-core:attribute-underline attribute)))
+        (if (eq underline t)
+            "underline"
+            (format nil "underline ~a"
+                    (help-face-value-string underline))))))))
+
+(defun help-face-detail (symbol)
+  (apply #'completion-join-annotation-fields
+         "AaBbYyZz"
+         (help-face-style-fields symbol)))
+
+(defun help-face-theme-origin (symbol)
+  "Return the current theme layer and raw specification for SYMBOL."
+  (loop :for name := (current-theme)
+          :then (and theme (lem-core::color-theme-parent theme))
+        :while name
+        :for theme := (find-color-theme name)
+        :for specification :=
+          (and theme (assoc symbol (lem-core::color-theme-specs theme)))
+        :when specification
+          :return (values name (rest specification))))
 
 (defun help-prompt-symbol (prompt candidates detail-function category)
   (let ((choice
@@ -396,25 +455,58 @@
   (help-render-definition-section point definition)
   (help-render-location-section point "References" xrefs))
 
+(defun help-render-face-content (point symbol definition)
+  (help-insert point "~a~2%" (help-symbol-label symbol))
+  (multiple-value-bind (theme specification)
+      (help-face-theme-origin symbol)
+    (help-insert point "Theme: ~a~%Theme layer: ~a~%"
+                 (or (current-theme) "none")
+                 (or theme "attribute default"))
+    (when specification
+      (let ((*print-pretty* nil)
+            (*print-escape* t))
+        (help-insert point "Theme specification: ~s~%" specification))))
+  (alexandria:when-let ((attribute (help-face-attribute symbol)))
+    (help-insert point "Foreground: ~a~%Background: ~a~%Bold: ~:[no~;yes~]~%"
+                 (help-face-value-string
+                  (lem-core:attribute-foreground attribute))
+                 (help-face-value-string
+                  (lem-core:attribute-background attribute))
+                 (not (null (lem-core:attribute-bold attribute))))
+    (help-insert point "Underline: ~a~%Reverse: ~:[no~;yes~]~2%"
+                 (help-face-value-string
+                  (lem-core:attribute-underline attribute))
+                 (not (null (lem-core:attribute-reverse attribute))))
+    (help-insert point "Sample~%  ")
+    (with-point ((start point))
+      (insert-string point "AaBbYyZz — The quick brown fox jumps over the lazy dog.")
+      (put-text-property start point :attribute symbol))
+    (insert-character point #\newline 2))
+  (help-render-definition-section point definition))
+
 (defun help-render-symbol-buffer (buffer symbol kind key-sequence)
   "Render SYMBOL of KIND into BUFFER and replace its navigation snapshot."
-  (let* ((callable-p (eq kind :callable))
-         (definition
-           (if callable-p
-               (help-callable-definition-location symbol)
-               (help-variable-definition-location symbol)))
+  (let* ((definition
+           (case kind
+             (:callable (help-callable-definition-location symbol))
+             ((:variable :face) (help-variable-definition-location symbol))))
          (xrefs
-           (help-xref-locations
-            symbol (if callable-p "WHO-CALLS" "WHO-REFERENCES"))))
+           (case kind
+             (:callable (help-xref-locations symbol "WHO-CALLS"))
+             (:variable (help-xref-locations symbol "WHO-REFERENCES")))))
     (with-buffer-read-only buffer nil
       (erase-buffer buffer)
       (let ((point (buffer-end-point buffer)))
         (help-insert point
                      "Helpful: q quit, g refresh, s source, RET visit, n/p rows~2%")
-        (if callable-p
-            (help-render-callable-content
-             point symbol key-sequence definition xrefs)
-            (help-render-variable-content point symbol definition xrefs))))
+        (ecase kind
+          (:callable
+           (help-render-callable-content
+            point symbol key-sequence definition xrefs))
+          (:variable
+           (help-render-variable-content point symbol definition xrefs))
+          (:face
+           (help-render-face-content point symbol definition)))))
     (setf (buffer-value buffer 'lem-yath-help-symbol) symbol
           (buffer-value buffer 'lem-yath-help-kind) kind
           (buffer-value buffer 'lem-yath-help-key-sequence) key-sequence
@@ -429,7 +521,10 @@
 (defun help-open-symbol-buffer (symbol kind &optional key-sequence)
   (let ((buffer
           (make-buffer
-           (if (eq kind :callable) "*Callable Help*" "*Variable Help*"))))
+           (ecase kind
+             (:callable "*Callable Help*")
+             (:variable "*Variable Help*")
+             (:face "*Face Help*")))))
     (change-buffer-mode buffer 'lem-yath-help-mode)
     (help-render-symbol-buffer buffer symbol kind key-sequence)
     (move-point (buffer-point buffer) (buffer-start-point buffer))
@@ -443,6 +538,9 @@
 
 (defun help-render-variable (symbol)
   (help-open-symbol-buffer symbol :variable))
+
+(defun help-render-face (symbol)
+  (help-open-symbol-buffer symbol :face))
 
 (defun help-current-location ()
   (when (help-buffer-p)
@@ -579,6 +677,13 @@
          (symbol (help-prompt-symbol
                   "Variable: " candidates #'help-variable-detail :variable)))
     (when symbol (help-render-variable symbol))))
+
+(define-command (lem-yath-describe-face (:name "describe-face")) () ()
+  "Choose and describe a Lem face under the current color theme."
+  (let* ((candidates (help-face-candidates))
+         (symbol (help-prompt-symbol
+                  "Face: " candidates #'help-face-detail :face)))
+    (when symbol (help-render-face symbol))))
 
 (define-command lem-yath-describe-key () ()
   "Read a key and inspect its resolved command in the Helpful buffer."

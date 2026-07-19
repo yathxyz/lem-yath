@@ -11,6 +11,9 @@
   "ZYZZYVA-SECRET-MUST-NEVER-RENDER"
   "A test credential whose value must remain censored.")
 
+(define-attribute lem-yath-help-test-face
+  (t :foreground "#12ab34" :background "#251144" :bold t :underline t))
+
 (defun lem-yath-help-test-callable (alpha &optional beta)
   "Zyzzyva-callable-documentation identifies the non-command callable."
   (list alpha beta))
@@ -50,6 +53,7 @@
                  ((search "lem-yath-help-test-caller" line) "caller")
                  ((search "lem-yath-help-test-callable" line) "callable")
                  ((search "lem-yath-help-test-reader" line) "reader")
+                 ((search "lem-yath-help-test-face" line) "face")
                  ((search "zyzzyva-help-origin" line) "origin")
                  (t "other")))
              (state

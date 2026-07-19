@@ -363,6 +363,13 @@ pipelines: Vertico + Marginalia + Prescient for minibuffers, and Corfu +
 Orderless + mode/Cape CAPFs in ordinary buffers. Yasnippet expands separately
 through `TAB`; it is not a Cape candidate source.
 
+Lem's exact `M-x describe-face` analogue completes over its live theme
+attributes with effective style metadata, then opens a styled read-only help
+buffer with source navigation. The generic Marginalia ELPA-package category is
+not mapped to ASDF installation: this profile is Nix-managed, while the useful
+loadable-library surface is already covered by the annotated `load-library`
+prompt.
+
 The pinned Corfu source supplies the active defaults `corfu-preselect 'valid`
 and `corfu-preview-current 'insert`.  Corfu first moves a same-case exact
 candidate to the front.  A provider-valid input still distinct from that first

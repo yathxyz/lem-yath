@@ -426,7 +426,9 @@ human size, age or date, and a non-default owner when relevant. The real
 version/description fields, and source directory, registering an exact accepted
 bundled ASD before delegating to Lem's loader when the dumped image omitted it.
 The real `load-theme` prompt shows active state, parent inheritance, and direct
-role count. Bookmark prompts show target type, abbreviated path, exact
+role count. Exact `M-x describe-face` completion ranges over the live Lem
+attribute registry and shows the effective foreground, background, bold,
+underline, and reverse state. Bookmark prompts show target type, abbreviated path, exact
 line/column, and bounded containing-line context; they reuse an open buffer or
 read at most 1 MiB without visiting a file or running mode hooks, and stale
 targets degrade to missing-path metadata.
@@ -455,8 +457,9 @@ ncurses gate verifies identical detail columns for narrow and wide labels. It
 also keeps one prompt open while changing the terminal from 120 to 64 columns
 and back, proving that field budgets repaint immediately while prompt input and
 the focused candidate remain unchanged.
-Marginalia's unsupported face and package categories, per-field semantic faces,
-and remote fields remain outside this approximation.
+The ELPA package category has no truthful Nix-managed Lem equivalent. Per-field
+semantic styling inside completion details and remote-file fields remain outside
+this approximation.
 
 The active Helpful leader workflows are no longer routed through generic
 apropos. `SPC h k` indexes every currently fbound, package-qualified Lisp symbol
@@ -468,7 +471,10 @@ package identity without reading prompt text as Lisp, while Prescient compiles
 each regexp component once per candidate batch so the larger symbol tables remain
 responsive.
 
-Accepted callables and variables open an ordinary read-only `Helpful` buffer.
+Accepted callables, variables, and faces open an ordinary read-only `Helpful`
+buffer. Face help renders its pangram with the selected live attribute, reports
+the current theme layer and effective properties, and retains the defining
+source form when SBCL exposes it.
 SB-INTROSPECT supplies definition, caller, and reference records; when SBCL only
 retains a top-level form path, a non-evaluating source reader derives the exact
 character offset. `n`/`p` and `Tab`/backtab traverse source-backed rows cyclically,
@@ -478,7 +484,8 @@ Vi jumplist, and a source timestamp change fails closed until refresh. `SPC h K`
 reads a physical key and opens its resolved command through the same buffer;
 `SPC h b` keeps Lem's binding list. `scripts/help-test.sh` physically covers all
 of these paths, same-name package selection, display-only metadata, secret
-censoring, exact form jumps, and live reload. Helpful's advice, disassembly,
+censoring, exact form jumps, physical `M-x describe-face`, and live reload.
+Helpful's advice, disassembly,
 debugging/customization sections, syntax-highlighted embedded source, and
 semantic button graph remain outside this approximation.
 
