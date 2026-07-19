@@ -458,6 +458,14 @@ entries preserve the complete heading node, including the leading equals signs
 and inline markup, and both groups retain source order. The configured Emacs
 path has no Typst Eglot hook, so this is its ordinary Imenu provider rather
 than an LSP fallback.
+Native Terraform buffers reproduce terraform-mode's three regexp passes and
+nine lower-case groups for provider/backend/provisioner, variable/module/output,
+and data/resource/ephemeral blocks. Labels strip quotes; data/resource/ephemeral
+labels join type and name with `/` and jump to the type token. The pinned raw
+index reverses group insertion and entries within each group, and its
+syntax-blind scanner can index block-looking heredoc lines; Lem retains those
+observable quirks. A ready `terraform-ls` document-symbol provider remains
+authoritative.
 
 Acceptance records one Vi jumplist entry and runs the configured Imenu feedback:
 recenter only, with no Consult Pulsar pulse. `scripts/lsp-project-test.sh` and

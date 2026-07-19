@@ -1240,6 +1240,94 @@ this function consumes NODE and every named-child handle it obtains."
                 (buffer-name buffer) condition)
       nil)))
 
+;;; --- terraform-mode -----------------------------------------------------
+
+(defparameter *imenu-terraform-type-only-pattern*
+  "(?m)^\\s*(backend|provider|provisioner)\\s+([^=]\\S+?)(?:\\s+|\\{)")
+
+(defparameter *imenu-terraform-name-only-pattern*
+  "(?m)^\\s*(module|output|variable)\\s+(\\S+?)(?:\\s+|\\{)")
+
+(defparameter *imenu-terraform-type-and-name-pattern*
+  "(?m)^\\s*(data|ephemeral|resource)\\s+(\"\\S+?\")\\s+(\\S+?)(?:\\s+|\\{)")
+
+(defparameter *imenu-terraform-group-order*
+  '("ephemeral" "data" "resource" "output" "module" "variable"
+    "provisioner" "backend" "provider"))
+
+(defun imenu-terraform-unquoted (string)
+  (remove #\" string))
+
+(defun imenu-terraform-match-string
+    (source register-starts register-ends index)
+  (subseq source (aref register-starts index) (aref register-ends index)))
+
+(defun imenu-terraform-match-candidate
+    (buffer source register-starts register-ends key-index label offset-index)
+  (let* ((key (imenu-terraform-match-string
+               source register-starts register-ends key-index))
+         (point (copy-point (buffer-start-point buffer)))
+         (offset (aref register-starts offset-index)))
+    (character-offset point offset)
+    (values
+     key
+     (make-imenu-candidate
+      :label label
+      :detail (format nil "[Terraform ~a] line ~d"
+                      key (line-number-at-point point))
+      :point point))))
+
+(defun imenu-terraform-scan-pattern
+    (buffer source table pattern label-function offset-index)
+  (ppcre:do-scans
+      (start end register-starts register-ends pattern source)
+    (declare (ignore start end))
+    (let ((label (funcall label-function source
+                          register-starts register-ends)))
+      (multiple-value-bind (key candidate)
+          (imenu-terraform-match-candidate
+           buffer source register-starts register-ends 0 label offset-index)
+        ;; terraform--generate-imenu uses `push', so matches within each
+        ;; category are deliberately reversed from source order.
+        (push candidate (gethash key table))))))
+
+(defun imenu-terraform-candidates (buffer)
+  "Match pinned terraform-mode's regexp-generated Imenu index."
+  (handler-case
+      (let ((source (buffer-text buffer))
+            (table (make-hash-table :test #'equal)))
+        (imenu-terraform-scan-pattern
+         buffer source table *imenu-terraform-type-only-pattern*
+         (lambda (text starts ends)
+           (imenu-terraform-unquoted
+            (imenu-terraform-match-string text starts ends 1)))
+         1)
+        (imenu-terraform-scan-pattern
+         buffer source table *imenu-terraform-name-only-pattern*
+         (lambda (text starts ends)
+           (imenu-terraform-unquoted
+            (imenu-terraform-match-string text starts ends 1)))
+         1)
+        (imenu-terraform-scan-pattern
+         buffer source table *imenu-terraform-type-and-name-pattern*
+         (lambda (text starts ends)
+           (format nil "~a/~a"
+                   (imenu-terraform-unquoted
+                    (imenu-terraform-match-string text starts ends 1))
+                   (imenu-terraform-unquoted
+                    (imenu-terraform-match-string text starts ends 2))))
+         1)
+        (loop :for key :in *imenu-terraform-group-order*
+              :for children := (gethash key table)
+              :when children
+                :collect (make-imenu-candidate
+                          :label key
+                          :children children)))
+    (error (condition)
+      (log:warn "Terraform Imenu indexing failed for ~a: ~a"
+                (buffer-name buffer) condition)
+      nil)))
+
 (register-imenu-native-provider 'org-mode 'imenu-org-candidates)
 (register-imenu-native-provider
  'lem-markdown-mode:markdown-mode 'imenu-markdown-candidates)
@@ -1254,3 +1342,5 @@ this function consumes NODE and every named-child handle it obtains."
 (register-imenu-native-provider 'lem-go-mode:go-mode 'imenu-go-candidates)
 (register-imenu-native-provider 'gdscript-mode 'imenu-gdscript-candidates)
 (register-imenu-native-provider 'typst-mode 'imenu-typst-candidates)
+(register-imenu-native-provider
+ 'lem-terraform-mode:terraform-mode 'imenu-terraform-candidates)

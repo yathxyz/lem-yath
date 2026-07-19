@@ -26,6 +26,7 @@ export LEM_YATH_PROJECT_OUTLINE_RUST="$root/native-imenu.rs"
 export LEM_YATH_PROJECT_OUTLINE_GO="$root/native-imenu.go"
 export LEM_YATH_PROJECT_OUTLINE_GDSCRIPT="$root/native-imenu.gd"
 export LEM_YATH_PROJECT_OUTLINE_TYPST="$root/native-imenu.typ"
+export LEM_YATH_PROJECT_OUTLINE_TERRAFORM="$root/native-imenu.tf"
 export LEM_YATH_PROJECT_OUTLINE_READER_MARKER="$root/reader-evaluated"
 mkdir -p "$HOME" "$WORKDIR" "$root/config" "$root/outside" "$root/malicious"
 
@@ -329,6 +330,34 @@ for line in $(seq 1 80); do
     *) printf '\n' ;;
   esac
 done >"$LEM_YATH_PROJECT_OUTLINE_TYPST"
+
+for line in $(seq 1 100); do
+  case "$line" in
+    1) printf '%s\n' 'terraform {}' ;;
+    3) printf '%s\n' 'provider "aws" {}' ;;
+    5) printf '%s\n' 'backend "s3" {}' ;;
+    7) printf '%s\n' 'variable "region" {}' ;;
+    9) printf '%s\n' 'module "network" {}' ;;
+    11) printf '%s\n' 'output "endpoint" {}' ;;
+    14) printf '%s\n' 'resource "aws_instance" "web" {}' ;;
+    17) printf '%s\n' 'data "aws_ami" "base" {}' ;;
+    20) printf '%s\n' 'ephemeral "random_password" "token" {}' ;;
+    24) printf '%s\n' 'provider "google" {}' ;;
+    28) printf '%s\n' 'resource "aws_s3_bucket" "logs" {}' ;;
+    32) printf '%s\n' '  provisioner "local-exec" {}' ;;
+    36) printf '%s\n' 'locals {}' ;;
+    38) printf '%s\n' 'required_providers {}' ;;
+    40) printf '%s\n' 'connection {}' ;;
+    42) printf '%s\n' 'dynamic "item" {}' ;;
+    46) printf '%s\n' '# resource "comment_fake" "hidden" {}' ;;
+    58) printf '%s\n' 'locals {' ;;
+    59) printf '%s\n' '  script = <<EOT' ;;
+    62) printf '%s\n' 'resource "fake_type" "fake_name" {' ;;
+    64) printf '%s\n' 'EOT' ;;
+    65) printf '%s\n' '}' ;;
+    *) printf '\n' ;;
+  esac
+done >"$LEM_YATH_PROJECT_OUTLINE_TERRAFORM"
 
 for line in $(seq 1 80); do
   case "$line" in
@@ -1651,6 +1680,132 @@ if invoke_mx imenu 'Index item:'; then
   fi
 else
   fail imenu-typst-command 'M-x imenu did not open in the Typst fixture'
+fi
+
+# terraform-mode builds its index with three regex passes and hash-table
+# groups.  In the pinned build this yields reverse keyword-insertion group
+# order and reverse source order within each group; it also intentionally sees
+# block-shaped heredoc text because the upstream scanner is syntax-blind.
+send_chord C-c z e
+lem_wait_for "$session" 'terraform' 10 >/dev/null || true
+send_chord C-c z m
+wait_report_count '^MODE file=terraform major=TERRAFORM-MODE tree=none$' 1 || true
+if grep -q '^MODE file=terraform major=TERRAFORM-MODE tree=none$' \
+     "$LEM_YATH_PROJECT_OUTLINE_REPORT"; then
+  pass imenu-terraform-routing 'Terraform suffixes select the configured native mode'
+else
+  fail imenu-terraform-routing 'the Terraform fixture selected a different mode or parser'
+fi
+send_chord C-c z v
+wait_report_count '^PROVIDER file=terraform native=IMENU-TERRAFORM-CANDIDATES lsp=none$' 1 || true
+if grep -q '^PROVIDER file=terraform native=IMENU-TERRAFORM-CANDIDATES lsp=none$' \
+     "$LEM_YATH_PROJECT_OUTLINE_REPORT"; then
+  pass imenu-terraform-provider 'the fallback uses native Terraform symbols without LSP'
+else
+  fail imenu-terraform-provider 'an LSP workspace or different provider owned Terraform Imenu'
+fi
+
+send_chord C-c z i
+wait_report_count '^IMENU-INDEX file=terraform count=21$' 1 || true
+terraform_index_ok=1
+for path in \
+  'ephemeral' \
+  'ephemeral/random_password/token' \
+  'data' \
+  'data/aws_ami/base' \
+  'resource' \
+  'resource/fake_type/fake_name' \
+  'resource/aws_s3_bucket/logs' \
+  'resource/aws_instance/web' \
+  'output' \
+  'output/endpoint' \
+  'module' \
+  'module/network' \
+  'variable' \
+  'variable/region' \
+  'provisioner' \
+  'provisioner/local-exec' \
+  'backend' \
+  'backend/s3' \
+  'provider' \
+  'provider/google' \
+  'provider/aws'; do
+  grep -Fqx "IMENU-PATH file=terraform path=\"$path\"" \
+    "$LEM_YATH_PROJECT_OUTLINE_REPORT" || terraform_index_ok=0
+done
+terraform_root_order="$(sed -n \
+  's/^IMENU-PATH file=terraform path="\([^/\"]*\)"$/\1/p' \
+  "$LEM_YATH_PROJECT_OUTLINE_REPORT" | paste -sd, -)"
+terraform_resource_order="$(sed -n \
+  's|^IMENU-PATH file=terraform path="resource/\(.*\)"$|\1|p' \
+  "$LEM_YATH_PROJECT_OUTLINE_REPORT" | paste -sd, -)"
+if [ "$terraform_index_ok" = 1 ] &&
+   [ "$(report_count '^IMENU-PATH file=terraform ')" -eq 21 ] &&
+   [ "$terraform_root_order" = 'ephemeral,data,resource,output,module,variable,provisioner,backend,provider' ] &&
+   [ "$terraform_resource_order" = 'fake_type/fake_name,aws_s3_bucket/logs,aws_instance/web' ] &&
+   ! grep -Eq '^IMENU-PATH file=terraform .*(terraform|required_providers|locals|connection|dynamic|comment_fake|hidden)' \
+     "$LEM_YATH_PROJECT_OUTLINE_REPORT"; then
+  pass imenu-terraform-index 'Terraform Imenu matches pinned groups, reversal, labels, and regex quirks'
+else
+  fail imenu-terraform-index 'Terraform grouping, ordering, or regexp semantics differed'
+fi
+
+send_chord C-c z b
+send_chord C-c z r
+wait_report_count '^STATE file=terraform line=100 column=0 ' 1 || true
+terraform_origin="$(grep '^STATE file=terraform line=100 column=0 ' \
+  "$LEM_YATH_PROJECT_OUTLINE_REPORT" | tail -1)"
+terraform_origin_view="$(sed -n 's/^.* view=\([^ ]*\) minor.*$/\1/p' \
+  <<<"$terraform_origin")"
+
+if invoke_mx imenu 'Index item:'; then
+  terraform_top="$(lem_capture "$session")"
+  if grep -Fq 'ephemeral' <<<"$terraform_top" &&
+     grep -Fq 'resource' <<<"$terraform_top" &&
+     grep -Fq 'provider' <<<"$terraform_top"; then
+    pass imenu-terraform-presentation 'Terraform presents the pinned lower-case groups'
+  else
+    fail imenu-terraform-presentation 'the Terraform root prompt differed'
+  fi
+  tmux_cmd send-keys -t "$session" -l resource
+  send_chord Enter
+  sleep 0.3
+  terraform_resources="$(lem_capture "$session")"
+  if grep -Fq 'fake_type/fake_name' <<<"$terraform_resources" &&
+     grep -Fq 'aws_s3_bucket/logs' <<<"$terraform_resources" &&
+     grep -Fq 'aws_instance/web' <<<"$terraform_resources"; then
+    pass imenu-terraform-resources 'the resource submenu retains labels and syntax-blind matches'
+  else
+    fail imenu-terraform-resources 'the Terraform resource submenu differed'
+  fi
+  tmux_cmd send-keys -t "$session" -l aws_s3_bucket/logs
+  send_chord Enter
+  sleep 0.5
+  send_chord C-c z r
+  wait_report_count '^STATE file=terraform line=28 column=9 ' 1 || true
+  terraform_final="$(grep '^STATE file=terraform line=28 column=9 ' \
+    "$LEM_YATH_PROJECT_OUTLINE_REPORT" | tail -1)"
+  terraform_view="$(sed -n 's/^.* view=\([^ ]*\) minor.*$/\1/p' \
+    <<<"$terraform_final")"
+  if grep -q 'pulse=no pulse-stage=none .*pulse-overlays=0' \
+       <<<"$terraform_final" &&
+     [ -n "$terraform_origin_view" ] && [ -n "$terraform_view" ] &&
+     [ "$terraform_origin_view" != "$terraform_view" ]; then
+    pass imenu-terraform-jump 'Terraform Imenu lands on the resource type without pulse'
+  else
+    fail imenu-terraform-jump "the Terraform Imenu destination differed: $terraform_final"
+  fi
+  send_chord C-o
+  sleep 0.3
+  send_chord C-c z r
+  wait_report_count '^STATE file=terraform line=100 column=0 ' 2 || true
+  if [ "$(report_count '^STATE file=terraform line=100 column=0 ')" -ge 2 ]; then
+    pass imenu-terraform-jumplist 'C-o returns from Terraform Imenu to its exact origin'
+  else
+    fail imenu-terraform-jumplist 'Terraform Imenu did not record one Vi jump'
+  fi
+else
+  fail imenu-terraform-command 'M-x imenu did not open in the Terraform fixture'
 fi
 
 send_chord C-c z 2

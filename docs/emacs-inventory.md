@@ -341,7 +341,7 @@ older kind/container-grouped `SymbolInformation` schema are both accepted.
 The configured `imenu-after-jump-hook` recenters but does not pulse the
 destination. Lem reproduces this path for those Eglot buffers, for the pinned
 Lisp generic-expression forms, and for native Org, Markdown, Python, Java, C,
-C++, Rust, Go, GDScript, and Typst indices (`src/imenu.lisp`, `src/native-imenu.lisp`). Org uses the pinned depth-two
+C++, Rust, Go, GDScript, Typst, and Terraform indices (`src/imenu.lisp`, `src/native-imenu.lisp`). Org uses the pinned depth-two
 heading tree and reveals folded destinations. Markdown includes nested ATX and
 Setext headings plus the pinned Footnotes group while excluding front matter,
 fences, and comments. Python uses the pinned tree-sitter function/class tree,
@@ -361,7 +361,9 @@ source-ordered sparse tree across ordinary, exported, and onready variables,
 functions, and classes, retaining typed labels and parent self-jumps. Typst
 retains its ordered `Functions` and `Headings` groups, indexes only identifiers
 used as function-definition patterns, and uses complete heading-node text as
-the heading label. Native indices for other
+the heading label. Terraform retains its pinned nine lower-case regexp groups,
+quote stripping, reversed raw group-entry order, type-token destinations, and
+syntax-blind matches. Native indices for other
 non-LSP modes remain a provider gap.
 
 The `embark-consult` load path comes from the pinned package rather than this
@@ -525,7 +527,7 @@ supplies these effective modal bindings (stock `compile.el` supplies
 | **Java** | `java-mode`/`java-ts-mode` | **Eclipse JDT** via manually invoked `eglot-java-mode` (cache `~/.cache/eglot-java-eclipse-jdt-cache`); no Java Eglot hook is configured | Google Java style XML (remote URL) | Flymake | — | `eglot-java-mode` |
 | **C# / .NET** | `csharp-mode`/`csharp-ts-mode` | eglot-ensure (server not pinned in elisp; relies on eglot default e.g. omnisharp/csharp-ls if present) | — | Flymake | — | hooked only |
 | **GDScript** | `gdscript-ts-mode` when its packaged grammar is ready, derived from `gdscript-mode` | `eglot-ensure`; the obsolete configured `gdscript-eglot-version` variable is ignored by the pinned package, whose effective contact reads the project-version editor settings and otherwise uses Godot's built-in TCP LSP on port 6005 | — | — | — | Lem reproduces `.gd`, parser highlighting, tab-width-4 indentation, `project.godot` rooting, settings-port discovery, and the external TCP connection |
-| **Terraform** | `terraform-mode` | eglot-ensure (terraform-ls if present) | — | Flymake | — | |
+| **Terraform** | `terraform-mode` | eglot-ensure (`terraform-ls`) | — | Flymake | — | Ready document symbols override the pinned native regexp Imenu fallback |
 | **C / C++** | cc/c-ts modes | (clangd if present) | clang-format (apheleia) | Flycheck | `lldb`/`gdb` | `clang-tools`, `gcc`, `gdb`, `gnumake`, `pkg-config` on PATH |
 | **Emacs Lisp / Lisp / Scheme / Racket / Clojure** | respective + `lispy`/`lispyville` | — | — | Flycheck (elisp `load-path inherit`) | — | `clojure-ts-mode`, `cider` declared in nix, **no explicit config** |
 | **NASM** | `nasm-mode` (`.nasm`) | — | — | — | — | |
