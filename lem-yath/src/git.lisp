@@ -109,13 +109,26 @@
       (lem/legit::legit-unstage-hunk)))
 
 (define-command lem-yath-legit-commit-continue () ()
-  ;; This is a transient message buffer, not a file that needs saving.  Pinned
-  ;; Legit otherwise commits successfully and then prompts before killing it.
-  (unless (str:blankp
-           (lem/legit::clean-commit-message
-            (buffer-text (current-buffer))))
-    (buffer-unmark (current-buffer)))
-  (lem/legit::commit-continue))
+  (if (server-buffer-requests)
+      ;; Git invokes the packaged blocking client for reword.  COMMIT_EDITMSG
+      ;; still selects Legit's commit major mode, so its ordinary command would
+      ;; incorrectly start a second `git commit'.  Save the file and release
+      ;; the waiting Git process instead.
+      (lem-yath-server-save-done)
+      (progn
+        ;; This is a transient message buffer, not a file that needs saving.
+        ;; Pinned Legit otherwise commits successfully and then prompts before
+        ;; killing it.
+        (unless (str:blankp
+                 (lem/legit::clean-commit-message
+                  (buffer-text (current-buffer))))
+          (buffer-unmark (current-buffer)))
+        (lem/legit::commit-continue))))
+
+(define-command lem-yath-legit-commit-abort () ()
+  (if (server-buffer-requests)
+      (lem-yath-server-abort)
+      (lem/legit::commit-abort)))
 
 (define-key lem/legit::*legit-diff-mode-keymap*
   "s" 'lem-yath-legit-stage-hunk)
@@ -125,6 +138,10 @@
   "C-c C-c" 'lem-yath-legit-commit-continue)
 (define-key lem/legit::*legit-commit-mode-keymap*
   "C-Return" 'lem-yath-legit-commit-continue)
+(define-key lem/legit::*legit-commit-mode-keymap*
+  "C-c C-k" 'lem-yath-legit-commit-abort)
+(define-key lem/legit::*legit-commit-mode-keymap*
+  "M-q" 'lem-yath-legit-commit-abort)
 
 ;; Defined later in the serial system, in ui.lisp.  Git state can be prepared
 ;; before the UI module loads, but rendering only happens after startup.

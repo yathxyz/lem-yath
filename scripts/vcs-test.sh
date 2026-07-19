@@ -16,6 +16,8 @@ export HOME="$root/home"
 export XDG_CACHE_HOME="$root/cache"
 export WORKDIR="$root/work"
 export LEM_HOME="$root/lem-home/"
+export LEM_YATH_SERVER_SOCKET="$root/server/server.sock"
+export LEM_YATH_SERVER_PANE_FILE="$root/server/server.sock.pane"
 export GIT_CONFIG_NOSYSTEM=1
 export GIT_CONFIG_GLOBAL=/dev/null
 export GIT_TERMINAL_PROMPT=0
@@ -372,17 +374,17 @@ porcelain_rebase_todo_ready() {
     grep -q 'porcelain-peer' "$todo"
 }
 
-porcelain_rebase_todo_fixup() {
+porcelain_rebase_todo_reword_fixup() {
   local todo="$LEM_YATH_VCS_PORCELAIN_ROOT/.git/rebase-merge/git-rebase-todo"
   [ -f "$todo" ] &&
-    [ "$(sed -n '1s/^pick .*/pick/p' "$todo")" = pick ] &&
+    [ "$(sed -n '1s/^reword .*/reword/p' "$todo")" = reword ] &&
     [ "$(sed -n '2s/^fixup .*/fixup/p' "$todo")" = fixup ]
 }
 
 porcelain_rebase_complete() {
   [ ! -d "$LEM_YATH_VCS_PORCELAIN_ROOT/.git/rebase-merge" ] &&
     [ "$($git_bin -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-list --count HEAD)" -eq 2 ] &&
-    porcelain_subject_is 'porcelain commit from Lem' &&
+    porcelain_subject_is 'porcelain commit reworded in Lem' &&
     grep -q 'peer-pull-probe' \
       "$LEM_YATH_VCS_PORCELAIN_ROOT/auxiliary.txt" &&
     "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" diff --quiet &&
@@ -1019,19 +1021,40 @@ else
     "$porcelain_session"
 fi
 
-send_keys "$porcelain_session" n f
-if wait_until "$WAIT_TIMEOUT" porcelain_rebase_todo_fixup; then
-  pass legit-rebase-fixup 'f changed and saved the second todo action to fixup'
+send_keys "$porcelain_session" r f
+if wait_until "$WAIT_TIMEOUT" porcelain_rebase_todo_reword_fixup; then
+  pass legit-rebase-actions \
+    'r and f saved the first todo as reword and the second as fixup'
 else
-  fail legit-rebase-fixup 'the rebase-mode action did not update the real todo file' \
+  fail legit-rebase-actions 'the rebase-mode actions did not update the real todo file' \
     "$porcelain_session"
 fi
 
+reword_before=$(report_count '^REWORD ')
 send_keys "$porcelain_session" C-c C-c
-if wait_until "$WAIT_TIMEOUT" porcelain_rebase_complete; then
-  pass legit-rebase-continue 'C-c C-c completed the rewrite and retained both changes'
+if lem_wait_for "$porcelain_session" 'Please enter the commit message' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" C-c v
+fi
+if wait_report_count '^REWORD ' "$((reword_before + 1))" &&
+   [[ $(latest_report '^REWORD ') == \
+      'REWORD mode=yes file=yes server=yes subject=yes continue=yes abort=yes' ]]; then
+  pass legit-rebase-reword-open 'Git opened the reword message through the blocking Lem client'
 else
-  fail legit-rebase-continue 'the interactive rewrite did not reach the expected history' \
+  fail legit-rebase-reword-open 'reword did not open a server-owned Legit message buffer' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" g g d d i
+tmux_cmd send-keys -t "$porcelain_session" -l -- \
+  'porcelain commit reworded in Lem'
+send_keys "$porcelain_session" Escape C-c C-c
+if wait_until "$WAIT_TIMEOUT" porcelain_rebase_complete; then
+  pass legit-rebase-continue \
+    'the client-saved reword and fixup completed with clean retained content'
+else
+  fail legit-rebase-continue \
+    'the client-backed reword/fixup did not produce the expected clean history' \
     "$porcelain_session"
 fi
 lem_stop "$porcelain_session"

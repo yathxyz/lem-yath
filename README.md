@@ -60,7 +60,8 @@ finishes that file, `C-x #` finishes an already clean file, and `ZQ` or
 With no files, `lemclient` attaches to the current editor buffer. From another
 pane in the same tmux server it switches to Lem while the request is active and
 then restores the originating pane. If no reusable pane is available it starts
-a fresh configured Lem instead. The running editor sets `GIT_EDITOR` and fills
+a fresh configured Lem instead. The running editor sets `GIT_EDITOR` to the
+client's non-focusing form and fills
 otherwise-unset `VISUAL`/`EDITOR` for its child processes; a parent shell can
 opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
 

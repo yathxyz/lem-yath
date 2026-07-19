@@ -1629,8 +1629,9 @@ Inside tmux, the client validates the publishing tmux-server identity and pane,
 switches the invoking client to Lem after `OPENED`, and restores the original
 pane after the final result. `--no-focus` supports automation. If the socket or usable pane is
 missing, the client executes a fresh configured Lem. Successful startup points
-`GIT_EDITOR`, and only otherwise-unset `VISUAL` and `EDITOR`, at the packaged
-client for subprocesses spawned by Lem. Parent shells must export those values
+`GIT_EDITOR` at the packaged client's `--no-focus` form, because editor child
+processes are already inside Lem's pane, and points otherwise-unset `VISUAL`
+and `EDITOR` at the ordinary client. Parent shells must export those values
 separately. This is deliberately narrower than Emacs's daemon: there is one
 authoritative ncurses UI, no arbitrary Lisp evaluation, and no graphical or new
 terminal frame creation. `scripts/server-test.sh` drives the real editor through
@@ -2187,13 +2188,15 @@ transient commit buffer no longer asks whether to save or kill it after Git has
 already committed. Interactive rebase uses Git's dedicated sequence-editor
 override, embeds and refreshes its signal-waiting helper independently of
 frontend reader features, and resolves `bash` through the packaged runtime
-`PATH`; this avoids both recursive `lemclient` launches and `/bin/bash`
-assumptions.
+`PATH`; this avoids both recursive sequence-editor launches and `/bin/bash`
+assumptions. A `reword` stop opens Git's real `COMMIT_EDITMSG` through the
+owner-private blocking client. The commit-mode confirm and abort keys detect
+that request and save/release or abort Git instead of starting a nested commit.
 
 ### Porcelain coverage vs magit — `legit/README.md`
 Covered: status, stage/unstage (file + hunk), discard, commit, branches (checkout/
 create), push, pull/fetch, commits log with pagination, **stash push/pop**, interactive
-rebase (pick/fixup/squash/drop/exec/break/label/reset/merge; reword & edit NOT yet
+rebase (pick/reword/fixup/squash/drop/exec/break/label/reset/merge; edit is NOT yet
 supported). Also basic Fossil + Mercurial. **Gaps vs magit:** no region-precise staging,
 no multi-file staging, limited switches/transient submenus, no blame/bisect/cherry-pick
 UI, no log graph filtering. Customize via `lem/porcelain:*git-base-arglist*`,
@@ -2205,10 +2208,15 @@ keystrokes and three isolated repositories. It verifies selective hunk
 stage/unstage, tracked and untracked file staging, commit editing and
 validation, push to a bare remote, branch creation and checkout, stash
 push/pop, and a pull from an independent peer clone. It then selects an older
-status commit, opens a real two-row interactive-rebase todo with `r i`, moves
-to the second row with `n`, saves `f` as `fixup`, continues with `C-c C-c`, and
-verifies the rewritten two-commit history, clean index/worktree, retained
-commit subject, and retained content from both commits.
+status commit and opens a real two-row interactive-rebase todo with `r i`. It
+saves the first row as `reword` and the second as `fixup`, continues with
+`C-c C-c`, edits the actual server-owned `COMMIT_EDITMSG`, confirms through
+the mode-local key, and verifies the rewritten two-commit history, new subject,
+clean index/worktree, and retained content from both commits. The fixture uses
+an isolated private server socket so it cannot target another running Lem.
+Starting another interactive rebase immediately after the first is not part of
+this claim: the pinned signal-waiting helper does not expose a reapable process
+lifecycle, and that back-to-back edge remains open alongside edit stops.
 
 ### Configured VCS dispatch and time travel — `lem-yath/src/git.lisp`, `src/apps/timemachine.lisp`
 
@@ -4099,8 +4107,8 @@ for ~15 languages (go, python, ts/js, clojure, zig, lua, kotlin, elixir, erlang,
 terraform, perl, vue, lisp) with hover/goto/refs/rename/code-action/format/diagnostics —
 but **Rust, Nix, SQL, Dart have no active spec** and need a one-line
 `define-language-spec` in `init.lisp`. **legit** is a credible magit-lite: status, hunk
-staging, commit, branch, push/pull, log, **stash**, and **interactive rebase** (reword/
-edit excepted). Grep result rows are editable with immediate source-buffer
+staging, commit, branch, push/pull, log, **stash**, and **interactive rebase** (edit
+stops excepted; lem-yath adds client-backed reword editing). Grep result rows are editable with immediate source-buffer
 write-through. Common Lisp gets a full
 SLIME (micros): REPL, SLDB, inspector, macroexpand, autodoc. Extras shipped in-tree:
 libvterm **terminal**, **Copilot**, **Claude Code**, MCP server, transient (which-key-ish)

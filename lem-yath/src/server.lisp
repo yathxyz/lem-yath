@@ -544,7 +544,11 @@
 
 (defun server-configure-editor-environment (client)
   (let ((command (uiop:native-namestring client)))
-    (setf (uiop:getenv "GIT_EDITOR") command)
+    ;; Git processes started by this Lem are already in the editor's tmux pane.
+    ;; Avoid pane handoff and, more importantly, avoid lemclient's deliberate
+    ;; alternate-editor fallback if transient pane metadata cannot be validated.
+    (setf (uiop:getenv "GIT_EDITOR")
+          (format nil "~a --no-focus" (uiop:escape-shell-token command)))
     (unless (uiop:getenv "VISUAL")
       (setf (uiop:getenv "VISUAL") command))
     (unless (uiop:getenv "EDITOR")

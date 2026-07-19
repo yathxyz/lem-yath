@@ -631,6 +631,31 @@
           'lem/legit::rebase-abort))
      (vcs-test-yes-no (buffer-modified-p buffer)))))
 
+(define-command lem-yath-test-vcs-reword-state () ()
+  (let* ((buffer (current-buffer))
+         (filename (buffer-filename buffer)))
+    (vcs-test-log
+     (concatenate
+      'string
+      "REWORD mode=~a file=~a server=~a subject=~a "
+      "continue=~a abort=~a")
+     (vcs-test-yes-no
+      (eq (buffer-major-mode buffer) 'lem/legit::legit-commit-mode))
+     (vcs-test-yes-no
+      (and filename
+           (string= (file-namestring filename) "COMMIT_EDITMSG")))
+     (vcs-test-yes-no (server-buffer-requests buffer))
+     (vcs-test-yes-no
+      (search "porcelain commit from Lem" (buffer-text buffer)))
+     (vcs-test-yes-no
+      (eq (vcs-test-key-command lem/legit::*legit-commit-mode-keymap*
+                                "C-c C-c")
+          'lem-yath-legit-commit-continue))
+     (vcs-test-yes-no
+      (eq (vcs-test-key-command lem/legit::*legit-commit-mode-keymap*
+                                "C-c C-k")
+          'lem-yath-legit-commit-abort)))))
+
 (defun vcs-test-restore-source-point ()
   (let ((point (buffer-point *vcs-test-source-buffer*)))
     (buffer-start point)
@@ -944,6 +969,8 @@
   "C-c a" 'lem-yath-test-vcs-porcelain-untracked)
 (define-key lem/legit::*legit-rebase-mode-keymap*
   "C-c v" 'lem-yath-test-vcs-rebase-state)
+(define-key lem/legit::*legit-commit-mode-keymap*
+  "C-c v" 'lem-yath-test-vcs-reword-state)
 
 (vcs-test-log "READY phase=~a file=~a"
               *vcs-test-phase*

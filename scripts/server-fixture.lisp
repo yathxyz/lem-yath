@@ -32,7 +32,10 @@
       (check (and *server-socket-pathname*
                   (probe-file *server-socket-pathname*))
              "socket-present")
-      (check (and client (string= (uiop:getenv "GIT_EDITOR") client))
+      (check (and client
+                  (string= (uiop:getenv "GIT_EDITOR")
+                           (format nil "~a --no-focus"
+                                   (uiop:escape-shell-token client))))
              "git-editor")
       (check (and (uiop:getenv "VISUAL") (uiop:getenv "EDITOR"))
              "visual-editor")
