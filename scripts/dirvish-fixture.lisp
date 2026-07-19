@@ -103,6 +103,71 @@
          (lem/directory-mode/internal:get-pathname (current-point))))
     (dirvish-test-basename pathname)))
 
+(defun dirvish-test-source-path-visible-p (buffer)
+  (with-point ((point (buffer-start-point buffer)))
+    (and (not (lem-core::line-hidden-p point))
+         (search (dirvish-native-path (buffer-directory buffer))
+                 (line-string point)))))
+
+(defun dirvish-test-source-blank-hidden-p (buffer)
+  (with-point ((point (buffer-start-point buffer)))
+    (and (line-offset point 1)
+         (lem-core::line-hidden-p point)
+         (line-offset point 1)
+         (not (lem-core::line-hidden-p point)))))
+
+(defun dirvish-test-modeline-text (window)
+  (with-output-to-string (stream)
+    (lem-core::modeline-apply
+     window
+     (lambda (text attribute alignment)
+       (declare (ignore attribute alignment))
+       (write-string text stream))
+     'modeline)))
+
+(define-command lem-yath-test-dirvish-chrome () ()
+  (alexandria:if-let ((session (current-dirvish-session)))
+    (let* ((root-window (dirvish-session-root-window session))
+           (root-buffer (window-buffer root-window))
+           (footer (dirvish-test-modeline-text root-window)))
+      (dirvish-test-log
+       "CHROME header=source navigable=~d path=~a blank=~a footer=~a preview=~a"
+       (length (window-list))
+       (if (dirvish-test-source-path-visible-p root-buffer) "yes" "no")
+       (if (dirvish-test-source-blank-hidden-p root-buffer) "yes" "no")
+       (if (and (search "name|mtime" footer)
+                (search "/" footer))
+           "yes" "no")
+       (if (equal '("")
+                  (lem-core::window-modeline-format
+                   (dirvish-session-preview-window session)))
+           "blank" "changed")))
+    (let* ((window (current-window))
+           (buffer (window-buffer window))
+           (text (dirvish-test-modeline-text window)))
+      (dirvish-test-log
+       "ORDINARY header=~a blank=~a modeline=~a sort=~a index=~a"
+       (if (dirvish-test-source-path-visible-p buffer) "yes" "no")
+       (if (dirvish-test-source-blank-hidden-p buffer) "yes" "no")
+       (if (equal +dirvish-ordinary-modeline-format+
+                  (variable-value 'modeline-format :default buffer))
+           "yes" "no")
+       (if (search "name|mtime" text) "yes" "no")
+       (if (search (format nil "/~3d "
+                           (max 0 (- (buffer-nlines buffer) 3)))
+                   text)
+           "yes" "no")))))
+
+(define-command lem-yath-test-dirvish-symlink () ()
+  (let* ((session (current-dirvish-session))
+         (root (and session (dirvish-session-root-window session)))
+         (text (and root (dirvish-test-modeline-text root))))
+    (dirvish-test-log
+     "SYMLINK row=~a segment=~a target=~a"
+     (or (dirvish-test-current-name) "none")
+     (if (and text (search "→" text)) "yes" "no")
+     (if (and text (search "open.txt" text)) "yes" "no"))))
+
 (define-command lem-yath-test-dirvish-record () ()
   (dirvish-test-open-directory)
   (destructuring-bind (file-line file-size file-source file-path)
@@ -363,6 +428,8 @@
 (define-key *global-keymap* "F12" 'lem-yath-test-dirvish-mx-report)
 (define-key *global-keymap* "C-c D" 'lem-yath-test-dirvish-derived-setup)
 (define-key *global-keymap* "C-c R" 'lem-yath-test-dirvish-derived-report)
+(define-key *global-keymap* "C-c H" 'lem-yath-test-dirvish-chrome)
+(define-key *global-keymap* "C-c S" 'lem-yath-test-dirvish-symlink)
 
 (setf *dirvish-test-origin-a*
       (dirvish-test-buffer "DIRVISH-ORIGIN-A" "origin A\n")

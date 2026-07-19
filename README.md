@@ -105,9 +105,11 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   buffers, selection, and scroll state while retaining live buffer points;
   restored proportions adapt to terminal resizes
 - ordinary directory visits inherit the configured hidden-detail Dirvish
-  presentation. `M-x dirvish` adds the pinned full-frame shape with one parent
-  pane, the active directory, and a selection-following preview; text reads are
-  raw, bounded, and mode-hook-free, directories list at most 200 children, and
+  presentation, retain the visible path row, suppress its redundant blank row,
+  and show the pinned ascending `name|mtime`, selected-symlink target, and
+  current/total footer data. `M-x dirvish` adds the pinned full-frame shape with
+  one parent pane, the active directory, and a selection-following preview;
+  text reads are raw, bounded, and mode-hook-free, directories list at most 200 children, and
   binary or special files show metadata without being opened. Cancellable
   background dispatch lists at most 200 archive members without extraction,
   renders the first PDF page, converts bounded EPUB text, and reports

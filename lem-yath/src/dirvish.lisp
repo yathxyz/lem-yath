@@ -5,12 +5,83 @@
 (define-attribute dirvish-size-attribute
   (t :foreground :base03))
 
+(define-attribute dirvish-modeline-symlink-attribute
+  (t :foreground :base0D))
+
 (defconstant +dirvish-file-count-overflow+ 15000)
 
 (defun dirvish-native-path (path)
   (etypecase path
     (string path)
     (pathname (uiop:native-namestring path))))
+
+(defun dirvish-live-window-p (window)
+  (and window (not (lem-core::window-deleted-p window))))
+
+(defun dirvish-live-buffer-p (buffer)
+  (and buffer (not (deleted-buffer-p buffer))))
+
+(defun dirvish-directory-blank-header-line-p (point)
+  "Hide directory-mode's redundant blank row below its path header."
+  (= (line-number-at-point point) 2))
+
+(defun dirvish-window-selected-path (window)
+  (when (and window
+             (dirvish-live-window-p window)
+             (eq (buffer-major-mode (window-buffer window))
+                 'lem/directory-mode/mode:directory-mode))
+    (lem/directory-mode/internal:get-pathname
+     (lem-core::%window-point window))))
+
+(defun dirvish-modeline-sort (window)
+  (declare (ignore window))
+  " ↑ name|mtime ")
+
+(defun dirvish-modeline-symlink (window)
+  (let ((pathname (dirvish-window-selected-path window)))
+    (if (and pathname
+             (ignore-errors
+               (= (logand (sb-posix:stat-mode
+                            (sb-posix:lstat (dirvish-native-path pathname)))
+                           sb-posix:s-ifmt)
+                  sb-posix:s-iflnk)))
+        (alexandria:when-let ((target (ignore-errors (probe-file pathname))))
+          (values (format nil "→ ~a "
+                          (completion-path-display-string
+                           (dirvish-native-path target)))
+                  'dirvish-modeline-symlink-attribute))
+        "")))
+
+(defun dirvish-modeline-index (window)
+  (let* ((buffer (window-buffer window))
+         (pathname (dirvish-window-selected-path window))
+         (current (if pathname
+                      (max 0 (- (line-number-at-point
+                                 (lem-core::%window-point window))
+                                2))
+                      0))
+         (total (max 0 (- (buffer-nlines buffer) 3))))
+    (values (format nil "~3d /~3d " current total) nil :right)))
+
+(defparameter +dirvish-ordinary-modeline-format+
+  '(dirvish-modeline-sort
+    dirvish-modeline-symlink
+    (dirvish-modeline-index nil :right)))
+
+(defun ensure-dirvish-directory-presentation (buffer)
+  "Apply pinned Dirvish chrome to an ordinary directory BUFFER."
+  (when (eq (buffer-major-mode buffer)
+            'lem/directory-mode/mode:directory-mode)
+    (setf (variable-value 'modeline-format :buffer buffer)
+          +dirvish-ordinary-modeline-format+
+          (variable-value 'lem-core::line-hidden-function :buffer buffer)
+          'dirvish-directory-blank-header-line-p)))
+
+(remove-hook *switch-to-buffer-hook* 'ensure-dirvish-directory-presentation)
+(add-hook *switch-to-buffer-hook* 'ensure-dirvish-directory-presentation)
+
+(dolist (buffer (buffer-list))
+  (ensure-dirvish-directory-presentation buffer))
 
 (defun dirvish-count-directory-entries (path)
   "Count PATH's direct children, bounded like pinned Dirvish."
@@ -182,12 +253,6 @@
 
 (defvar *dirvish-sessions* (make-hash-table :test #'eq))
 
-(defun dirvish-live-window-p (window)
-  (and window (not (lem-core::window-deleted-p window))))
-
-(defun dirvish-live-buffer-p (buffer)
-  (and buffer (not (deleted-buffer-p buffer))))
-
 (defun current-dirvish-session ()
   (gethash (current-frame) *dirvish-sessions*))
 
@@ -219,6 +284,7 @@
 (defun dirvish-switch-window-buffer (window buffer)
   (when (and (dirvish-live-window-p window)
              (dirvish-live-buffer-p buffer))
+    (ensure-dirvish-directory-presentation buffer)
     (with-current-window window
       (lem-core::%switch-to-buffer buffer nil t)
       (setf (window-parameter window 'lem-core::horizontal-scroll-start) 0))))
@@ -612,6 +678,19 @@
         (with-global-variable-value (kill-buffer-hook nil)
           (delete-buffer buffer))))))
 
+(defun dirvish-setup-session-chrome (session)
+  (setf (lem-core::window-modeline-format
+         (dirvish-session-parent-window session))
+        '("")
+        (lem-core::window-modeline-format
+         (dirvish-session-root-window session))
+        '(dirvish-modeline-sort
+          dirvish-modeline-symlink
+          (dirvish-modeline-index nil :right))
+        (lem-core::window-modeline-format
+         (dirvish-session-preview-window session))
+        '("")))
+
 (defun dirvish-restore-session-layout (session root-buffer keep-root-p)
   (let* ((configuration (dirvish-session-saved-layout session))
          (restored-p
@@ -690,6 +769,7 @@
                 (setf (gethash (current-frame) *dirvish-sessions*) session)
                 (dirvish-switch-window-buffer preview-window preview-buffer)
                 (switch-to-window root-window)
+                (dirvish-setup-session-chrome session)
                 (dirvish-refresh-session session t)
                 session))))
       (error (condition)

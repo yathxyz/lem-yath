@@ -21,6 +21,7 @@ printf 'two\n' >"$LEM_YATH_DIRVISH_ROOT/child/two"
 printf 'three\n' >"$LEM_YATH_DIRVISH_ROOT/child/three"
 head -c 1536 /dev/zero >"$LEM_YATH_DIRVISH_ROOT/size.bin"
 printf 'DIRVISH VISIT\n' >"$LEM_YATH_DIRVISH_ROOT/open.txt"
+ln -s open.txt "$LEM_YATH_DIRVISH_ROOT/zz-symlink-open"
 mkfifo "$LEM_YATH_DIRVISH_ROOT/special.fifo"
 for index in $(seq 1 205); do
   : >"$LEM_YATH_DIRVISH_ROOT/zz-crowded/entry-$index"
@@ -152,6 +153,13 @@ else
   fail resize '64-column alignment or source invariants differed'
 fi
 
+lem_keys "$session" C-c H
+if wait_report '^ORDINARY header=yes blank=yes modeline=yes sort=yes index=yes$'; then
+  pass ordinary-chrome 'ordinary directory visits show the path, hide the blank row, and expose pinned footer data'
+else
+  fail ordinary-chrome 'ordinary directory header visibility or modeline segments differed'
+fi
+
 lem_keys "$session" F3
 if wait_report '^VISIT file=open\.txt text=DIRVISH VISIT$'; then
   pass visit 'the compact property-backed row opened the exact file'
@@ -168,18 +176,25 @@ fi
 
 tmux_cmd resize-window -t "$session" -x 120 -y 30
 lem_keys "$session" F5
-if wait_report '^FULL windows=3 widths=[0-9]+,[0-9]+,[0-9]+ modes=DIRECTORY-MODE,DIRECTORY-MODE,FUNDAMENTAL-MODE focus=root command=yes preview-parent=yes readonly=yes$'; then
+if wait_report '^FULL windows=3 widths=13,41,64 modes=DIRECTORY-MODE,DIRECTORY-MODE,FUNDAMENTAL-MODE focus=root command=yes preview-parent=yes readonly=yes$'; then
   pass fullframe 'M-x command built the pinned one-parent/current/preview layout'
 else
   fail fullframe 'full-frame layout, focus, command registration, or initial preview differed'
 fi
 
+lem_keys "$session" C-c H
+if wait_report '^CHROME header=source navigable=3 path=yes blank=yes footer=yes preview=blank$'; then
+  pass fullframe-chrome 'the visible path row and pinned footer segments preserve the existing session topology'
+else
+  fail fullframe-chrome 'full-frame path visibility, blank-row hiding, or footer segments differed'
+fi
+
 screen="$(lem_capture "$session")"
 if [[ "$screen" == *'open.txt'* ]] &&
-   [[ "$screen" == *'*Dirvish Preview*'* ]]; then
-  pass fullframe-render 'the real terminal displayed directory and preview panes together'
+   [[ "$screen" == *'name|mtime'* ]]; then
+  pass fullframe-render 'the real terminal displayed directory, preview, and Dirvish chrome together'
 else
-  fail fullframe-render 'the three-pane layout did not reach the real terminal'
+  fail fullframe-render 'the three-pane layout or its footer did not reach the real terminal'
 fi
 
 lem_keys "$session" n n n
@@ -287,6 +302,15 @@ if lem_wait_for "$session" 'Dirvish PDF Page' 15 >/dev/null; then
   fi
 else
   fail pdf-preview 'PDF first-page text did not reach the terminal preview'
+fi
+
+lem_keys "$session" n n n n n
+sleep 0.3
+lem_keys "$session" C-c S
+if wait_report '^SYMLINK row=zz-symlink-open segment=yes target=yes$'; then
+  pass symlink-segment 'physical last-entry movement exposed the selected symlink target'
+else
+  fail symlink-segment 'the selected symlink target did not reach the footer'
 fi
 
 lem_keys "$session" q

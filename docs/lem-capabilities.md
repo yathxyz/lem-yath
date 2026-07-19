@@ -3389,7 +3389,10 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   or direct-child count for directories. Resizing preserves alignment without
   changing buffer text; refreshes remain clean and read-only, and native
   directory-mode visiting, marking, sorting, copy, rename, and deletion continue
-  to operate on exact path properties. `M-x dirvish` uses the current buffer
+  to operate on exact path properties. The styled directory path remains visible
+  as the first row, Lem's redundant blank header row is display-hidden, and the
+  native footer carries the pinned ascending `name|mtime`, selected-symlink
+  target, and current-entry/total segments. `M-x dirvish` uses the current buffer
   directory (or prompts with a prefix) and replaces the ordinary windows with
   the pinned one-parent/current/preview proportions. The root retains focus;
   movement drives a 20 ms debounced and 250 ms throttled preview. Regular UTF-8
@@ -3406,8 +3409,10 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   preview. `Return` on a file restores the exact preceding layout
   before visiting it, `q` restores without visiting, and
   `dirvish-layout-toggle` keeps the directory in the restored selected window.
-  Pixel image/video rendering, Dirvish header and mode-line segments,
-  subtree/collapse extensions, and its wider integrations are not reproduced.
+  Lem has no geometry-safe per-window header-line primitive, so the path row
+  scrolls rather than staying sticky across the parent/current panes. Pixel
+  image/video rendering, subtree/collapse extensions, and Dirvish's wider
+  integrations are not reproduced.
   Filer retains its own tree presentation.
 - **Encodings**: `extensions/encodings/` (`lem-encodings`): utf-8/16, cp932, euc-jp,
   gb2312, iso-8859-1, 8bit. `prompt-for-encodings`, `*default-external-format*`
