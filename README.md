@@ -698,12 +698,18 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   included headers, `References`, delimiters, and regular attachment bytes.
   Forward state survives save/postpone/resume; successful SMTP/FCC applies
   `+forwarded`. Signed/encrypted MIME fails closed until raw-MIME forwarding
-  is implemented
+  is implemented. Received MIME leaves are selectable attachment rows: Return
+  previews PDFs in-editor and otherwise prompts to save the exact decoded
+  bytes, while `. s` explicitly saves any selected part. The prompt proposes
+  a path-safe MIME basename and remembers the last directory; confirmed
+  overwrites use a same-directory mode-0600 staging file and atomic rename,
+  and symlink or non-regular destinations fail closed
 - ordinary `.pdf` and `.epub` opens stay inside Lem: PDFs expose bounded
   Poppler text one page at a time, while EPUBs become bounded Markdown with
   chapter navigation. Both are read-only, never visit or overwrite the binary
   source, and retain `o` for the desktop viewer; Notmuch PDF attachment rows
-  use the same ephemeral reader and remove their private extraction on `q`.
+  use the same ephemeral reader and remove their private extraction on `q`,
+  while non-PDF rows retain the configured save-default behavior.
   The terminal path deliberately omits pixel layout, images, CSS, annotations,
   forms, and other visual-only document semantics
 - `M-x pgmacs` prompts for a password-free libpq connection string, lists

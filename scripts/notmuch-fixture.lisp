@@ -16,6 +16,8 @@
   (uiop:getenv "LEM_YATH_NOTMUCH_COMPOSE_ATTACHMENT"))
 (defvar *notmuch-test-draft-directory* nil)
 (defvar *notmuch-test-forward-directory* nil)
+(defvar *notmuch-test-save-link*
+  (uiop:getenv "LEM_YATH_NOTMUCH_SAVE_LINK"))
 
 (defun notmuch-test-yes-no (value) (if value "yes" "no"))
 
@@ -92,6 +94,8 @@
        'lem-yath-notmuch-reply-all)
    (eq (notmuch-test-key-command *notmuch-show-mode-keymap* "c f")
        'lem-yath-notmuch-forward-message)
+   (eq (notmuch-test-key-command *notmuch-show-mode-keymap* ". s")
+       'lem-yath-notmuch-save-part)
    (eq (notmuch-test-key-command *notmuch-show-mode-keymap* "e")
        'lem-yath-notmuch-resume-draft)
    (eq (notmuch-test-key-command *notmuch-compose-mode-keymap* "C-c C-c")
@@ -493,15 +497,22 @@
              (make-notmuch-attachment
               :message-id (format nil "invalid~%id@example.invalid")
               :part-id 7 :filename "invalid.pdf"))
-          (notmuch-test-log
-           "REFUSAL output=~a nonpdf=~a timeout=~a invalid=~a clean=~a source=~a"
-           (notmuch-test-yes-no output)
-           (notmuch-test-yes-no nonpdf)
-           (notmuch-test-yes-no timeout)
-           (notmuch-test-yes-no invalid)
-           (notmuch-test-yes-no
-            (and output-clean nonpdf-clean timeout-clean invalid-clean))
-           (notmuch-test-yes-no (notmuch-test-source-exact-p))))))))
+          (let ((symlink-refused-p
+                  (handler-case
+                      (progn
+                        (notmuch-received-target-state *notmuch-test-save-link*)
+                        nil)
+                    (error () t))))
+            (notmuch-test-log
+             "REFUSAL output=~a nonpdf=~a timeout=~a invalid=~a symlink=~a clean=~a source=~a"
+             (notmuch-test-yes-no output)
+             (notmuch-test-yes-no nonpdf)
+             (notmuch-test-yes-no timeout)
+             (notmuch-test-yes-no invalid)
+             (notmuch-test-yes-no symlink-refused-p)
+             (notmuch-test-yes-no
+              (and output-clean nonpdf-clean timeout-clean invalid-clean))
+             (notmuch-test-yes-no (notmuch-test-source-exact-p)))))))))
 
 (define-command lem-yath-notmuch-test-open () ()
   (notmuch-search *notmuch-test-query*))

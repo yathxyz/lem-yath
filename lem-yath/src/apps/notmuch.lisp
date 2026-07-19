@@ -30,6 +30,8 @@
 (defparameter *notmuch-address-output-limit* (* 1024 1024))
 (defparameter *notmuch-compose-attachment-count-limit* 16)
 (defparameter *notmuch-compose-attachment-byte-limit* (* 7 1024 1024))
+(defvar *notmuch-save-directory* nil
+  "The last directory used to save a received MIME part, like mm-default-directory.")
 
 (defparameter *notmuch-compose-content-types*
   '(("txt" . "text/plain")
@@ -62,7 +64,8 @@
 (defstruct notmuch-attachment
   message-id
   part-id
-  filename)
+  filename
+  content-type)
 
 (declaim (special *project-process-timeout*))
 
@@ -631,6 +634,7 @@ earlier recipients and their whitespace."
 (define-key *notmuch-show-mode-keymap* "c r" 'lem-yath-notmuch-reply-sender)
 (define-key *notmuch-show-mode-keymap* "c R" 'lem-yath-notmuch-reply-all)
 (define-key *notmuch-show-mode-keymap* "c f" 'lem-yath-notmuch-forward-message)
+(define-key *notmuch-show-mode-keymap* ". s" 'lem-yath-notmuch-save-part)
 (define-key *notmuch-show-mode-keymap* "e" 'lem-yath-notmuch-resume-draft)
 (define-key *notmuch-compose-mode-keymap* "C-c C-c"
   'lem-yath-notmuch-compose-send)
@@ -1391,7 +1395,7 @@ Defaults to \"tag:inbox\"; results are newest-first, one thread per line."
        thread-id))))
 
 (defun notmuch-attachment-at-point ()
-  "The PDF attachment descriptor on the current show-buffer line, or NIL."
+  "The received MIME-part descriptor on the current show-buffer line, or NIL."
   (let ((map (buffer-value (current-buffer) 'notmuch-line->attachment)))
     (when (hash-table-p map)
       (gethash (line-number-at-point (current-point)) map))))
@@ -1424,33 +1428,38 @@ hash-table. Returns the updated accumulator (reversed at the call site)."
         (t acc))
     (error () acc)))
 
-(defun notmuch-collect-pdf-parts (node acc)
-  "Defensively collect application/pdf leaf parts below NODE."
+(defun notmuch-collect-attachment-parts (node acc)
+  "Defensively collect selectable attachment leaf parts below NODE."
   (handler-case
       (cond
         ((null node) acc)
         ((listp node)
          (dolist (child node acc)
-           (setf acc (notmuch-collect-pdf-parts child acc))))
+           (setf acc (notmuch-collect-attachment-parts child acc))))
         ((hash-table-p node)
          (let ((content-type (notmuch-string (gethash "content-type" node)))
                (content (gethash "content" node))
-               (part-id (gethash "id" node)))
+               (part-id (gethash "id" node))
+               (filename (gethash "filename" node))
+               (disposition
+                 (string-downcase
+                  (notmuch-string (gethash "content-disposition" node)))))
            (cond
-             ((and (string-equal content-type "application/pdf")
-                   (integerp part-id)
-                   (<= 1 part-id 1000000))
+             ((and (integerp part-id)
+                   (<= 1 part-id 1000000)
+                   (plusp (length content-type))
+                   (or filename (string= disposition "attachment")))
               (cons node acc))
              ((listp content)
-              (notmuch-collect-pdf-parts content acc))
+              (notmuch-collect-attachment-parts content acc))
              ((gethash "body" node)
-              (notmuch-collect-pdf-parts (gethash "body" node) acc))
+              (notmuch-collect-attachment-parts (gethash "body" node) acc))
              (t acc))))
         (t acc))
     (error () acc)))
 
-(defun notmuch-attachment-display-name (value)
-  "Return one bounded, control-free basename for a MIME filename."
+(defun notmuch-attachment-basename (value)
+  "Return one bounded, control-free basename for a MIME filename, or NIL."
   (let* ((text (document-safe-display-text (notmuch-string value)))
          (slash (position-if (lambda (character)
                                (or (char= character #\/)
@@ -1459,9 +1468,16 @@ hash-table. Returns the updated accumulator (reversed at the call site)."
          (name (string-trim '(#\Space #\Tab #\Newline #\Return)
                             (if slash (subseq text (1+ slash)) text)))
          (name (substitute #\Space #\Newline name)))
-    (cond ((zerop (length name)) "attachment.pdf")
+    (cond ((zerop (length name)) nil)
           ((> (length name) 256) (subseq name 0 256))
           (t name))))
+
+(defun notmuch-attachment-display-name (filename content-type)
+  "Return the safe row label for FILENAME and CONTENT-TYPE."
+  (or filename
+      (if (string-equal content-type "application/pdf")
+          "attachment.pdf"
+          "attachment")))
 
 (defun notmuch-collect-messages (node acc)
   "Walk the `notmuch show' tree NODE, collecting message hash-tables into ACC.
@@ -1483,9 +1499,9 @@ A message is a hash-table carrying a \"headers\" key."
     (error () acc)))
 
 (defun notmuch-render-message (point message attachment-map)
-  "Insert MESSAGE headers, text/plain body, and PDF rows at POINT.
+  "Insert MESSAGE headers, text/plain body, and attachment rows at POINT.
 
-ATTACHMENT-MAP records the exact selectable line for every rendered PDF part."
+ATTACHMENT-MAP records the exact selectable line for every rendered part."
   (let ((headers (gethash "headers" message)))
     (when (hash-table-p headers)
       (dolist (field '("From" "To" "Date" "Subject"))
@@ -1504,24 +1520,31 @@ ATTACHMENT-MAP records the exact selectable line for every rendered PDF part."
           (insert-string point part)
           (insert-string point (format nil "~%")))
         (insert-string point (format nil "[no text/plain body]~%"))))
-  (let ((pdf-parts
-          (nreverse (notmuch-collect-pdf-parts (gethash "body" message) '())))
+  (let ((attachment-parts
+          (nreverse
+           (notmuch-collect-attachment-parts (gethash "body" message) '())))
         (message-id (notmuch-string (gethash "id" message))))
-    (when pdf-parts
-      (insert-string point (format nil "~%PDF attachments:~%"))
-      (dolist (part pdf-parts)
+    (when attachment-parts
+      (insert-string point (format nil "~%Attachments:~%"))
+      (dolist (part attachment-parts)
         (let* ((line (line-number-at-point point))
-               (filename
-                 (notmuch-attachment-display-name (gethash "filename" part)))
+               (content-type (notmuch-string (gethash "content-type" part)))
+               (filename (notmuch-attachment-basename (gethash "filename" part)))
+               (display-name
+                 (notmuch-attachment-display-name filename content-type))
+               (pdf-p (string-equal content-type "application/pdf"))
                (attachment
                  (make-notmuch-attachment
                   :message-id message-id
                   :part-id (gethash "id" part)
-                  :filename filename)))
+                  :filename filename
+                  :content-type content-type)))
           (setf (gethash line attachment-map) attachment)
           (insert-string point
-                         (format nil "  [PDF] ~a  (Return to preview)~%"
-                                 filename))))))
+                         (format nil "  [~a] ~a  (Return to ~a)~%"
+                                 (if pdf-p "PDF" content-type)
+                                 display-name
+                                 (if pdf-p "preview" "save")))))))
   (insert-string point (format nil "~%~a~%~%" (make-string 60 :initial-element #\-))))
 
 (defun notmuch-show (thread-id &optional selected-message-id parent-buffer)
@@ -1602,7 +1625,7 @@ post-command hook, opening it removes `unread' from those messages once."
         (setf (buffer-read-only-p buffer) t)
         (switch-to-window (pop-to-buffer buffer))))))
 
-;;; --- PDF attachment preview ----------------------------------------------
+;;; --- Received MIME-part preview and saving -------------------------------
 
 (defun notmuch-private-temp-directory ()
   "Create and return a new owner-private attachment directory."
@@ -1639,8 +1662,9 @@ post-command hook, opening it removes `unread' from those messages once."
   #-sbcl
   (editor-error "Secure attachment preview requires the supported SBCL runtime"))
 
-(defun notmuch-extract-raw-part (attachment pathname)
-  "Extract ATTACHMENT's decoded raw bytes into a new private PATHNAME."
+(defun notmuch-extract-raw-part (attachment pathname &key (pdf-p t))
+  "Extract ATTACHMENT's decoded raw bytes into a new private PATHNAME.
+When PDF-P is true, also require PDF magic before accepting the file."
   #+sbcl
   (let ((notmuch (or (executable-find "notmuch")
                      (editor-error "notmuch not found on PATH")))
@@ -1688,7 +1712,8 @@ post-command hook, opening it removes `unread' from those messages once."
                          (when (> count *notmuch-attachment-output-limit*)
                            (ignore-errors (uiop:terminate-process process))
                            (editor-error
-                            "PDF attachment exceeds the ~d MiB preview limit"
+                            "~a exceeds the ~d MiB received-part limit"
+                            (if pdf-p "PDF attachment" "MIME part")
                             (floor *notmuch-attachment-output-limit* 1048576)))
                          (write-sequence octets file-stream :end length))))
            (finish-output file-stream)
@@ -1697,14 +1722,16 @@ post-command hook, opening it removes `unread' from those messages once."
            (let ((status (uiop:wait-process process)))
              (setf finished-p t)
              (unless (and (integerp status) (zerop status))
-               (editor-error "notmuch could not extract PDF part ~d (exit ~a)"
+               (editor-error "notmuch could not extract MIME part ~d (exit ~a)"
                              (notmuch-attachment-part-id attachment) status)))
-           (unless (with-open-file (stream pathname
-                                           :element-type '(unsigned-byte 8))
-                     (let ((magic (make-array 5 :element-type '(unsigned-byte 8))))
-                       (and (= (read-sequence magic stream) 5)
-                            (equalp magic #(37 80 68 70 45)))))
-             (editor-error "The selected attachment is not a PDF file"))
+           (when pdf-p
+             (unless (with-open-file (stream pathname
+                                             :element-type '(unsigned-byte 8))
+                       (let ((magic
+                               (make-array 5 :element-type '(unsigned-byte 8))))
+                         (and (= (read-sequence magic stream) 5)
+                              (equalp magic #(37 80 68 70 45)))))
+               (editor-error "The selected attachment is not a PDF file")))
            (setf complete-p t)
            pathname)
       (when file-stream (ignore-errors (close file-stream :abort t)))
@@ -1733,38 +1760,187 @@ post-command hook, opening it removes `unread' from those messages once."
           (buffer-value buffer 'notmuch-temp-directory) nil)
     (notmuch-remove-temp-attachment pathname directory)))
 
-(define-command lem-yath-notmuch-open-part () ()
-  "Preview the PDF attachment on the current Notmuch show line."
+(defun notmuch-received-lstat (pathname)
+  "Return PATHNAME's lstat and existence flag; fail on errors other than ENOENT."
+  #+sbcl
+  (handler-case
+      (values (sb-posix:lstat (uiop:native-namestring pathname)) t)
+    (sb-posix:syscall-error (condition)
+      (if (= (sb-posix:syscall-errno condition) sb-posix:enoent)
+          (values nil nil)
+          (error condition))))
+  #-sbcl
+  (declare (ignore pathname))
+  #-sbcl
+  (editor-error "Safe MIME-part saving requires the supported SBCL runtime"))
+
+(defun notmuch-received-stat-snapshot (stat)
+  "Return the identity and mutation fields used for overwrite race checks."
+  (list (sb-posix:stat-dev stat)
+        (sb-posix:stat-ino stat)
+        (sb-posix:stat-mode stat)
+        (sb-posix:stat-size stat)
+        (sb-posix:stat-mtime stat)
+        (sb-posix:stat-ctime stat)))
+
+(defun notmuch-received-target-state (target)
+  "Validate TARGET and return its mutation snapshot and existence flag."
+  (multiple-value-bind (stat exists-p) (notmuch-received-lstat target)
+    (when (and exists-p
+               (/= (logand (sb-posix:stat-mode stat) sb-posix:s-ifmt)
+                   sb-posix:s-ifreg))
+      (editor-error "Refusing to overwrite a non-regular destination: ~a"
+                    target))
+    (values (and stat (notmuch-received-stat-snapshot stat)) exists-p)))
+
+(defun notmuch-save-base-directory ()
+  "Return the canonical directory proposed for the next received part."
+  (let ((candidate
+          (or *notmuch-save-directory*
+              (ignore-errors (buffer-directory (current-buffer)))
+              (uiop:getcwd))))
+    (or (ignore-errors
+          (uiop:ensure-directory-pathname (truename candidate)))
+        (editor-error "The MIME-part save directory is unavailable: ~a"
+                      candidate))))
+
+(defun notmuch-prompt-save-pathname (attachment)
+  "Prompt for ATTACHMENT's destination with mm-save-part-like defaults."
+  (let ((directory (notmuch-save-base-directory))
+        (filename (notmuch-attachment-filename attachment)))
+    (loop
+      :for default := (and filename (merge-pathnames filename directory))
+      :for choice :=
+        (prompt-for-file
+         (format nil "Save MIME part to~@[[~a]~]: " filename)
+         :directory (uiop:native-namestring directory)
+         :default (and default (uiop:native-namestring default))
+         :existing nil)
+      :do
+         (cond
+           ((null choice)
+            (message "Please enter a file name"))
+           (t
+            (let ((pathname (merge-pathnames choice directory)))
+              (when (uiop:directory-exists-p pathname)
+                (if filename
+                    (setf pathname (merge-pathnames filename pathname))
+                    (progn
+                      (setf directory
+                            (uiop:ensure-directory-pathname (truename pathname)))
+                      (message "Please enter a non-directory file name")
+                      (setf pathname nil))))
+              (when pathname
+                (let* ((native (uiop:native-namestring pathname))
+                       (basename (file-namestring pathname))
+                       (parent
+                         (or (ignore-errors
+                               (uiop:ensure-directory-pathname
+                                (truename
+                                 (uiop:pathname-directory-pathname pathname))))
+                             (editor-error
+                              "The destination directory does not exist"))))
+                  (when (or (zerop (length basename))
+                            (some (lambda (character)
+                                    (or (char= character #\Null)
+                                        (char= character #\Newline)
+                                        (char= character #\Return)))
+                                  native))
+                    (editor-error "The destination file name is malformed"))
+                  (setf *notmuch-save-directory* parent)
+                  (return (merge-pathnames basename parent))))))))))
+
+(defun notmuch-save-temporary-pathname (target)
+  "Return a currently unused private staging pathname beside TARGET."
+  (let ((directory (uiop:pathname-directory-pathname target)))
+    (loop :repeat 64
+          :for candidate :=
+            (merge-pathnames
+             (format nil ".lem-yath-part-~d-~16,'0x.tmp"
+                     (sb-posix:getpid) (random (ash 1 60)))
+             directory)
+          :do (multiple-value-bind (stat exists-p)
+                  (notmuch-received-lstat candidate)
+                (declare (ignore stat))
+                (unless exists-p (return candidate)))
+          :finally (editor-error "Could not allocate a MIME-part staging file"))))
+
+(defun notmuch-save-received-part (attachment)
+  "Prompt for and atomically save ATTACHMENT's exact decoded bytes."
+  (let* ((target (notmuch-prompt-save-pathname attachment))
+         (temporary nil)
+         (expected-snapshot nil)
+         (expected-exists-p nil))
+    (multiple-value-bind (snapshot exists-p)
+        (notmuch-received-target-state target)
+      (when exists-p
+        (unless (prompt-for-y-or-n-p
+                 (format nil "File ~a already exists; overwrite?" target))
+          (message "MIME part was not saved")
+          (return-from notmuch-save-received-part nil)))
+      (setf expected-exists-p exists-p
+            expected-snapshot snapshot))
+    (unwind-protect
+         (progn
+           (setf temporary (notmuch-save-temporary-pathname target))
+           (notmuch-extract-raw-part attachment temporary :pdf-p nil)
+           (multiple-value-bind (current current-exists-p)
+               (notmuch-received-lstat target)
+             (unless (and (eq expected-exists-p current-exists-p)
+                          (or (not current-exists-p)
+                              (equal expected-snapshot
+                                     (notmuch-received-stat-snapshot current))))
+               (editor-error
+                "The destination changed after overwrite confirmation")))
+           #+sbcl
+           (sb-posix:rename (uiop:native-namestring temporary)
+                            (uiop:native-namestring target))
+           #-sbcl
+           (editor-error "Safe MIME-part saving requires the supported SBCL runtime")
+           (setf temporary nil)
+           (message "Saved MIME part to ~a" target)
+           target)
+      (when temporary (ignore-errors (delete-file temporary))))))
+
+(define-command lem-yath-notmuch-save-part () ()
+  "Save the received MIME part on this line (`.s' in Notmuch show)."
   (alexandria:if-let ((attachment (notmuch-attachment-at-point)))
-    (let* ((origin-window (current-window))
-           (origin-buffer (current-buffer))
-           (origin-pop-state
-             (lem-core::window-pop-to-buffer-state origin-window))
-           (directory (notmuch-private-temp-directory))
-           (pathname (merge-pathnames "attachment.pdf" directory))
-           (transferred-p nil))
-      (unwind-protect
-           (progn
-             (notmuch-extract-raw-part attachment pathname)
-             (let ((buffer
-                     (document-open-buffer pathname :pdf :ephemeral-p t)))
-               (setf (buffer-value buffer 'notmuch-temp-attachment) pathname
-                     (buffer-value buffer 'notmuch-temp-directory) directory
-                     (buffer-value buffer 'document-return-buffer) origin-buffer
-                     (buffer-value buffer 'document-return-pop-state)
-                     origin-pop-state)
-               (add-hook (variable-value 'kill-buffer-hook :buffer buffer)
-                         'notmuch-delete-temp-attachment)
-               (setf transferred-p t)
-               ;; Replace the show buffer in-place.  A nested pop-to split can
-               ;; transfer or discard the show's own parent link; preserving
-               ;; the same window avoids altering the surrounding tree.
-               (switch-to-buffer buffer nil)
-               (setf (lem-core::window-pop-to-buffer-state origin-window)
-                     origin-pop-state)))
-        (unless transferred-p
-          (notmuch-remove-temp-attachment pathname directory))))
-    (message "No PDF attachment on this line")))
+    (notmuch-save-received-part attachment)
+    (message "No MIME attachment on this line")))
+
+(define-command lem-yath-notmuch-open-part () ()
+  "Preview a PDF part or save another received MIME part on this line."
+  (alexandria:if-let ((attachment (notmuch-attachment-at-point)))
+    (if (string-equal (notmuch-attachment-content-type attachment)
+                      "application/pdf")
+        (let* ((origin-window (current-window))
+               (origin-buffer (current-buffer))
+               (origin-pop-state
+                 (lem-core::window-pop-to-buffer-state origin-window))
+               (directory (notmuch-private-temp-directory))
+               (pathname (merge-pathnames "attachment.pdf" directory))
+               (transferred-p nil))
+          (unwind-protect
+               (progn
+                 (notmuch-extract-raw-part attachment pathname)
+                 (let ((buffer
+                         (document-open-buffer pathname :pdf :ephemeral-p t)))
+                   (setf (buffer-value buffer 'notmuch-temp-attachment) pathname
+                         (buffer-value buffer 'notmuch-temp-directory) directory
+                         (buffer-value buffer 'document-return-buffer) origin-buffer
+                         (buffer-value buffer 'document-return-pop-state)
+                         origin-pop-state)
+                   (add-hook (variable-value 'kill-buffer-hook :buffer buffer)
+                             'notmuch-delete-temp-attachment)
+                   (setf transferred-p t)
+                   ;; Preserve the show buffer's existing window topology.
+                   (switch-to-buffer buffer nil)
+                   (setf (lem-core::window-pop-to-buffer-state origin-window)
+                         origin-pop-state)))
+            (unless transferred-p
+              (notmuch-remove-temp-attachment pathname directory))))
+        (notmuch-save-received-part attachment))
+    (message "No MIME attachment on this line")))
 
 (define-command lem-yath-notmuch-open-thread () ()
   "Open the thread on the current *lem-yath-mail* line in a read-only view (Return)."

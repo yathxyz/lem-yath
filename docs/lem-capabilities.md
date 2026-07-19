@@ -3403,16 +3403,21 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   bounded, converter controls are stripped, and metacharacter paths never pass
   through a shell.
 
-  Notmuch show buffers mark PDF MIME leaf rows. Return extracts the selected
-  decoded part with bounded direct `notmuch show --format=raw --part=N` argv
-  into a newly created owner-private directory and mode-0600 file, validates
-  `%PDF-` before opening the shared ephemeral reader, restores the exact show
-  pane on `q`, and removes the file and directory on every success or refusal
-  path. `scripts/documents-test.sh` proves dispatch, real Poppler/Pandoc argv,
+  Notmuch show buffers mark received MIME leaf rows. Return extracts a selected
+  PDF with bounded direct `notmuch show --format=raw --part=N` argv into a
+  newly created owner-private directory and mode-0600 file, validates `%PDF-`
+  before opening the shared ephemeral reader, restores the exact show pane on
+  `q`, and removes the file and directory on every success or refusal path.
+  Return on another MIME type invokes the configured save default; `. s`
+  explicitly saves any selected part. The prompt proposes the path-safe MIME
+  basename, remembers its last directory, asks before overwriting, then uses a
+  same-directory mode-0600 staging file and atomic rename. Symlink and
+  non-regular destinations fail closed. `scripts/documents-test.sh` proves dispatch, real Poppler/Pandoc argv,
   navigation, reuse, external fallback, non-file/size/output/timeout refusal,
   source preservation, and shell inertness through real ncurses;
   `scripts/notmuch-test.sh` additionally proves MIME discovery, private modes,
-  binary extraction, cleanup, refusal, and list/show restoration. This is a
+  binary extraction/save, overwrite decline and acceptance, staging cleanup,
+  symlink refusal, and list/show restoration. This is a
   deliberate terminal approximation: PDF pixel layout, images, links,
   annotations, and forms, plus EPUB HTML/CSS layout and images, remain in the
   external viewer selected with `o`.
@@ -3460,8 +3465,9 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   attachment snapshots after source removal, private resume cleanup, durable
   draft replacement/retirement, an injected FCC failure, and duplicate-safe
   retry. Address completion and bounded MIME attachment composition are also
-  covered. Raw signed/encrypted forwarding, non-PDF received-part actions, and
-  Outlook integration remain outside this bounded text-mail port.
+  covered. Raw signed/encrypted forwarding, the remainder of stock Notmuch's
+  richer received-part action map, and Outlook integration remain outside this
+  bounded text-mail port.
 
   The default Bridge credential entry has the ordinary authinfo shape
   `machine 127.0.0.1 port 1025 login BRIDGE_USER password BRIDGE_PASSWORD`.

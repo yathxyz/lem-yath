@@ -36,11 +36,17 @@ export LEM_YATH_NOTMUCH_DRAFT_LOG="$root/notmuch-draft.jsonl"
 export LEM_YATH_SMTP_FAKE_LOG="$root/smtp-submit.jsonl"
 export LEM_YATH_NOTMUCH_FAIL_INSERT_ONCE="$root/fail-insert-once"
 export LEM_YATH_NOTMUCH_PDF="$root/notmuch attachment;safe.pdf"
+export LEM_YATH_NOTMUCH_BINARY="$root/received binary;safe.bin"
 export LEM_YATH_NOTMUCH_COMPOSE_ATTACHMENT="$root/compose attachment safe.bin"
+received_save_dir="$root/saved parts;safe"
+received_save_target="$received_save_dir/chosen output;safe.bin"
+received_save_link="$received_save_dir/link output;safe.bin"
+received_save_sentinel="$received_save_dir/sentinel.bin"
+export LEM_YATH_NOTMUCH_SAVE_LINK="$received_save_link"
 smtp_attachment="$root/"'smtp attachment;safe $(touch PWNED).bin'
 fakebin="$root/fake bin;safe"
 export LEM_YATH_NOTMUCH_FAKE_BIN="$fakebin"
-mkdir -p "$HOME" "$XDG_CACHE_HOME" "$fakebin"
+mkdir -p "$HOME" "$XDG_CACHE_HOME" "$fakebin" "$received_save_dir"
 real_notmuch=$(command -v notmuch)
 : >"$LEM_YATH_NOTMUCH_REPORT"
 : >"$LEM_YATH_NOTMUCH_LOG"
@@ -51,6 +57,8 @@ real_notmuch=$(command -v notmuch)
 : >"$LEM_YATH_SMTP_FAKE_LOG"
 printf 'attachment bytes\000with binary\377tail\n' \
   >"$LEM_YATH_NOTMUCH_COMPOSE_ATTACHMENT"
+printf 'received bytes\000with binary\376tail\n' \
+  >"$LEM_YATH_NOTMUCH_BINARY"
 cp "$LEM_YATH_NOTMUCH_COMPOSE_ATTACHMENT" "$smtp_attachment"
 printf '%s\n' '{"searches":0,"news":0,"inserts":0,"draft_inserts":0,"drafts":{},"tags":{"alpha@example.invalid":["inbox","unread"],"payment+safe|touch@example.invalid":["inbox","unread"],"reply/second?value@example.invalid":["inbox","unread"]}}' >"$LEM_YATH_NOTMUCH_STATE"
 cp "$here/scripts/fake-notmuch.py" "$fakebin/notmuch"
@@ -523,13 +531,85 @@ else
   fail pdf-cleanup 'the ephemeral attachment buffer or private files survived q'
 fi
 
+received_default_ok=0
+lem_keys "$session" /
+sleep 0.3
+tmux_cmd send-keys -t "$session" -l -- 'archive;safe'
+lem_keys "$session" Enter Enter
+if lem_wait_for "$session" 'MIME part to' 15 >/dev/null; then
+  lem_keys "$session" C-u
+  tmux_cmd send-keys -t "$session" -l -- "$received_save_target"
+  lem_keys "$session" Enter
+fi
+if lem_wait_for "$session" 'Saved MIME part to' 20 >/dev/null &&
+   cmp -s "$LEM_YATH_NOTMUCH_BINARY" "$received_save_target" &&
+   [[ $(stat -c '%a' "$received_save_target") == 600 ]] &&
+   [[ ! -e PWNED ]] && invoke_report &&
+   [[ $(latest STATE) == *'mode=show '*'message=payment+safe|touch@example.invalid '*'source-exact=yes' ]]; then
+  received_default_ok=1
+  pass received-part-default 'Return saved a non-PDF part with exact bytes, a safe basename, and mode 0600'
+else
+  fail received-part-default 'default part action, destination prompt, bytes, mode, or show restoration diverged'
+fi
+
+# The inherited Evil-collection `.s' route saves every part explicitly.
+# Declining overwrite must preserve the old file; accepting it must replace
+# atomically with private decoded bytes.
+received_explicit_ok=0
+printf 'old destination bytes\n' >"$received_save_target"
+chmod 0644 "$received_save_target"
+lem_keys "$session" . s
+if lem_wait_for "$session" 'MIME part to' 15 >/dev/null; then
+  lem_keys "$session" C-u
+  tmux_cmd send-keys -t "$session" -l -- "$received_save_target"
+  lem_keys "$session" Enter
+fi
+if lem_wait_for "$session" 'already exists; overwrite' 15 >/dev/null; then
+  lem_keys "$session" n
+fi
+declined_ok=0
+if lem_wait_for "$session" 'MIME part was not saved' 15 >/dev/null &&
+   [[ $(<"$received_save_target") == 'old destination bytes' ]] &&
+   [[ $(stat -c '%a' "$received_save_target") == 644 ]]; then
+  declined_ok=1
+fi
+
+lem_keys "$session" . s
+if lem_wait_for "$session" 'MIME part to' 15 >/dev/null; then
+  lem_keys "$session" C-u
+  tmux_cmd send-keys -t "$session" -l -- "$received_save_target"
+  lem_keys "$session" Enter
+fi
+if lem_wait_for "$session" 'already exists; overwrite' 15 >/dev/null; then
+  lem_keys "$session" y
+fi
+accepted_ok=0
+if lem_wait_for "$session" 'Saved MIME part to' 20 >/dev/null &&
+   cmp -s "$LEM_YATH_NOTMUCH_BINARY" "$received_save_target" &&
+   [[ $(stat -c '%a' "$received_save_target") == 600 ]] &&
+   [[ -z $(find "$received_save_dir" -name '.lem-yath-part-*.tmp' -print -quit) ]]; then
+  accepted_ok=1
+fi
+
+if ((received_default_ok && declined_ok && accepted_ok)) &&
+   invoke_report && [[ $(latest STATE) == *'mode=show '*'keys=yes '*'source-exact=yes' ]]; then
+  received_explicit_ok=1
+  pass received-part-explicit '.s honored overwrite refusal/acceptance with atomic staging cleanup'
+else
+  fail received-part-explicit '.s binding, overwrite transaction, staging cleanup, or source restoration diverged'
+fi
+
+printf 'sentinel remains exact\n' >"$received_save_sentinel"
+ln -s "$received_save_sentinel" "$received_save_link"
 before_refusal=$(report_count REFUSAL)
 lem_keys "$session" F9
 if wait_report REFUSAL "$before_refusal" &&
-   [[ $(latest REFUSAL) == 'REFUSAL output=yes nonpdf=yes timeout=yes invalid=yes clean=yes source=yes' ]]; then
-  pass pdf-refusal 'oversize, non-PDF, timeout, and invalid-ID extraction failed cleanly'
+   [[ $(latest REFUSAL) == 'REFUSAL output=yes nonpdf=yes timeout=yes invalid=yes symlink=yes clean=yes source=yes' ]] &&
+   [[ -L $received_save_link ]] &&
+   [[ $(<"$received_save_sentinel") == 'sentinel remains exact' ]]; then
+  pass part-refusal 'oversize, non-PDF, timeout, invalid-ID, and symlink cases failed cleanly'
 else
-  fail pdf-refusal 'an attachment extraction refusal leaked or disturbed the mail view'
+  fail part-refusal 'a received-part refusal leaked, followed a symlink, or disturbed the mail view'
 fi
 
 before_compose=$(report_count COMPOSE)
@@ -1256,6 +1336,12 @@ assert [
     "show",
     "--format=raw",
     "--part=7",
+    'id:"payment+safe|touch@example.invalid"',
+] in calls
+assert [
+    "show",
+    "--format=raw",
+    "--part=8",
     'id:"payment+safe|touch@example.invalid"',
 ] in calls
 assert ["show", "--format=raw", "--part=8", 'id:"bad@example.invalid"'] in calls

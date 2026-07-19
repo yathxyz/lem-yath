@@ -124,6 +124,13 @@ def show_tree(thread_id: str, data: dict) -> list:
                         "filename": "quarterly report;safe.pdf",
                         "content-length": 1024,
                     },
+                    {
+                        "id": 8,
+                        "content-type": "application/octet-stream",
+                        "content-disposition": "attachment",
+                        "filename": "../../archive;safe $(touch PWNED).bin",
+                        "content-length": 64,
+                    },
                 ],
             }
         ],
@@ -352,6 +359,16 @@ def main() -> int:
             if args == success:
                 sys.stdout.buffer.write(
                     Path(os.environ["LEM_YATH_NOTMUCH_PDF"]).read_bytes()
+                )
+                return 0
+            if args == [
+                "show",
+                "--format=raw",
+                "--part=8",
+                'id:"payment+safe|touch@example.invalid"',
+            ]:
+                sys.stdout.buffer.write(
+                    Path(os.environ["LEM_YATH_NOTMUCH_BINARY"]).read_bytes()
                 )
                 return 0
             if args == [
