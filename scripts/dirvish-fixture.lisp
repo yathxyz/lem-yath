@@ -265,12 +265,19 @@
            (merge-pathnames "special.fifo" *dirvish-test-root*)))
         (crowded
           (dirvish-preview-text
-           (merge-pathnames "zz-crowded/" *dirvish-test-root*))))
+           (merge-pathnames "zz-crowded/" *dirvish-test-root*)))
+        (small-directory (dirvish-preview-text *dirvish-test-root*)))
     (dirvish-test-log
-     "SAFE binary=~a special=~a bounded=~a debounce=~d throttle=~d limit=~d"
+     (concatenate
+      'string
+      "SAFE binary=~a special=~a bounded=~a eof=~a "
+      "debounce=~d throttle=~d limit=~d")
      (if (search "binary" binary) "yes" "no")
      (if (search "Special files are never opened" special) "yes" "no")
      (if (search "first 200 entries shown" crowded) "yes" "no")
+     (if (and (search "open.txt" small-directory)
+              (not (search "Preview unavailable" small-directory)))
+         "yes" "no")
      +dirvish-preview-debounce-milliseconds+
      +dirvish-preview-throttle-milliseconds+
      +dirvish-preview-directory-limit+)))

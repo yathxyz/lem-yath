@@ -176,7 +176,7 @@ else
 fi
 
 lem_keys "$session" F11
-if wait_report '^SAFE binary=yes special=yes bounded=yes debounce=20 throttle=250 limit=200$'; then
+if wait_report '^SAFE binary=yes special=yes bounded=yes eof=yes debounce=20 throttle=250 limit=200$'; then
   pass preview-boundaries 'binary, FIFO, and large-directory previews stayed bounded and non-opening'
 else
   fail preview-boundaries 'preview safety or pinned scheduling bounds differed'

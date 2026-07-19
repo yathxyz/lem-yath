@@ -257,7 +257,8 @@
          (progn
            (setf directory (sb-posix:opendir (dirvish-native-path pathname)))
            (loop :for entry := (sb-posix:readdir directory)
-                 :while entry
+                 ;; SB-POSIX returns a non-NIL null alien at end-of-directory.
+                 :until (sb-alien:null-alien entry)
                  ;; READDIR may reuse its foreign entry storage on the next
                  ;; call.  Retain only an immediate Lisp-owned copy.
                  :for name := (copy-seq (sb-posix:dirent-name entry))
