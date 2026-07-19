@@ -28,6 +28,8 @@ mkdir -p "$HOME" "$XDG_CACHE_HOME" "$LEM_YATH_FORGE_ROOT"
 : >"$LEM_YATH_FORGE_REPORT"
 : >"$LEM_YATH_FORGE_FAKE_LOG"
 cp "$here/scripts/fake-gh.py" "$LEM_YATH_FORGE_FAKE_GH"
+python="$(command -v python3)"
+sed -i "1c#!$python" "$LEM_YATH_FORGE_FAKE_GH"
 chmod +x "$LEM_YATH_FORGE_FAKE_GH"
 
 cat >"$LEM_YATH_FORGE_FAKE_STATE" <<'JSON'

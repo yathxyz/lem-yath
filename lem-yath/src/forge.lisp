@@ -125,7 +125,12 @@
       (editor-error "No github.com remote is configured for this repository")))
 
 (defun forge-context-root ()
-  (or (git-root)
+  (or (alexandria:when-let
+          ((repository
+             (or (buffer-value (current-buffer) 'forge-repository)
+                 (buffer-value (current-buffer) 'forge-compose-repository))))
+        (forge-repository-root repository))
+      (git-root)
       (editor-error "The current buffer is not inside a Git repository")))
 
 (defun forge-json-string (object key)
@@ -245,7 +250,8 @@
                              "~%P pull requests  I issues  a all  g refresh  Return inspect  ? help~%"))
       (setf (buffer-value buffer 'forge-repository) repository
             (buffer-value buffer 'forge-view) view
-            (buffer-value buffer 'forge-topic-rows) rows)
+            (buffer-value buffer 'forge-topic-rows) rows
+            (buffer-directory buffer) (forge-repository-root repository))
       (buffer-start point)
       (let ((line (and selected
                        (forge-find-topic-line buffer
@@ -370,7 +376,8 @@
                        (format nil
                                "~%r comment  s close/reopen  b browser  g refresh  q quit~%")))
       (setf (buffer-value buffer 'forge-repository) repository
-            (buffer-value buffer 'forge-topic) topic)
+            (buffer-value buffer 'forge-topic) topic
+            (buffer-directory buffer) (forge-repository-root repository))
       (buffer-start point)))
   (change-buffer-mode buffer 'lem-yath-forge-topic-mode)
   (buffer-unmark buffer)
@@ -416,7 +423,8 @@
                                   (forge-topic-label topic)))))
         (setf (buffer-value buffer 'forge-compose-repository) repository
               (buffer-value buffer 'forge-compose-action) action
-              (buffer-value buffer 'forge-compose-topic) topic)
+              (buffer-value buffer 'forge-compose-topic) topic
+              (buffer-directory buffer) (forge-repository-root repository))
         (buffer-start point)
         (if (member action '(:issue :pullreq))
             (progn
