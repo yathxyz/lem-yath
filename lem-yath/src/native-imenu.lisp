@@ -427,6 +427,42 @@
                      (return (tree-sitter-node-text buffer child)))
                 (delete-tree-sitter-node child))))
 
+(defun imenu-tree-sitter-first-subtree-text
+    (buffer node node-type &optional (max-depth *imenu-tree-sitter-depth*))
+  "Return the first NODE-TYPE text below NODE within MAX-DEPTH."
+  (labels ((walk (current depth)
+             (if (string= (tree-sitter:node-type current) node-type)
+                 (tree-sitter-node-text buffer current)
+                 (when (< depth max-depth)
+                   (loop :for index
+                           :below (tree-sitter:node-named-child-count current)
+                         :for child :=
+                           (tree-sitter:node-named-child current index)
+                         :when child
+                           :do (let ((result
+                                      (unwind-protect
+                                           (walk child (1+ depth))
+                                        (delete-tree-sitter-node child))))
+                                 (when result (return result))))))))
+    (walk node 0)))
+
+(defun imenu-tree-sitter-subtree-type-p (node node-type max-depth)
+  "Whether NODE-TYPE occurs below NODE within MAX-DEPTH."
+  (labels ((walk (current depth)
+             (or (string= (tree-sitter:node-type current) node-type)
+                 (and (< depth max-depth)
+                      (loop :for index
+                              :below (tree-sitter:node-named-child-count current)
+                            :for child :=
+                              (tree-sitter:node-named-child current index)
+                            :when child
+                              :do (let ((result
+                                         (unwind-protect
+                                              (walk child (1+ depth))
+                                           (delete-tree-sitter-node child))))
+                                    (when result (return result))))))))
+    (walk node 0)))
+
 (defun imenu-tree-sitter-node-point (buffer node)
   (let ((point (expand-region-byte-to-point
                 buffer (tree-sitter:node-start-byte node))))
@@ -911,6 +947,127 @@ this function consumes NODE and every named-child handle it obtains."
                 (buffer-name buffer) condition)
       nil)))
 
+;;; --- go-ts-mode ---------------------------------------------------------
+
+(defparameter *imenu-go-settings*
+  '(("Function" . "function_declaration")
+    ("Method" . "method_declaration")
+    ("Struct" . "type_declaration")
+    ("Interface" . "type_declaration")
+    ("Type" . "type_declaration")
+    ("Alias" . "type_declaration")))
+
+(defun imenu-go-type-declaration-name (buffer node)
+  ;; Pinned go-ts-mode deliberately asks only the first named child for its
+  ;; name.  A grouped type declaration therefore uses its first spec's name in
+  ;; every category whose predicate matches anywhere in that declaration.
+  (let ((spec (tree-sitter:node-named-child node 0)))
+    (when spec
+      (unwind-protect
+           (imenu-tree-sitter-direct-child-text
+            buffer spec '("type_identifier"))
+        (delete-tree-sitter-node spec)))))
+
+(defun imenu-go-method-receiver-name (buffer node)
+  (loop :for index :below (tree-sitter:node-named-child-count node)
+        :for child := (tree-sitter:node-named-child node index)
+        :when child
+          :do (unwind-protect
+                   (when (string= (tree-sitter:node-type child)
+                                  "parameter_list")
+                     (return
+                       (imenu-tree-sitter-first-subtree-text
+                        buffer child "type_identifier")))
+                (delete-tree-sitter-node child))))
+
+(defun imenu-go-node-name (buffer node)
+  (let ((type (tree-sitter:node-type node)))
+    (cond
+      ((string= type "function_declaration")
+       (imenu-tree-sitter-direct-child-text buffer node '("identifier")))
+      ((string= type "method_declaration")
+       (let ((receiver (imenu-go-method-receiver-name buffer node))
+             (method
+               (imenu-tree-sitter-direct-child-text
+                buffer node '("field_identifier"))))
+         (and receiver method (format nil "(~a).~a" receiver method))))
+      ((string= type "type_declaration")
+       (imenu-go-type-declaration-name buffer node)))))
+
+(defun imenu-go-valid-p (node category)
+  (flet ((contains-p (type depth)
+           (imenu-tree-sitter-subtree-type-p node type depth)))
+    (cond
+      ((string= category "Struct")
+       (contains-p "struct_type" 2))
+      ((string= category "Interface")
+       (contains-p "interface_type" 2))
+      ((string= category "Alias")
+       (contains-p "type_alias" 1))
+      ((string= category "Type")
+       (not (or (contains-p "interface_type" 2)
+                (contains-p "struct_type" 2)
+                (contains-p "type_alias" 1))))
+      (t t))))
+
+(defun imenu-go-entry-candidate (buffer node category name children)
+  (let* ((point (imenu-tree-sitter-node-point buffer node))
+         (detail (format nil "[Go ~a] line ~d"
+                         category (line-number-at-point point))))
+    (if children
+        (make-imenu-candidate
+         :label name
+         :detail detail
+         :children
+         (cons (make-imenu-candidate
+                :label " "
+                :detail detail
+                :point point)
+               children))
+        (make-imenu-candidate :label name :detail detail :point point))))
+
+(defun imenu-go-walk-category (buffer node category node-type depth)
+  "Return NODE's sparse Go forest for CATEGORY and consume NODE."
+  (unwind-protect
+       (let ((matching-p (string= (tree-sitter:node-type node) node-type))
+             (children nil))
+         (when (< depth *imenu-tree-sitter-depth*)
+           (dotimes (index (tree-sitter:node-named-child-count node))
+             (let ((child (tree-sitter:node-named-child node index)))
+               (when child
+                 (setf children
+                       (nconc children
+                              (imenu-go-walk-category
+                               buffer child category node-type
+                               (1+ depth))))))))
+         (if (and matching-p (imenu-go-valid-p node category))
+             (list
+              (imenu-go-entry-candidate
+               buffer node category
+               (or (imenu-go-node-name buffer node) "Anonymous")
+               children))
+             children))
+    (delete-tree-sitter-node node)))
+
+(defun imenu-go-candidates (buffer)
+  "Match pinned go-ts-mode's categorized tree-sitter Imenu index."
+  (handler-case
+      (with-imenu-tree-sitter-candidate-points
+        (alexandria:when-let ((tree (imenu-tree-sitter-current-tree buffer)))
+          (loop :for (category . node-type) :in *imenu-go-settings*
+                :for children :=
+                  (imenu-go-walk-category
+                   buffer (tree-sitter:tree-root-node tree)
+                   category node-type 0)
+                :when children
+                  :collect (make-imenu-candidate
+                            :label category
+                            :children children))))
+    (error (condition)
+      (log:warn "Go Imenu indexing failed for ~a: ~a"
+                (buffer-name buffer) condition)
+      nil)))
+
 (register-imenu-native-provider 'org-mode 'imenu-org-candidates)
 (register-imenu-native-provider
  'lem-markdown-mode:markdown-mode 'imenu-markdown-candidates)
@@ -922,3 +1079,4 @@ this function consumes NODE and every named-child handle it obtains."
 (register-imenu-native-provider 'c++-mode 'imenu-c++-candidates)
 (register-imenu-native-provider
  'lem-rust-mode:rust-mode 'imenu-rust-candidates)
+(register-imenu-native-provider 'lem-go-mode:go-mode 'imenu-go-candidates)

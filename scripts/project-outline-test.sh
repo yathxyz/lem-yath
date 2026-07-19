@@ -23,6 +23,7 @@ export LEM_YATH_PROJECT_OUTLINE_JAVA="$root/NativeImenu.java"
 export LEM_YATH_PROJECT_OUTLINE_C="$root/native-imenu.c"
 export LEM_YATH_PROJECT_OUTLINE_CPP="$root/NativeImenu.cpp"
 export LEM_YATH_PROJECT_OUTLINE_RUST="$root/native-imenu.rs"
+export LEM_YATH_PROJECT_OUTLINE_GO="$root/native-imenu.go"
 export LEM_YATH_PROJECT_OUTLINE_READER_MARKER="$root/reader-evaluated"
 mkdir -p "$HOME" "$WORKDIR" "$root/config" "$root/outside" "$root/malicious"
 
@@ -260,6 +261,30 @@ for line in $(seq 1 90); do
     *) printf '\n' ;;
   esac
 done >"$LEM_YATH_PROJECT_OUTLINE_RUST"
+
+for line in $(seq 1 90); do
+  case "$line" in
+    1) printf '%s\n' 'package demo' ;;
+    3) printf '%s\n' 'func Top() {}' ;;
+    8) printf '%s\n' 'func (receiver *Record) Work() {}' ;;
+    14) printf '%s\n' 'type Record struct { Value int }' ;;
+    20) printf '%s\n' 'type Worker interface { Work() }' ;;
+    26) printf '%s\n' 'type Count int' ;;
+    32) printf '%s\n' 'type Alias = string' ;;
+    38) printf '%s\n' 'type (' ;;
+    39) printf '%s\n' '    GroupStruct struct{}' ;;
+    40) printf '%s\n' '    GroupInterface interface{}' ;;
+    41) printf '%s\n' '    GroupType int' ;;
+    42) printf '%s\n' '    GroupAlias = string' ;;
+    43) printf '%s\n' ')' ;;
+    50) printf '%s\n' 'func Container() {' ;;
+    52) printf '%s\n' '    type Local int' ;;
+    54) printf '%s\n' '}' ;;
+    64) printf '%s\n' 'const DECOY = "type Fake struct{}"' ;;
+    68) printf '%s\n' '// func commentFake() {}' ;;
+    *) printf '\n' ;;
+  esac
+done >"$LEM_YATH_PROJECT_OUTLINE_GO"
 
 for line in $(seq 1 80); do
   case "$line" in
@@ -1237,6 +1262,118 @@ if invoke_mx imenu 'Index item:'; then
   fi
 else
   fail imenu-rust-command 'M-x imenu did not reopen for a nested function jump'
+fi
+
+# go-ts-mode uses six ordered categories.  Its predicates classify an entire
+# parenthesized type declaration, while its name function deliberately keeps
+# the first spec's name for every matching category.
+send_chord C-c z g
+lem_wait_for "$session" 'package demo' 10 >/dev/null || true
+send_chord C-c z m
+wait_report_count '^MODE file=go major=GO-MODE tree=go$' 1 || true
+if grep -q '^MODE file=go major=GO-MODE tree=go$' \
+     "$LEM_YATH_PROJECT_OUTLINE_REPORT"; then
+  pass imenu-go-routing 'Go suffixes select the configured mode and grammar'
+else
+  fail imenu-go-routing 'the Go fixture did not activate Go tree-sitter'
+fi
+send_chord C-c z v
+wait_report_count '^PROVIDER file=go native=IMENU-GO-CANDIDATES lsp=none$' 1 || true
+if grep -q '^PROVIDER file=go native=IMENU-GO-CANDIDATES lsp=none$' \
+     "$LEM_YATH_PROJECT_OUTLINE_REPORT"; then
+  pass imenu-go-provider 'the fallback uses native Go symbols without LSP'
+else
+  fail imenu-go-provider 'an LSP workspace or different provider owned Go Imenu'
+fi
+
+send_chord C-c z i
+wait_report_count '^IMENU-INDEX file=go count=17$' 1 || true
+go_index_ok=1
+for path in \
+  'Function' \
+  'Function/Top' \
+  'Function/Container' \
+  'Method' \
+  'Method/(Record).Work' \
+  'Struct' \
+  'Struct/Record' \
+  'Struct/GroupStruct' \
+  'Interface' \
+  'Interface/Worker' \
+  'Interface/GroupStruct' \
+  'Type' \
+  'Type/Count' \
+  'Type/Local' \
+  'Alias' \
+  'Alias/Alias' \
+  'Alias/GroupStruct'; do
+  grep -Fqx "IMENU-PATH file=go path=\"$path\"" \
+    "$LEM_YATH_PROJECT_OUTLINE_REPORT" || go_index_ok=0
+done
+go_root_order="$(sed -n \
+  's/^IMENU-PATH file=go path="\([^/"]*\)"$/\1/p' \
+  "$LEM_YATH_PROJECT_OUTLINE_REPORT" | paste -sd, -)"
+if [ "$go_index_ok" = 1 ] &&
+   [ "$(report_count '^IMENU-PATH file=go ')" -eq 17 ] &&
+   [ "$go_root_order" = 'Function,Method,Struct,Interface,Type,Alias' ] &&
+   ! grep -Eq '^IMENU-PATH file=go .*(DECOY|Fake|commentFake)' \
+     "$LEM_YATH_PROJECT_OUTLINE_REPORT"; then
+  pass imenu-go-index 'Go Imenu matches pinned categories, predicates, and names'
+else
+  fail imenu-go-index 'Go categories, grouped types, receiver names, or exclusions differed'
+fi
+
+send_chord C-c z b
+send_chord C-c z r
+wait_report_count '^STATE file=go line=90 column=0 ' 1 || true
+go_origin="$(grep '^STATE file=go line=90 column=0 ' \
+  "$LEM_YATH_PROJECT_OUTLINE_REPORT" | tail -1)"
+go_origin_view="$(sed -n 's/^.* view=\([^ ]*\) minor.*$/\1/p' \
+  <<<"$go_origin")"
+
+if invoke_mx imenu 'Index item:'; then
+  go_top="$(lem_capture "$session")"
+  if grep -Fq 'Function' <<<"$go_top" &&
+     grep -Fq 'Method' <<<"$go_top" &&
+     grep -Fq 'Struct' <<<"$go_top" &&
+     grep -Fq 'Interface' <<<"$go_top" &&
+     grep -Fq 'Type' <<<"$go_top" &&
+     grep -Fq 'Alias' <<<"$go_top"; then
+    pass imenu-go-presentation 'Go roots expose every pinned category'
+  else
+    fail imenu-go-presentation 'the Go category prompt differed'
+  fi
+  tmux_cmd send-keys -t "$session" -l Method
+  send_chord Enter
+  sleep 0.3
+  tmux_cmd send-keys -t "$session" -l '(Record).Work'
+  send_chord Enter
+  sleep 0.5
+  send_chord C-c z r
+  wait_report_count '^STATE file=go line=8 column=0 ' 1 || true
+  go_final="$(grep '^STATE file=go line=8 column=0 ' \
+    "$LEM_YATH_PROJECT_OUTLINE_REPORT" | tail -1)"
+  go_view="$(sed -n 's/^.* view=\([^ ]*\) minor.*$/\1/p' \
+    <<<"$go_final")"
+  if grep -q 'pulse=no pulse-stage=none .*pulse-overlays=0' \
+       <<<"$go_final" &&
+     [ -n "$go_origin_view" ] && [ -n "$go_view" ] &&
+     [ "$go_origin_view" != "$go_view" ]; then
+    pass imenu-go-jump 'Go Imenu lands on a receiver-qualified method without pulse'
+  else
+    fail imenu-go-jump "the Go Imenu destination differed: $go_final"
+  fi
+  send_chord C-o
+  sleep 0.3
+  send_chord C-c z r
+  wait_report_count '^STATE file=go line=90 column=0 ' 2 || true
+  if [ "$(report_count '^STATE file=go line=90 column=0 ')" -ge 2 ]; then
+    pass imenu-go-jumplist 'C-o returns from Go Imenu to its exact origin'
+  else
+    fail imenu-go-jumplist 'Go Imenu did not record one Vi jump'
+  fi
+else
+  fail imenu-go-command 'M-x imenu did not open in the Go fixture'
 fi
 
 send_chord C-c z 2

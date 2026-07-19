@@ -439,6 +439,12 @@ retain literal-space self entries, trait implementations keep labels such as
 and strings/comments do not create definitions. A ready rust-analyzer document
 symbol provider still takes precedence; the native index is the exact offline
 and not-yet-ready fallback.
+Native Go buffers reproduce go-ts-mode's ordered `Function`, `Method`,
+`Struct`, `Interface`, `Type`, and `Alias` categories. Methods retain receiver
+labels such as `(Record).Work`, local type declarations remain visible, and a
+mixed parenthesized type declaration follows GNU's whole-declaration predicates
+and first-spec naming, even when that repeats `GroupStruct` under multiple
+categories. A ready gopls document-symbol provider remains authoritative.
 
 Acceptance records one Vi jumplist entry and runs the configured Imenu feedback:
 recenter only, with no Consult Pulsar pulse. `scripts/lsp-project-test.sh` and
