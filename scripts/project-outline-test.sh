@@ -22,6 +22,7 @@ export LEM_YATH_PROJECT_OUTLINE_PYTHON_WIDE="$root/native-imenu-wide.py"
 export LEM_YATH_PROJECT_OUTLINE_JAVA="$root/NativeImenu.java"
 export LEM_YATH_PROJECT_OUTLINE_C="$root/native-imenu.c"
 export LEM_YATH_PROJECT_OUTLINE_CPP="$root/NativeImenu.cpp"
+export LEM_YATH_PROJECT_OUTLINE_RUST="$root/native-imenu.rs"
 export LEM_YATH_PROJECT_OUTLINE_READER_MARKER="$root/reader-evaluated"
 mkdir -p "$HOME" "$WORKDIR" "$root/config" "$root/outside" "$root/malicious"
 
@@ -234,6 +235,31 @@ for line in $(seq 1 100); do
     *) printf '\n' ;;
   esac
 done >"$LEM_YATH_PROJECT_OUTLINE_CPP"
+
+for line in $(seq 1 90); do
+  case "$line" in
+    1) printf '%s\n' 'mod outer {' ;;
+    3) printf '%s\n' '    pub fn module_fn() {}' ;;
+    5) printf '%s\n' '    mod inner {}' ;;
+    7) printf '%s\n' '}' ;;
+    12) printf '%s\n' 'enum Shade { Red }' ;;
+    18) printf '%s\n' 'impl<T> Display for Wrapper<T> {' ;;
+    20) printf '%s\n' '    fn trait_method(&self) {}' ;;
+    22) printf '%s\n' '}' ;;
+    28) printf '%s\n' 'impl Wrapper<i32> {' ;;
+    30) printf '%s\n' '    fn inherent(&self) {}' ;;
+    32) printf '%s\n' '}' ;;
+    38) printf '%s\n' 'type Alias = Wrapper<i32>;' ;;
+    44) printf '%s\n' 'struct Wrapper<T> { value: T }' ;;
+    52) printf '%s\n' 'fn top() {' ;;
+    54) printf '%s\n' '    fn nested() {}' ;;
+    56) printf '%s\n' '    nested();' ;;
+    58) printf '%s\n' '}' ;;
+    64) printf '%s\n' 'const DECOY: &str = "fn fake() {}";' ;;
+    68) printf '%s\n' '// fn comment_fake() {}' ;;
+    *) printf '\n' ;;
+  esac
+done >"$LEM_YATH_PROJECT_OUTLINE_RUST"
 
 for line in $(seq 1 80); do
   case "$line" in
@@ -1074,6 +1100,143 @@ if invoke_mx imenu 'Index item:'; then
   fi
 else
   fail imenu-cpp-command 'M-x imenu did not reopen for a qualified jump'
+fi
+
+# rust-ts-mode exposes six ordered sparse-tree categories.  Matching parents
+# retain a literal-space self entry, impl labels preserve trait/type text, and
+# functions nest only below matching function ancestors.
+send_chord C-c z u
+lem_wait_for "$session" 'mod outer' 10 >/dev/null || true
+send_chord C-c z m
+wait_report_count '^MODE file=rust major=RUST-MODE tree=rust$' 1 || true
+if grep -q '^MODE file=rust major=RUST-MODE tree=rust$' \
+     "$LEM_YATH_PROJECT_OUTLINE_REPORT"; then
+  pass imenu-rust-routing 'Rust suffixes select the configured mode and grammar'
+else
+  fail imenu-rust-routing 'the Rust fixture did not activate Rust tree-sitter'
+fi
+send_chord C-c z v
+wait_report_count '^PROVIDER file=rust native=IMENU-RUST-CANDIDATES lsp=none$' 1 || true
+if grep -q '^PROVIDER file=rust native=IMENU-RUST-CANDIDATES lsp=none$' \
+     "$LEM_YATH_PROJECT_OUTLINE_REPORT"; then
+  pass imenu-rust-provider 'the fallback uses native Rust symbols without LSP'
+else
+  fail imenu-rust-provider 'an LSP workspace or different provider owned Rust Imenu'
+fi
+
+send_chord C-c z i
+wait_report_count '^IMENU-INDEX file=rust count=20$' 1 || true
+rust_index_ok=1
+for path in \
+  'Module' \
+  'Module/outer' \
+  'Module/outer/ ' \
+  'Module/outer/inner' \
+  'Enum' \
+  'Enum/Shade' \
+  'Impl' \
+  'Impl/Display for Wrapper<T>' \
+  'Impl/Wrapper<i32>' \
+  'Type' \
+  'Type/Alias' \
+  'Struct' \
+  'Struct/Wrapper' \
+  'Fn' \
+  'Fn/module_fn' \
+  'Fn/trait_method' \
+  'Fn/inherent' \
+  'Fn/top' \
+  'Fn/top/ ' \
+  'Fn/top/nested'; do
+  grep -Fqx "IMENU-PATH file=rust path=\"$path\"" \
+    "$LEM_YATH_PROJECT_OUTLINE_REPORT" || rust_index_ok=0
+done
+rust_root_order="$(sed -n \
+  's/^IMENU-PATH file=rust path="\([^/"]*\)"$/\1/p' \
+  "$LEM_YATH_PROJECT_OUTLINE_REPORT" | paste -sd, -)"
+if [ "$rust_index_ok" = 1 ] &&
+   [ "$(report_count '^IMENU-PATH file=rust ')" -eq 20 ] &&
+   [ "$rust_root_order" = 'Module,Enum,Impl,Type,Struct,Fn' ] &&
+   ! grep -Eq '^IMENU-PATH file=rust .*(fake|comment_fake)' \
+     "$LEM_YATH_PROJECT_OUTLINE_REPORT"; then
+  pass imenu-rust-index 'Rust Imenu matches pinned categories, names, and hierarchy'
+else
+  fail imenu-rust-index 'Rust categories, impl labels, hierarchy, or exclusions differed'
+fi
+
+send_chord C-c z b
+if invoke_mx imenu 'Index item:'; then
+  rust_top="$(lem_capture "$session")"
+  if grep -Fq 'Module' <<<"$rust_top" &&
+     grep -Fq 'Enum' <<<"$rust_top" &&
+     grep -Fq 'Impl' <<<"$rust_top" &&
+     grep -Fq 'Type' <<<"$rust_top" &&
+     grep -Fq 'Struct' <<<"$rust_top" &&
+     grep -Fq 'Fn' <<<"$rust_top"; then
+    pass imenu-rust-presentation 'Rust roots expose every pinned category'
+  else
+    fail imenu-rust-presentation 'the Rust category prompt differed'
+  fi
+  tmux_cmd send-keys -t "$session" -l Module
+  send_chord Enter
+  sleep 0.3
+  tmux_cmd send-keys -t "$session" -l outer
+  send_chord Enter
+  sleep 0.4
+  rust_module="$(lem_capture "$session")"
+  if grep -Fq 'inner' <<<"$rust_module"; then
+    pass imenu-rust-hierarchy 'a Rust module opens its self/nested-module hierarchy'
+  else
+    fail imenu-rust-hierarchy 'the Rust module hierarchy prompt differed'
+  fi
+  send_chord C-g
+else
+  fail imenu-rust-command 'M-x imenu did not open in the Rust fixture'
+fi
+
+send_chord C-c z b
+send_chord C-c z r
+wait_report_count '^STATE file=rust line=90 column=0 ' 1 || true
+rust_origin="$(grep '^STATE file=rust line=90 column=0 ' \
+  "$LEM_YATH_PROJECT_OUTLINE_REPORT" | tail -1)"
+rust_origin_view="$(sed -n 's/^.* view=\([^ ]*\) minor.*$/\1/p' \
+  <<<"$rust_origin")"
+
+if invoke_mx imenu 'Index item:'; then
+  tmux_cmd send-keys -t "$session" -l Fn
+  send_chord Enter
+  sleep 0.3
+  tmux_cmd send-keys -t "$session" -l top
+  send_chord Enter
+  sleep 0.3
+  tmux_cmd send-keys -t "$session" -l nested
+  send_chord Enter
+  sleep 0.5
+  send_chord C-c z r
+  wait_report_count '^STATE file=rust line=54 column=4 ' 1 || true
+  rust_final="$(grep '^STATE file=rust line=54 column=4 ' \
+    "$LEM_YATH_PROJECT_OUTLINE_REPORT" | tail -1)"
+  rust_view="$(sed -n 's/^.* view=\([^ ]*\) minor.*$/\1/p' \
+    <<<"$rust_final")"
+  if grep -q 'pulse=no pulse-stage=none .*pulse-overlays=0' \
+       <<<"$rust_final" &&
+     [ -n "$rust_origin_view" ] && [ -n "$rust_view" ] &&
+     [ "$rust_origin_view" != "$rust_view" ]; then
+    pass imenu-rust-jump 'Rust Imenu lands on a nested function without pulse'
+  else
+    fail imenu-rust-jump "the Rust Imenu destination differed: $rust_final"
+  fi
+  send_chord C-o
+  sleep 0.3
+  send_chord C-c z r
+  wait_report_count '^STATE file=rust line=90 column=0 ' 2 || true
+  if [ "$(report_count '^STATE file=rust line=90 column=0 ')" -ge 2 ]; then
+    pass imenu-rust-jumplist 'C-o returns from Rust Imenu to its exact origin'
+  else
+    fail imenu-rust-jumplist 'Rust Imenu did not record one Vi jump'
+  fi
+else
+  fail imenu-rust-command 'M-x imenu did not reopen for a nested function jump'
 fi
 
 send_chord C-c z 2

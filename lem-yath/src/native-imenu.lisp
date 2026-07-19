@@ -416,6 +416,17 @@
                      (return (tree-sitter-node-text buffer child)))
                 (delete-tree-sitter-node child))))
 
+(defun imenu-tree-sitter-direct-child-text (buffer node types)
+  "Return the text of NODE's first direct named child in TYPES."
+  (loop :for index :below (tree-sitter:node-named-child-count node)
+        :for child := (tree-sitter:node-named-child node index)
+        :when child
+          :do (unwind-protect
+                   (when (member (tree-sitter:node-type child) types
+                                 :test #'string=)
+                     (return (tree-sitter-node-text buffer child)))
+                (delete-tree-sitter-node child))))
+
 (defun imenu-tree-sitter-node-point (buffer node)
   (let ((point (expand-region-byte-to-point
                 buffer (tree-sitter:node-start-byte node))))
@@ -799,6 +810,107 @@ this function consumes NODE and every named-child handle it obtains."
                 (buffer-name buffer) condition)
       nil)))
 
+;;; --- rust-ts-mode -------------------------------------------------------
+
+(defparameter *imenu-rust-settings*
+  '(("Module" . "mod_item")
+    ("Enum" . "enum_item")
+    ("Impl" . "impl_item")
+    ("Type" . "type_item")
+    ("Struct" . "struct_item")
+    ("Fn" . "function_item")))
+
+(defun imenu-rust-impl-name (buffer node)
+  "Return pinned rust-ts-mode's trait/type label for an impl NODE."
+  (let ((types nil))
+    (dotimes (index (tree-sitter:node-named-child-count node))
+      (let ((child (tree-sitter:node-named-child node index)))
+        (when child
+          (unwind-protect
+               (unless (member (tree-sitter:node-type child)
+                               '("attribute_item" "inner_attribute_item"
+                                 "type_parameters" "where_clause"
+                                 "declaration_list")
+                               :test #'string=)
+                 (setf types
+                       (nconc types
+                              (list (tree-sitter-node-text buffer child)))))
+            (delete-tree-sitter-node child)))))
+    (case (length types)
+      (0 nil)
+      (1 (first types))
+      (otherwise (format nil "~a for ~a" (first types) (second types))))))
+
+(defun imenu-rust-node-name (buffer node)
+  (let ((type (tree-sitter:node-type node)))
+    (cond
+      ((string= type "impl_item")
+       (imenu-rust-impl-name buffer node))
+      ((member type '("enum_item" "struct_item" "type_item")
+               :test #'string=)
+       (imenu-tree-sitter-direct-child-text
+        buffer node '("type_identifier")))
+      ((member type '("mod_item" "function_item") :test #'string=)
+       (imenu-tree-sitter-direct-child-text buffer node '("identifier"))))))
+
+(defun imenu-rust-entry-candidate (buffer node category name children)
+  (let* ((point (imenu-tree-sitter-node-point buffer node))
+         (detail (format nil "[Rust ~a] line ~d"
+                         category (line-number-at-point point))))
+    (if children
+        (make-imenu-candidate
+         :label name
+         :detail detail
+         :children
+         (cons (make-imenu-candidate
+                :label " "
+                :detail detail
+                :point point)
+               children))
+        (make-imenu-candidate :label name :detail detail :point point))))
+
+(defun imenu-rust-walk-category (buffer node category node-type depth)
+  "Return NODE's sparse Rust forest for CATEGORY and consume NODE."
+  (unwind-protect
+       (let ((matching-p (string= (tree-sitter:node-type node) node-type))
+             (children nil))
+         (when (< depth *imenu-tree-sitter-depth*)
+           (dotimes (index (tree-sitter:node-named-child-count node))
+             (let ((child (tree-sitter:node-named-child node index)))
+               (when child
+                 (setf children
+                       (nconc children
+                              (imenu-rust-walk-category
+                               buffer child category node-type
+                               (1+ depth))))))))
+         (if matching-p
+             (list
+              (imenu-rust-entry-candidate
+               buffer node category
+               (or (imenu-rust-node-name buffer node) "Anonymous")
+               children))
+             children))
+    (delete-tree-sitter-node node)))
+
+(defun imenu-rust-candidates (buffer)
+  "Match pinned rust-ts-mode's categorized tree-sitter Imenu index."
+  (handler-case
+      (with-imenu-tree-sitter-candidate-points
+        (alexandria:when-let ((tree (imenu-tree-sitter-current-tree buffer)))
+          (loop :for (category . node-type) :in *imenu-rust-settings*
+                :for children :=
+                  (imenu-rust-walk-category
+                   buffer (tree-sitter:tree-root-node tree)
+                   category node-type 0)
+                :when children
+                  :collect (make-imenu-candidate
+                            :label category
+                            :children children))))
+    (error (condition)
+      (log:warn "Rust Imenu indexing failed for ~a: ~a"
+                (buffer-name buffer) condition)
+      nil)))
+
 (register-imenu-native-provider 'org-mode 'imenu-org-candidates)
 (register-imenu-native-provider
  'lem-markdown-mode:markdown-mode 'imenu-markdown-candidates)
@@ -808,3 +920,5 @@ this function consumes NODE and every named-child handle it obtains."
  'lem-java-mode:java-mode 'imenu-java-candidates)
 (register-imenu-native-provider 'lem-c-mode:c-mode 'imenu-c-candidates)
 (register-imenu-native-provider 'c++-mode 'imenu-c++-candidates)
+(register-imenu-native-provider
+ 'lem-rust-mode:rust-mode 'imenu-rust-candidates)

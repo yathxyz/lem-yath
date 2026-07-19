@@ -341,7 +341,7 @@ older kind/container-grouped `SymbolInformation` schema are both accepted.
 The configured `imenu-after-jump-hook` recenters but does not pulse the
 destination. Lem reproduces this path for those Eglot buffers, for the pinned
 Lisp generic-expression forms, and for native Org, Markdown, Python, Java, C,
-and C++ indices (`src/imenu.lisp`, `src/native-imenu.lisp`). Org uses the pinned depth-two
+C++, and Rust indices (`src/imenu.lisp`, `src/native-imenu.lisp`). Org uses the pinned depth-two
 heading tree and reveals folded destinations. Markdown includes nested ATX and
 Setext headings plus the pinned Footnotes group while excluding front matter,
 fences, and comments. Python uses the pinned tree-sitter function/class tree,
@@ -351,9 +351,11 @@ trees, including nested-class self-jumps and the upstream `Enum`-to-record
 mapping while omitting constructors and actual enum declarations. C reproduces
 the pinned top-level Enum/Struct/Union/Variable/Function
 categories, including direct-prototype, nested-declaration, and decoy
-exclusions. Native indices for other non-LSP modes remain a provider gap; C++
-uses its distinct mode/grammar and adds the pinned Class/member hierarchy plus
-qualified function names.
+exclusions. C++ uses its distinct mode/grammar and adds the pinned Class/member
+hierarchy plus qualified function names. Rust adds the pinned ordered Module,
+Enum, Impl, Type, Struct, and Fn sparse trees, including trait-qualified impl
+labels and parent self-jumps. Native indices for other non-LSP modes remain a
+provider gap.
 
 The `embark-consult` load path comes from the pinned package rather than this
 configuration: its `embark.el` registers a `with-eval-after-load` form for

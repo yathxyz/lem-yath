@@ -432,6 +432,13 @@ definitions form sparse subtrees with literal-space self entries, while
 qualified out-of-class definitions keep names such as `Outer::qualified`.
 Namespace declarations remain visible according to Emacs's predicates, and
 local classes remain Class entries exactly as in the pinned mode.
+Native Rust buffers reproduce rust-ts-mode's ordered `Module`, `Enum`, `Impl`,
+`Type`, `Struct`, and `Fn` sparse-tree categories. Nested modules and functions
+retain literal-space self entries, trait implementations keep labels such as
+`Display for Wrapper<T>`, inherent implementations retain their type label,
+and strings/comments do not create definitions. A ready rust-analyzer document
+symbol provider still takes precedence; the native index is the exact offline
+and not-yet-ready fallback.
 
 Acceptance records one Vi jumplist entry and runs the configured Imenu feedback:
 recenter only, with no Consult Pulsar pulse. `scripts/lsp-project-test.sh` and
