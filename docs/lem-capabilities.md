@@ -414,13 +414,18 @@ functions and classes. Parent definitions retain their dedicated self-jump,
 async functions use the ordinary `def` label, decorators do not displace the
 jump from the definition node, and string/comment decoys are excluded. A ready
 Eglot document-symbol provider still takes precedence over every native index.
+Native Java buffers reproduce the pinned `Class`, `Interface`, `Enum`, and
+`Method` sparse-tree categories in order. Nested matches retain the literal
+space self-entry displayed as `.`, the pinned `Enum` category indexes records,
+and constructors plus actual enum declarations remain absent. Annotated methods
+jump to the declaration node start. String/comment decoys stay excluded.
 
 Acceptance records one Vi jumplist entry and runs the configured Imenu feedback:
 recenter only, with no Consult Pulsar pulse. `scripts/lsp-project-test.sh` and
 `scripts/project-outline-test.sh` drive the command through physical M-x,
 successive Return selections, exact target placement, viewport change, silent
 feedback, folded Org reveal, and `C-o` return. Native indices for other
-non-LSP, non-Lisp, non-Python modes are not yet implemented.
+non-LSP, non-Lisp, non-Python, non-Java modes are not yet implemented.
 
 `lem-yath/src/annotations.lisp` supplies a bounded Marginalia-style layer for
 the daily prompt categories. Commands show active bindings and their first

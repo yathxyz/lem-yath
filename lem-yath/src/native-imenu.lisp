@@ -366,12 +366,26 @@
               :label "Footnotes"
               :children footnotes))))))
 
-;;; --- python-ts-mode ------------------------------------------------------
+;;; --- shared tree-sitter index support -----------------------------------
 
-(defparameter *imenu-python-tree-depth* 1000
-  "Maximum syntax-tree depth searched by native Python Imenu.")
+(defparameter *imenu-tree-sitter-depth* 1000
+  "Maximum syntax-tree depth searched by native tree-sitter Imenu providers.")
 
-(defvar *imenu-python-created-points* nil)
+(defvar *imenu-tree-sitter-created-points* nil)
+
+(defmacro with-imenu-tree-sitter-candidate-points (&body body)
+  "Release partially constructed candidate points if BODY exits abnormally."
+  (let ((completed-p (gensym "COMPLETED-P")))
+    `(let ((*imenu-tree-sitter-created-points* nil)
+           (,completed-p nil))
+       (unwind-protect
+            (prog1 (progn ,@body)
+              (setf ,completed-p t))
+         ;; Successful points are owned by the returned candidate tree.  On
+         ;; partial traversal there is no tree for `imenu' to release.
+         (unless ,completed-p
+           (dolist (point *imenu-tree-sitter-created-points*)
+             (ignore-errors (delete-point point))))))))
 
 (defun imenu-tree-sitter-current-tree (buffer)
   "Return BUFFER's tree-sitter tree, reparsing it when its tick is stale."
@@ -392,7 +406,7 @@
       ((string= type "class_definition") "class")
       (t nil))))
 
-(defun imenu-python-definition-name (buffer node)
+(defun imenu-tree-sitter-definition-name (buffer node)
   "Return NODE's first named identifier, releasing every child handle."
   (loop :for index :below (tree-sitter:node-named-child-count node)
         :for child := (tree-sitter:node-named-child node index)
@@ -402,14 +416,16 @@
                      (return (tree-sitter-node-text buffer child)))
                 (delete-tree-sitter-node child))))
 
-(defun imenu-python-node-point (buffer node)
+(defun imenu-tree-sitter-node-point (buffer node)
   (let ((point (expand-region-byte-to-point
                 buffer (tree-sitter:node-start-byte node))))
-    (push point *imenu-python-created-points*)
+    (push point *imenu-tree-sitter-created-points*)
     point))
 
+;;; --- python-ts-mode ------------------------------------------------------
+
 (defun imenu-python-leaf-candidate (buffer node type name)
-  (let ((point (imenu-python-node-point buffer node)))
+  (let ((point (imenu-tree-sitter-node-point buffer node)))
     (make-imenu-candidate
      :label (format nil "~a (~a)" name type)
      :detail (format nil "[Python ~a] line ~d"
@@ -418,7 +434,7 @@
 
 (defun imenu-python-parent-candidate
     (buffer node type name children)
-  (let* ((point (imenu-python-node-point buffer node))
+  (let* ((point (imenu-tree-sitter-node-point buffer node))
          (line (line-number-at-point point))
          (jump
            (make-imenu-candidate
@@ -440,14 +456,14 @@ this function consumes NODE and every named-child handle it obtains."
   (unwind-protect
        (let* ((type (imenu-python-definition-type node))
               (name (and type
-                         (or (imenu-python-definition-name buffer node)
+                         (or (imenu-tree-sitter-definition-name buffer node)
                              "Anonymous")))
               (definition-p (and type name))
               (children nil))
          ;; This mirrors the explicit DEPTH argument to the pinned
          ;; `treesit-induce-sparse-tree'.  It limits ancestry, not the number
          ;; of definitions, so wide modules retain every sibling.
-         (when (< depth *imenu-python-tree-depth*)
+         (when (< depth *imenu-tree-sitter-depth*)
            (dotimes (index (tree-sitter:node-named-child-count node))
              (let ((child (tree-sitter:node-named-child node index)))
                (when child
@@ -467,28 +483,91 @@ this function consumes NODE and every named-child handle it obtains."
 
 (defun imenu-python-candidates (buffer)
   "Match pinned python-ts-mode's nested tree-sitter Imenu index."
-  (let ((*imenu-python-created-points* nil)
-        (completed-p nil))
-    (unwind-protect
-         (handler-case
-             (prog1
-                 (alexandria:when-let
-                     ((tree (imenu-tree-sitter-current-tree buffer)))
-                   (imenu-python-walk-node
-                    buffer (tree-sitter:tree-root-node tree) 0))
-               (setf completed-p t))
-           (error (condition)
-             (log:warn "Python Imenu indexing failed for ~a: ~a"
-                       (buffer-name buffer) condition)
-             nil))
-      ;; Successful points are owned by the returned candidate tree.  On a
-      ;; partial traversal failure there is no tree for `imenu' to release.
-      (unless completed-p
-        (dolist (point *imenu-python-created-points*)
-          (ignore-errors (delete-point point)))))))
+  (handler-case
+      (with-imenu-tree-sitter-candidate-points
+        (alexandria:when-let ((tree (imenu-tree-sitter-current-tree buffer)))
+          (imenu-python-walk-node
+           buffer (tree-sitter:tree-root-node tree) 0)))
+    (error (condition)
+      (log:warn "Python Imenu indexing failed for ~a: ~a"
+                (buffer-name buffer) condition)
+      nil)))
+
+;;; --- java-ts-mode --------------------------------------------------------
+
+(defparameter *imenu-java-settings*
+  '(("Class" . "class_declaration")
+    ("Interface" . "interface_declaration")
+    ;; This apparently surprising mapping is exact in pinned Emacs 31.
+    ("Enum" . "record_declaration")
+    ("Method" . "method_declaration")))
+
+(defun imenu-java-entry-candidate (buffer node category name children)
+  (let* ((point (imenu-tree-sitter-node-point buffer node))
+         (detail (format nil "[Java ~a] line ~d"
+                         category (line-number-at-point point))))
+    (if children
+        (make-imenu-candidate
+         :label name
+         :detail detail
+         :children
+         (cons (make-imenu-candidate
+                :label " "
+                :detail detail
+                :point point)
+               children))
+        (make-imenu-candidate
+         :label name
+         :detail detail
+         :point point))))
+
+(defun imenu-java-walk-category (buffer node category node-type depth)
+  "Return NODE's sparse Java forest for CATEGORY and consume NODE."
+  (unwind-protect
+       (let ((matching-p (string= (tree-sitter:node-type node) node-type))
+             (children nil))
+         (when (< depth *imenu-tree-sitter-depth*)
+           (dotimes (index (tree-sitter:node-named-child-count node))
+             (let ((child (tree-sitter:node-named-child node index)))
+               (when child
+                 (setf children
+                       (nconc children
+                              (imenu-java-walk-category
+                               buffer child category node-type
+                               (1+ depth))))))))
+         (if matching-p
+             (list
+              (imenu-java-entry-candidate
+               buffer node category
+               (or (imenu-tree-sitter-definition-name buffer node)
+                   "Anonymous")
+               children))
+             children))
+    (delete-tree-sitter-node node)))
+
+(defun imenu-java-candidates (buffer)
+  "Match pinned java-ts-mode's categorized tree-sitter Imenu index."
+  (handler-case
+      (with-imenu-tree-sitter-candidate-points
+        (alexandria:when-let ((tree (imenu-tree-sitter-current-tree buffer)))
+          (loop :for (category . node-type) :in *imenu-java-settings*
+                :for children :=
+                  (imenu-java-walk-category
+                   buffer (tree-sitter:tree-root-node tree)
+                   category node-type 0)
+                :when children
+                  :collect (make-imenu-candidate
+                            :label category
+                            :children children))))
+    (error (condition)
+      (log:warn "Java Imenu indexing failed for ~a: ~a"
+                (buffer-name buffer) condition)
+      nil)))
 
 (register-imenu-native-provider 'org-mode 'imenu-org-candidates)
 (register-imenu-native-provider
  'lem-markdown-mode:markdown-mode 'imenu-markdown-candidates)
 (register-imenu-native-provider
  'lem-python-mode:python-mode 'imenu-python-candidates)
+(register-imenu-native-provider
+ 'lem-java-mode:java-mode 'imenu-java-candidates)

@@ -19,6 +19,7 @@ export LEM_YATH_PROJECT_OUTLINE_ORG="$root/native-imenu.org"
 export LEM_YATH_PROJECT_OUTLINE_MARKDOWN="$root/native-imenu.md"
 export LEM_YATH_PROJECT_OUTLINE_PYTHON="$root/native-imenu.py"
 export LEM_YATH_PROJECT_OUTLINE_PYTHON_WIDE="$root/native-imenu-wide.py"
+export LEM_YATH_PROJECT_OUTLINE_JAVA="$root/NativeImenu.java"
 export LEM_YATH_PROJECT_OUTLINE_READER_MARKER="$root/reader-evaluated"
 mkdir -p "$HOME" "$WORKDIR" "$root/config" "$root/outside" "$root/malicious"
 
@@ -145,6 +146,29 @@ done >"$LEM_YATH_PROJECT_OUTLINE_PYTHON"
 for index in $(seq 1 1005); do
   printf 'def item_%04d(): pass\n' "$index"
 done >"$LEM_YATH_PROJECT_OUTLINE_PYTHON_WIDE"
+
+for line in $(seq 1 80); do
+  case "$line" in
+    1) printf '%s\n' 'package demo;' ;;
+    3) printf '%s\n' 'public class Outer {' ;;
+    5) printf '%s\n' '  public Outer() {}' ;;
+    8) printf '%s\n' '  class Inner {' ;;
+    10) printf '%s\n' '    void innerMethod() {}' ;;
+    12) printf '%s\n' '  }' ;;
+    15) printf '%s\n' '  @Deprecated' ;;
+    16) printf '%s\n' '  public static String build() {' ;;
+    17) printf '%s\n' '    return "class Fake { void nope() {} }";' ;;
+    18) printf '%s\n' '  }' ;;
+    19) printf '%s\n' '}' ;;
+    25) printf '%s\n' 'interface Worker {' ;;
+    27) printf '%s\n' '  void work();' ;;
+    28) printf '%s\n' '}' ;;
+    35) printf '%s\n' 'record Point(int x, int y) {}' ;;
+    42) printf '%s\n' 'enum Shade { RED, BLUE }' ;;
+    50) printf '%s\n' '// class CommentFake { void nope() {} }' ;;
+    *) printf '\n' ;;
+  esac
+done >"$LEM_YATH_PROJECT_OUTLINE_JAVA"
 
 for line in $(seq 1 80); do
   case "$line" in
@@ -650,6 +674,111 @@ if grep -q '^IMENU-WIDE file=python-wide count=1005$' \
   pass imenu-python-wide 'Python Imenu retains more than 1,000 sibling definitions'
 else
   fail imenu-python-wide 'the sparse-tree depth bound was treated as an item cap'
+fi
+
+# Pinned java-ts-mode groups sparse trees by declaration kind.  Its "Enum"
+# setting intentionally indexes records; constructors and actual enums vanish.
+send_chord C-c z 9
+lem_wait_for "$session" 'public class Outer' 10 >/dev/null || true
+send_chord C-c z i
+wait_report_count '^IMENU-INDEX file=java count=12$' 1 || true
+java_index_ok=1
+for path in \
+  'Class' \
+  'Class/Outer' \
+  'Class/Outer/ ' \
+  'Class/Outer/Inner' \
+  'Interface' \
+  'Interface/Worker' \
+  'Enum' \
+  'Enum/Point' \
+  'Method' \
+  'Method/innerMethod' \
+  'Method/build' \
+  'Method/work'; do
+  grep -Fqx "IMENU-PATH file=java path=\"$path\"" \
+    "$LEM_YATH_PROJECT_OUTLINE_REPORT" || java_index_ok=0
+done
+java_root_order="$(sed -n \
+  's/^IMENU-PATH file=java path="\([^/"]*\)"$/\1/p' \
+  "$LEM_YATH_PROJECT_OUTLINE_REPORT" | paste -sd, -)"
+if [ "$java_index_ok" = 1 ] &&
+   [ "$(report_count '^IMENU-PATH file=java ')" -eq 12 ] &&
+   [ "$java_root_order" = 'Class,Interface,Enum,Method' ] &&
+   ! grep -Eq '^IMENU-PATH file=java .*Shade|CommentFake|nope' \
+     "$LEM_YATH_PROJECT_OUTLINE_REPORT"; then
+  pass imenu-java-index 'Java Imenu matches pinned categories, hierarchy, and exclusions'
+else
+  fail imenu-java-index 'Java categories, names, records, or exclusions differed'
+fi
+
+send_chord C-c z b
+if invoke_mx imenu 'Index item:'; then
+  java_top="$(lem_capture "$session")"
+  if grep -Fq 'Class' <<<"$java_top" &&
+     grep -Fq 'Interface' <<<"$java_top" &&
+     grep -Fq 'Enum' <<<"$java_top" &&
+     grep -Fq 'Method' <<<"$java_top"; then
+    pass imenu-java-presentation 'Java roots use the pinned category order'
+  else
+    fail imenu-java-presentation 'the Java category prompt differed'
+  fi
+  tmux_cmd send-keys -t "$session" -l Class
+  send_chord Enter
+  sleep 0.3
+  tmux_cmd send-keys -t "$session" -l Outer
+  send_chord Enter
+  sleep 0.4
+  if grep -Fq 'Inner' <<<"$(lem_capture "$session")"; then
+    pass imenu-java-hierarchy 'a Java class exposes its self jump and nested class'
+  else
+    fail imenu-java-hierarchy 'the Java class hierarchy prompt differed'
+  fi
+  send_chord C-g
+else
+  fail imenu-java-command 'M-x imenu did not open in the Java fixture'
+fi
+
+send_chord C-c z b
+send_chord C-c z r
+wait_report_count '^STATE file=java line=80 column=0 ' 1 || true
+java_origin="$(grep '^STATE file=java line=80 column=0 ' \
+  "$LEM_YATH_PROJECT_OUTLINE_REPORT" | tail -1)"
+java_origin_view="$(sed -n 's/^.* view=\([^ ]*\) minor.*$/\1/p' \
+  <<<"$java_origin")"
+
+if invoke_mx imenu 'Index item:'; then
+  tmux_cmd send-keys -t "$session" -l Method
+  send_chord Enter
+  sleep 0.3
+  tmux_cmd send-keys -t "$session" -l build
+  send_chord Enter
+  sleep 0.5
+  send_chord C-c z r
+  wait_report_count '^STATE file=java line=15 column=2 ' 1 || true
+  java_final="$(grep '^STATE file=java line=15 column=2 ' \
+    "$LEM_YATH_PROJECT_OUTLINE_REPORT" | tail -1)"
+  java_view="$(sed -n 's/^.* view=\([^ ]*\) minor.*$/\1/p' \
+    <<<"$java_final")"
+  if grep -q 'pulse=no pulse-stage=none .*pulse-overlays=0' \
+       <<<"$java_final" &&
+     [ -n "$java_origin_view" ] && [ -n "$java_view" ] &&
+     [ "$java_origin_view" != "$java_view" ]; then
+    pass imenu-java-jump 'Java Imenu lands on the annotated method node without pulse'
+  else
+    fail imenu-java-jump "the Java Imenu destination differed: $java_final"
+  fi
+  send_chord C-o
+  sleep 0.3
+  send_chord C-c z r
+  wait_report_count '^STATE file=java line=80 column=0 ' 2 || true
+  if [ "$(report_count '^STATE file=java line=80 column=0 ')" -ge 2 ]; then
+    pass imenu-java-jumplist 'C-o returns from Java Imenu to its exact origin'
+  else
+    fail imenu-java-jumplist 'Java Imenu did not record one Vi jump'
+  fi
+else
+  fail imenu-java-command 'M-x imenu did not reopen for a method jump'
 fi
 
 send_chord C-c z 2
