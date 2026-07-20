@@ -206,6 +206,34 @@
                      (vcs-test-key-command
                       (legit-fetch-popup-keymap options) key))
                  (format nil "magit-fetch-~a" key))))
+      (check (eq 'lem-yath-legit-pull
+                 (vcs-test-key-command lem/legit::*peek-legit-keymap* "F"))
+             "magit-pull-status-dispatch")
+      (check (eq 'lem-yath-legit-pull
+                 (vcs-test-key-command
+                  lem/legit::*legit-diff-mode-keymap* "F"))
+             "magit-pull-diff-dispatch")
+      (let ((options (make-legit-pull-options)))
+        (dolist (key '("- f" "- r" "- F" "p" "u" "e" "r" "C" "q"))
+          (check (eq 'nop-command
+                     (vcs-test-key-command
+                      (legit-pull-popup-keymap options) key))
+                 (format nil "magit-pull-~a" key)))
+        (check
+         (and
+          (equal '("--ff-only" "--force")
+                 (legit-pull-option-arguments
+                  (make-legit-pull-options :ff-only-p t :force-p t)))
+          (equal '("--rebase" "--force")
+                 (legit-pull-option-arguments
+                  (make-legit-pull-options :rebase-p t :force-p t)))
+          (handler-case
+              (progn
+                (legit-pull-option-arguments
+                 (make-legit-pull-options :ff-only-p t :rebase-p t))
+                nil)
+            (error () t)))
+         "magit-pull-option-vectors"))
       (check (eq 'lem-yath-legit-reset
                  (vcs-test-key-command lem/legit::*peek-legit-keymap* "O"))
              "magit-reset-status-dispatch")
@@ -1547,6 +1575,7 @@
                        :key #'car :test #'eq)
    :bisect (vcs-test-key-command lem/legit::*peek-legit-keymap* "B")
    :fetch (vcs-test-key-command lem/legit::*peek-legit-keymap* "f")
+   :pull (vcs-test-key-command lem/legit::*peek-legit-keymap* "F")
    :reset (vcs-test-key-command lem/legit::*peek-legit-keymap* "O")
    :merge (vcs-test-key-command lem/legit::*peek-legit-keymap* "m")
    :revert (vcs-test-key-command lem/legit::*peek-legit-keymap* "_")
@@ -1592,6 +1621,7 @@
           (load (merge-pathnames "src/git-branch.lisp" source))
           (load (merge-pathnames "src/git-worktree.lisp" source))
           (load (merge-pathnames "src/git-push.lisp" source))
+          (load (merge-pathnames "src/git-pull.lisp" source))
           (load (merge-pathnames "src/git-stash.lisp" source))
           (load (merge-pathnames "src/git-remote.lisp" source))
           (load (merge-pathnames "src/git-submodule.lisp" source))
@@ -1604,7 +1634,7 @@
             'string
             "RELOAD same=~a find=~d post=~d save=~d change=~d kill=~d "
             "global=~d source=~d directory=~d root-marker=~d todo-hook=~d "
-            "bisect-hook=~d bisect=~a fetch=~a reset=~a merge=~a revert=~a branch=~a worktree=~a push=~a stash=~a remote=~a submodule=~a subtree=~a smart=~a git=~a jj=~a time=~a "
+            "bisect-hook=~d bisect=~a fetch=~a pull=~a reset=~a merge=~a revert=~a branch=~a worktree=~a push=~a stash=~a remote=~a submodule=~a subtree=~a smart=~a git=~a jj=~a time=~a "
             "jj-refresh=~a jj-quit=~a "
             "older=~a newer=~a nth=~a fuzzy=~a short=~a full=~a blame=~a "
             "blame-quit=~a p=~a n=~a t=~a quit=~a")
@@ -1624,6 +1654,8 @@
             (eq (getf after :bisect) 'lem-yath-legit-bisect))
            (vcs-test-yes-no
             (eq (getf after :fetch) 'lem-yath-legit-fetch))
+           (vcs-test-yes-no
+            (eq (getf after :pull) 'lem-yath-legit-pull))
            (vcs-test-yes-no
             (eq (getf after :reset) 'lem-yath-legit-reset))
            (vcs-test-yes-no

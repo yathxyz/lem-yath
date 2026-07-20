@@ -2174,7 +2174,8 @@ Magit-inspired. `M-x legit-status` bound **`C-x g`** (`legit/legit.lisp:65`).
   `C-c C-c`, abort `M-q`/`C-c C-k` (`legit-commit.lisp:38-41`).
 - Branches: checkout `b b`, create `b c` (`legit.lisp:74-76`).
 - Push/Pull: lowercase `p` opens lem-yath's Evil Collection push dispatch
-  (`p p` is the ordinary push-remote action); pull remains `F p`.
+  (`p p` is the ordinary push-remote action); uppercase `F` opens the matching
+  pull dispatch.
 - Log: `l l`, last/first page `l F` / pagination (`legit.lisp:86-87`).
 - **Stash dispatch**: the configured Evil Collection default keeps Magit's
   lowercase `z` for the complete normally visible stash map in status and
@@ -2210,6 +2211,20 @@ Magit-inspired. `M-x legit-status` bound **`C-x g`** (`legit/legit.lisp:65`).
   default verbose four-job policy. A missing push remote is selected and
   persisted before fetching. `C` configures the current branch's variables and
   repository defaults, then returns to the fetch map.
+- **Pull dispatch**: uppercase `F` replaces Legit's fixed `F p` route in status
+  and diff. Mutually exclusive `- f`/`- r` select fast-forward-only or rebase,
+  and `- F` forces the fetch. `p`/`u`/`e` pull from the current branch's push
+  remote, upstream, or a selected remote branch; `r` edits branch pull-rebase
+  and `C` reuses complete branch configuration. Missing configured
+  destinations require selection and confirmation before persistence. Direct
+  argv calls are bounded to 120 seconds and 4 MiB; an option-like configured
+  remote is resolved to its URL because Git drops pull's option separator in
+  its internal fetch. Divergent fast-forward-only pulls remain mutation-free,
+  while merge/rebase conflict state stays available to the matching lifecycle
+  dispatch; an ordinary merge abort restores the exact pre-pull state after a
+  merge conflict. Synchronous execution accepts Git's generated merge message,
+  omits Magit's process buffer, and does not expose the normally hidden level-7
+  autostash argument.
 - **Push dispatch**: Evil Collection's lowercase `p` replaces Legit's `P p`
   entry in status and diff. `- f`/`- F`, `- h`, `- n`, `- u`, `- T`, and
   `- t` provide force-with-lease/force, no-verify, dry-run, set-upstream,
@@ -2383,7 +2398,12 @@ from that cached hunk, one selection spanning separated hunks, ordinary hunk
 fallback, tracked and untracked file staging, commit editing and
 validation, push to a bare remote, branch creation and checkout, every visible
 stash action with exact index/worktree/untracked/snapshot/WIP boundaries, and
-a pull from an independent peer clone. It then selects an older
+a pull from an independent peer clone. A later isolated pull matrix exercises
+push-remote, upstream, and explicit option-like remote destinations; exact
+branch rebase configuration; a real local-commit rebase; and mutation-free
+fast-forward-only refusal. It also retains a real pull conflict's local HEAD,
+unmerged index, and `MERGE_HEAD`, then aborts through the ordinary merge map
+back to the exact pre-pull state. It then selects an older
 status commit and opens a real two-row interactive-rebase todo with `r i`. It
 saves the first row as `reword` and the second as `fixup`, continues with
 `C-c C-c`, edits the actual server-owned `COMMIT_EDITMSG`, confirms through

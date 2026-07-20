@@ -499,7 +499,15 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   it retains prune/tags/unshallow/force toggles and fetches a push remote,
   upstream, selected remote, all remotes, one branch, an explicit refspec, or
   populated submodules without moving `HEAD`; `C` configures the current
-  branch and returns to fetch. Evil Collection's lowercase `p`
+  branch and returns to fetch. The adjacent uppercase `F` pull dispatch keeps
+  fast-forward-only, rebase, and force arguments; pulls from the current
+  branch's push remote, upstream, or an explicitly selected remote branch; and
+  exposes both the branch rebase value and complete branch configuration.
+  Missing push remotes and upstreams are selected and confirmed before being
+  persisted. Divergent `--ff-only` pulls fail without moving `HEAD`, while
+  rebase or merge conflict state remains available to the corresponding
+  lifecycle dispatch; a conflicted pull can be aborted through the ordinary
+  merge map back to its exact pre-pull state. Evil Collection's lowercase `p`
   opens the matching Magit push dispatch in both panes. Its
   force-with-lease/force, no-verify, dry-run, set-upstream, all-tags, and
   follow-tags arguments apply to current-branch push-remote or upstream

@@ -621,6 +621,22 @@ asynchronous process buffer. The `C` route reuses the complete current-branch
 configuration surface and returns to fetch. The prefix-only submodule argument
 sub-transient remains outside this port.
 
+The matching uppercase `F` pull dispatch replaces Legit's fixed `F p` route
+in status and diff panes. `- f` and `- r` select mutually exclusive
+fast-forward-only and rebase modes, and `- F` retains force. `p`, `u`, and `e`
+pull from the current branch's push remote, upstream, or a selected configured
+remote branch. Missing push remotes and upstreams require explicit selection
+and confirmation before configuration is persisted; `r` edits the current
+branch's pull-rebase value and `C` opens its complete branch-configuration
+surface. Direct argv execution is bounded to 120 seconds and 4 MiB. Because
+Git loses its option separator when `pull` invokes `fetch`, an exceptional
+configured remote name beginning with `-` is resolved to its configured URL
+before execution. Fast-forward refusal is mutation-free, merge/rebase conflict
+state remains available to those dispatches, and an ordinary merge abort
+restores the exact pre-pull state after a merge conflict. Synchronous execution
+accepts Git's generated merge message instead of opening Magit's process/editor
+buffer. The normally hidden level-7 autostash argument remains outside this port.
+
 Evil Collection's lowercase `p` opens the matching push dispatch in status
 and diff panes. `- f`/`- F` select mutually exclusive force-with-lease/force,
 while `- h`, `- n`, `- u`, `- T`, and `- t` retain no-verify, dry-run,

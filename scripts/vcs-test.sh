@@ -2024,6 +2024,248 @@ porcelain_push_settled() {
   wait_legit "$porcelain_session" porcelain && "$predicate"
 }
 
+pull_upstream_tip=
+pull_pushremote_tip=
+pull_elsewhere_tip=
+pull_rebase_remote_tip=
+pull_rebase_old_local_tip=
+pull_refusal_remote_tip=
+pull_refusal_local_tip=
+pull_conflict_local_tip=
+
+porcelain_pull_clean() {
+  [ -z "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" status --porcelain)" ] &&
+    [ ! -e "$LEM_YATH_VCS_PORCELAIN_ROOT/.git/MERGE_HEAD" ] &&
+    [ ! -d "$LEM_YATH_VCS_PORCELAIN_ROOT/.git/rebase-merge" ] &&
+    [ ! -d "$LEM_YATH_VCS_PORCELAIN_ROOT/.git/rebase-apply" ]
+}
+
+porcelain_pull_head_is() {
+  local branch=$1 expected=$2
+  [ "$branch" = "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    symbolic-ref --quiet --short HEAD 2>/dev/null)" ] &&
+    [ "$expected" = "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      rev-parse HEAD 2>/dev/null)" ] &&
+    porcelain_pull_clean
+}
+
+porcelain_pull_upstream_complete() {
+  porcelain_pull_head_is pull-upstream "$pull_upstream_tip" &&
+    [ origin/pull-upstream = \
+      "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+        for-each-ref --format='%(upstream:short)' refs/heads/pull-upstream)" ]
+}
+
+porcelain_pull_pushremote_complete() {
+  porcelain_pull_head_is pull-pushremote "$pull_pushremote_tip" &&
+    [ origin = "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      config --get branch.pull-pushremote.pushRemote)" ] &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config --get \
+      branch.pull-pushremote.merge >/dev/null 2>&1
+}
+
+porcelain_pull_elsewhere_complete() {
+  porcelain_pull_head_is pull-elsewhere "$pull_elsewhere_tip"
+}
+
+porcelain_pull_rebase_configured() {
+  [ true = "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    config --get branch.pull-rebase.rebase 2>/dev/null)" ]
+}
+
+porcelain_pull_rebase_complete() {
+  local head parent subject
+  head=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD) ||
+    return 1
+  parent=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD^) ||
+    return 1
+  subject=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    log -1 --format=%s) || return 1
+  [ pull-rebase = "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    symbolic-ref --quiet --short HEAD 2>/dev/null)" ] &&
+    [ "$parent" = "$pull_rebase_remote_tip" ] &&
+    [ "$subject" = pull-rebase-local ] &&
+    [ "$head" != "$pull_rebase_old_local_tip" ] &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" merge-base \
+      --is-ancestor "$pull_rebase_old_local_tip" HEAD &&
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" merge-base \
+      --is-ancestor "$pull_rebase_remote_tip" HEAD &&
+    [ -f "$LEM_YATH_VCS_PORCELAIN_ROOT/pull-rebase-local.txt" ] &&
+    [ -f "$LEM_YATH_VCS_PORCELAIN_ROOT/pull-rebase-remote.txt" ] &&
+    porcelain_pull_clean
+}
+
+porcelain_pull_ff_refused() {
+  porcelain_pull_head_is pull-refusal "$pull_refusal_local_tip" &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" merge-base \
+      --is-ancestor "$pull_refusal_remote_tip" HEAD
+}
+
+porcelain_pull_conflicted() {
+  [ pull-conflict = "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    symbolic-ref --quiet --short HEAD 2>/dev/null)" ] &&
+    [ "$pull_conflict_local_tip" = \
+      "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD)" ] &&
+    [ -f "$LEM_YATH_VCS_PORCELAIN_ROOT/.git/MERGE_HEAD" ] &&
+    [ -n "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      ls-files -u -- pull-conflict.txt)" ] &&
+    [ ! -d "$LEM_YATH_VCS_PORCELAIN_ROOT/.git/rebase-merge" ] &&
+    [ ! -d "$LEM_YATH_VCS_PORCELAIN_ROOT/.git/rebase-apply" ]
+}
+
+porcelain_pull_conflict_aborted() {
+  porcelain_pull_head_is pull-conflict "$pull_conflict_local_tip" &&
+    [ "$(cat "$LEM_YATH_VCS_PORCELAIN_ROOT/pull-conflict.txt")" = \
+      'pull conflict local' ]
+}
+
+prepare_porcelain_pull_fixture() {
+  local base=$merge_main_hash
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -f main ||
+    return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard "$base" ||
+    return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" fetch -q origin || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" checkout -q -B \
+    pull-upstream "$base" || return 1
+  printf 'pull upstream remote\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_PEER/pull-upstream.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" add -- pull-upstream.txt ||
+    return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_PEER" pull-upstream-remote \
+    '2001-06-20T00:00:00+0000' || return 1
+  pull_upstream_tip=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" \
+    rev-parse HEAD) || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" push -qf origin \
+    HEAD:refs/heads/pull-upstream || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" checkout -q -B \
+    pull-pushremote "$base" || return 1
+  printf 'pull push remote\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_PEER/pull-pushremote.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" add -- \
+    pull-pushremote.txt || return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_PEER" pull-pushremote-remote \
+    '2001-06-21T00:00:00+0000' || return 1
+  pull_pushremote_tip=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" \
+    rev-parse HEAD) || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" push -qf origin \
+    HEAD:refs/heads/pull-pushremote || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" checkout -q -B \
+    pull-rebase "$base" || return 1
+  printf 'pull rebase remote\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_PEER/pull-rebase-remote.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" add -- \
+    pull-rebase-remote.txt || return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_PEER" pull-rebase-remote \
+    '2001-06-22T00:00:00+0000' || return 1
+  pull_rebase_remote_tip=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" \
+    rev-parse HEAD) || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" push -qf origin \
+    HEAD:refs/heads/pull-rebase || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" checkout -q -B \
+    pull-refusal "$base" || return 1
+  printf 'pull refusal remote\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_PEER/pull-refusal-remote.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" add -- \
+    pull-refusal-remote.txt || return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_PEER" pull-refusal-remote \
+    '2001-06-23T00:00:00+0000' || return 1
+  pull_refusal_remote_tip=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" \
+    rev-parse HEAD) || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" push -qf origin \
+    HEAD:refs/heads/pull-refusal || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" checkout -q -B \
+    pull-conflict "$base" || return 1
+  printf 'pull conflict remote\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_PEER/pull-conflict.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" add -- \
+    pull-conflict.txt || return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_PEER" pull-conflict-remote \
+    '2001-06-24T00:00:00+0000' || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" push -qf origin \
+    HEAD:refs/heads/pull-conflict || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -B \
+    pull-elsewhere-build "$base" || return 1
+  printf 'pull elsewhere remote\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/pull-elsewhere.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- \
+    pull-elsewhere.txt || return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_ROOT" pull-elsewhere-remote \
+    '2001-06-24T00:00:00+0000' || return 1
+  pull_elsewhere_tip=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    rev-parse HEAD) || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" push -qf -- \
+    -push-option HEAD:refs/heads/pull-elsewhere-source || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -f main ||
+    return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch -D \
+    pull-elsewhere-build >/dev/null || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" fetch -q origin || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch -f \
+    pull-upstream "$base" || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch \
+    --set-upstream-to=origin/pull-upstream pull-upstream >/dev/null || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch -f \
+    pull-pushremote "$base" || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config \
+    branch.pull-pushremote.pushRemote origin || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch -f \
+    pull-elsewhere "$base" || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -B \
+    pull-rebase "$base" || return 1
+  printf 'pull rebase local\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/pull-rebase-local.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- \
+    pull-rebase-local.txt || return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_ROOT" pull-rebase-local \
+    '2001-06-25T00:00:00+0000' || return 1
+  pull_rebase_old_local_tip=$("$git_bin" \
+    -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD) || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch \
+    --set-upstream-to=origin/pull-rebase pull-rebase >/dev/null || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -B \
+    pull-refusal "$base" || return 1
+  printf 'pull refusal local\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/pull-refusal-local.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- \
+    pull-refusal-local.txt || return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_ROOT" pull-refusal-local \
+    '2001-06-26T00:00:00+0000' || return 1
+  pull_refusal_local_tip=$("$git_bin" \
+    -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD) || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch \
+    --set-upstream-to=origin/pull-refusal pull-refusal >/dev/null || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -B \
+    pull-conflict "$base" || return 1
+  printf 'pull conflict local\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/pull-conflict.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- \
+    pull-conflict.txt || return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_ROOT" pull-conflict-local \
+    '2001-06-27T00:00:00+0000' || return 1
+  pull_conflict_local_tip=$("$git_bin" \
+    -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD) || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch \
+    --set-upstream-to=origin/pull-conflict pull-conflict >/dev/null || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config \
+    branch.pull-conflict.rebase false || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q \
+    pull-pushremote || return 1
+  porcelain_pull_clean
+}
+
 prepare_porcelain_push_fixture() {
   local tree
   "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -f main ||
@@ -2518,7 +2760,7 @@ fi
 send_keys "$colocated_session" q F6
 
 if press_report "$colocated_session" F8 '^RELOAD ' 60 &&
-   grep -q '^RELOAD same=yes find=1 post=1 save=1 change=1 kill=1 global=0 source=1 directory=0 root-marker=1 todo-hook=1 bisect-hook=1 bisect=yes fetch=yes reset=yes merge=yes revert=yes branch=yes worktree=yes push=yes stash=yes remote=yes submodule=yes subtree=yes smart=yes git=yes jj=yes time=yes jj-refresh=yes jj-quit=yes older=yes newer=yes nth=yes fuzzy=yes short=yes full=yes blame=yes blame-quit=yes p=yes n=yes t=yes quit=yes$' \
+   grep -q '^RELOAD same=yes find=1 post=1 save=1 change=1 kill=1 global=0 source=1 directory=0 root-marker=1 todo-hook=1 bisect-hook=1 bisect=yes fetch=yes pull=yes reset=yes merge=yes revert=yes branch=yes worktree=yes push=yes stash=yes remote=yes submodule=yes subtree=yes smart=yes git=yes jj=yes time=yes jj-refresh=yes jj-quit=yes older=yes newer=yes nth=yes fuzzy=yes short=yes full=yes blame=yes blame-quit=yes p=yes n=yes t=yes quit=yes$' \
      "$LEM_YATH_VCS_REPORT"; then
   pass reload-idempotence 'two VCS reloads preserved one mode, hooks, inserter, and keymaps'
 else
@@ -3781,8 +4023,20 @@ if "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" pull -q --ff-only &&
      '2001-01-05T00:00:00+0000' &&
    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" push -q; then
   send_keys "$porcelain_session" F p
+  if lem_wait_for "$porcelain_session" \
+       'Set push remote and pull main from there:' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    enter_completion_prompt_value "$porcelain_session" origin \
+      'Set push remote and pull main from there:'
+  fi
+  if lem_wait_for "$porcelain_session" \
+       'Set origin as push remote and pull main from there' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$porcelain_session" y
+  fi
   if wait_until "$WAIT_TIMEOUT" porcelain_peer_pulled; then
-    pass legit-pull 'F p fast-forwarded to a real peer commit from origin'
+    pass legit-pull \
+      'F p configured the missing push remote and fast-forwarded from origin'
   else
     fail legit-pull 'F p did not integrate the peer commit' \
       "$porcelain_session"
@@ -5933,6 +6187,167 @@ fi
   refs/remotes/origin/primary-next
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard \
   "$merge_main_hash"
+
+pull_fixture_ready=0
+if prepare_porcelain_pull_fixture; then
+  pass legit-pull-fixture \
+    'prepared push-remote, upstream, elsewhere, rebase, refusal, and conflict histories'
+  pull_fixture_ready=1
+else
+  fail legit-pull-fixture 'could not prepare isolated pull histories' \
+    "$porcelain_session"
+fi
+
+if [ "$pull_fixture_ready" = 1 ]; then
+  send_keys "$porcelain_session" g F
+  if lem_wait_for "$porcelain_session" '\[Pull\]' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$porcelain_session" p
+  fi
+  if wait_until "$WAIT_TIMEOUT" porcelain_pull_pushremote_complete; then
+    pass legit-pull-pushremote \
+      'F p fast-forwarded from the configured push remote without creating an upstream'
+  else
+    fail legit-pull-pushremote \
+      'F p lost the push-remote destination, branch boundary, or clean state' \
+      "$porcelain_session"
+  fi
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q pull-upstream
+  send_keys "$porcelain_session" g F
+  if lem_wait_for "$porcelain_session" '\[Pull\]' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$porcelain_session" u
+  fi
+  if wait_until "$WAIT_TIMEOUT" porcelain_pull_upstream_complete; then
+    pass legit-pull-upstream \
+      'F u fast-forwarded from the exact configured upstream'
+  else
+    fail legit-pull-upstream \
+      'F u did not retain the upstream, expected tip, and clean state' \
+      "$porcelain_session"
+  fi
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q pull-elsewhere
+  send_keys "$porcelain_session" g F
+  if lem_wait_for "$porcelain_session" '\[Pull\]' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$porcelain_session" e
+  fi
+  if lem_wait_for "$porcelain_session" 'Pull from remote branch:' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    enter_completion_prompt_value "$porcelain_session" \
+      -push-option/pull-elsewhere-source 'Pull from remote branch:'
+  fi
+  if wait_until "$WAIT_TIMEOUT" porcelain_pull_elsewhere_complete; then
+    pass legit-pull-elsewhere \
+      'F e pulled an explicit option-like configured remote through the argv boundary'
+  else
+    fail legit-pull-elsewhere \
+      'F e lost the explicit remote branch, option boundary, or clean state' \
+      "$porcelain_session"
+  fi
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q pull-rebase
+  send_keys "$porcelain_session" g F
+  if lem_wait_for "$porcelain_session" '\[Pull\]' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$porcelain_session" r
+  fi
+  if lem_wait_for "$porcelain_session" 'Rebase when pulling pull-rebase:' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    enter_completion_prompt_value "$porcelain_session" true \
+      'Rebase when pulling pull-rebase:'
+  fi
+  if lem_wait_for "$porcelain_session" '\[Pull\]' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$porcelain_session" q
+  fi
+  if wait_until "$WAIT_TIMEOUT" porcelain_pull_rebase_configured; then
+    pass legit-pull-configure-rebase \
+      'F r persisted the current branch pull-rebase variable'
+  else
+    fail legit-pull-configure-rebase \
+      'F r did not preserve the pinned branch configuration action' \
+      "$porcelain_session"
+  fi
+
+  send_keys "$porcelain_session" F
+  if lem_wait_for "$porcelain_session" '\[Pull\]' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+    send_keys "$porcelain_session" r u
+  fi
+  if wait_until "$WAIT_TIMEOUT" porcelain_pull_rebase_complete; then
+    pass legit-pull-rebase \
+      'F -r u rebased the local commit onto the fetched upstream tip'
+  else
+    fail legit-pull-rebase \
+      'the rebase pull lost topology, either side content, or sequencer cleanup' \
+      "$porcelain_session"
+  fi
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q pull-refusal
+  send_keys "$porcelain_session" g F
+  if lem_wait_for "$porcelain_session" '\[Pull\]' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+    send_keys "$porcelain_session" f u
+  fi
+  if wait_until "$WAIT_TIMEOUT" porcelain_pull_ff_refused; then
+    pass legit-pull-ff-only-refusal \
+      'F -f u refused divergent history without moving HEAD or retaining operation state'
+  else
+    fail legit-pull-ff-only-refusal \
+      'fast-forward-only pull mutated divergent history or retained Git state' \
+      "$porcelain_session"
+  fi
+  # Ordinary pull failures use Legit's bounded error popup.  Dismiss it before
+  # proving that a subsequent pull starts from an interactive status pane.
+  if lem_wait_for "$porcelain_session" 'Press Space to continue' 2 \
+       >/dev/null 2>&1; then
+    send_keys "$porcelain_session" Space
+  fi
+  if ! wait_legit "$porcelain_session" porcelain; then
+    fail legit-pull-ff-only-refusal-ui \
+      'the refusal did not return to an interactive Legit status' \
+      "$porcelain_session"
+  fi
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q pull-conflict
+  send_keys "$porcelain_session" g F
+  if lem_wait_for "$porcelain_session" '\[Pull\]' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$porcelain_session" u
+  fi
+  if wait_until "$WAIT_TIMEOUT" porcelain_pull_conflicted &&
+     wait_legit "$porcelain_session" porcelain &&
+     porcelain_pull_conflicted; then
+    pass legit-pull-conflict \
+      'F u retained the exact local HEAD, unmerged index, and MERGE_HEAD on conflict'
+  else
+    fail legit-pull-conflict \
+      'a conflicting pull lost its local HEAD or recoverable merge state' \
+      "$porcelain_session"
+  fi
+  send_keys "$porcelain_session" m
+  if lem_wait_for "$porcelain_session" 'abort merge' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$porcelain_session" a
+  fi
+  if lem_wait_for "$porcelain_session" 'Abort merge' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$porcelain_session" y
+  fi
+  if wait_until "$WAIT_TIMEOUT" porcelain_pull_conflict_aborted; then
+    pass legit-pull-conflict-abort \
+      'the ordinary merge abort restored the exact pre-pull HEAD, index, and worktree'
+  else
+    fail legit-pull-conflict-abort \
+      'aborting a conflicting pull did not restore the pre-pull repository' \
+      "$porcelain_session"
+  fi
+fi
 
 if prepare_porcelain_push_fixture; then
   pass legit-push-fixture \
