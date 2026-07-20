@@ -513,7 +513,7 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   `X` reset and `x` delete remap is retained. Remote checkout records both the
   upstream and push remote, remote rename preserves a divergent remote tip,
   and dirty spin-out safely becomes a checked-out spin-off. The
-  separate `%` worktree dispatch matches Evil Collection's remapped Magit
+  separate uppercase `Z` worktree dispatch matches the effective Magit
   surface: `b` checks out a revision in a new worktree, `c` creates a branch
   and worktree, `m` moves one, `k` deletes one, and `g` visits its Legit
   status. Move/delete never offer the primary worktree; dirty removal requires
@@ -522,8 +522,8 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   resulting status root. Visual commit-region spin boundaries remain an
   explicit gap, and Git mutations remain synchronous instead of using Magit's
   process buffers.
-  Evil Collection's uppercase `Z` stash dispatch is available in status and
-  diff panes, matching its configured move away from lowercase `z`. `- u`/`- a`
+  Stock Magit's lowercase `z` stash dispatch is available in status and
+  diff panes. `- u`/`- a`
   select untracked or ignored files; `z`/`i`/`w`/`x` stash both layers, only
   the index, only the worktree, or both while retaining the index;
   `Z`/`I`/`W` create non-cleaning snapshots and `r` updates branch-scoped WIP
@@ -532,7 +532,8 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   implement Magit's section folds and retains its upstream `z z`/`z p` direct
   aliases; the normally hidden level-5 pathspec push sub-transient also remains
   outside this port.
-  Magit's `X` reset dispatch is likewise available in status and diff panes:
+  Evil Collection's remapped `O` reset dispatch is likewise available in
+  status and diff panes:
   `b` resets a selected local branch, `f` checks out one revision path, and
   `m`/`s`/`h`/`k`/`i`/`w` preserve the mixed, soft, hard, keep, index-only,
   and worktree-only state boundaries. Current dirty branches require the
@@ -559,6 +560,13 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   native prefilled commit buffer, while conflicts switch `_` to
   continue/skip/confirmed-abort actions. One prompt accepts up to 64
   comma-separated commits; visual commit-region selection remains a gap.
+  Evil Collection's double-quote (`"`) subtree route is also present in both
+  panes. Its `i` import menu covers prefix/message/squash plus repository add,
+  fetched-commit add, merge, and pull; `e` covers prefix/annotation/branch/onto,
+  ignore-joins/rejoin, push, and split. Prefix validation rejects traversal,
+  while direct argv preserves spaces and shell metacharacters. These bounded
+  operations refresh Legit synchronously rather than opening Magit process
+  buffers.
   Packaged `gh` also backs
   command-accessible GitHub Forge lists, detail views, multiline creation and
   comments, close/reopen actions, external browsing, and cache-only Legit

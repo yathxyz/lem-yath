@@ -54,6 +54,7 @@
                (:file "git-stash")
                (:file "git-remote")
                (:file "git-submodule")
+               (:file "git-subtree")
                (:file "git-blame")
                (:file "forge")
                (:file "project-history")

@@ -2260,7 +2260,17 @@ Magit-inspired. `M-x legit-status` bound **`C-x g`** (`legit/legit.lisp:65`).
   stashes tracked and untracked content, and preserves `.git/modules`. Lem
   selects one prompted module rather than Magit's region/prefix multi-selection
   and executes synchronously; the prefix-only gitdir-trash action is absent.
-- **Worktree dispatch**: the configured stock Magit uppercase `Z` opens its focused worktree
+- **Subtree dispatch**: Evil Collection's double quote (`"`) opens Magit's
+  subtree import/export surface in status and diff. Import provides `-P`
+  prefix, `-m` message, and `-s` squash before repository add, fetched-commit
+  add, merge, or pull. Export provides `-P` prefix, `-a` annotation, `-b`
+  branch, `-o` onto, `-i` ignore-joins, and `-j` rejoin before push or split.
+  Prefixes are bounded repository-relative paths with traversal rejected;
+  revisions and branch names are resolved through Git, and spaces and shell
+  metacharacters remain literal direct arguments. Lem prompts for a relative
+  prefix instead of Magit's absolute-inside-repository directory and runs the
+  bounded operation synchronously without a process buffer.
+- **Worktree dispatch**: Evil Collection's remapped uppercase `Z` opens its focused worktree
   map in status and diff. `b` checks out a branch, remote branch, or resolved
   commit in a new sibling-style path; `c` creates a branch and worktree from a
   selected revision; `m` moves a linked worktree; `k` deletes or prunes one;

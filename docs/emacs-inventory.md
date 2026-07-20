@@ -656,7 +656,7 @@ The stash dispatch replaces Legit's upstream direct `z z`/`z p` aliases.
 Magit's normally hidden level-5 pathspec push sub-transient and asynchronous
 process presentation remain outside this port.
 
-Stock Magit uppercase `Z` opens the separate worktree dispatch in status
+Evil Collection's remapped uppercase `Z` opens the separate worktree dispatch in status
 and diff panes. Its configured `b`, `c`, `m`, `k`, and `g` actions check out a
 revision into a new worktree, create a branch plus worktree, move, delete, and
 visit. Primary worktrees cannot be selected for move/delete; dirty removal is
@@ -687,6 +687,20 @@ untracked content while preserving `.git/modules`. Lem selects one module per
 action instead of Magit's region/prefix multi-selection and runs bounded Git
 operations synchronously rather than in process buffers; the prefix-only
 gitdir-trash path remains absent.
+
+Evil Collection moves Magit's subtree dispatch to double quote (`"`) in
+status and diff panes, and Lem matches its complete import/export surface.
+`i` opens import with `-P` prefix, `-m` message, and `-s` squash arguments;
+`a`, `c`, `m`, and `f` add from a repository/ref, add an existing commit,
+merge a commit, or pull a repository/ref. `e` opens export with `-P` prefix,
+`-a` annotation, `-b` branch, `-o` onto, `-i` ignore-joins, and `-j` rejoin;
+`p` pushes an extracted history and `s` splits it locally. Prefixes are bounded
+repository-relative paths with traversal and `.git` components rejected, while
+direct argv preserves spaces and shell metacharacters. Revisions and branch
+names are resolved through Git before mutation. Operations use a 300-second,
+4-MiB synchronous boundary rather than Magit's asynchronous process buffer,
+and the prompt accepts relative prefixes rather than Magit's absolute-inside-
+repository directory input.
 
 The matching `O` reset dispatch is also available in status and diff panes
 after Evil Collection's top-level remap from `X`.

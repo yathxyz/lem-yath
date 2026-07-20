@@ -54,6 +54,11 @@ export LEM_YATH_VCS_SUBMODULE_REMOTE="$root/repos/submodule remote;safe.git"
 export LEM_YATH_VCS_SUBMODULE_SEED="$root/repos/submodule seed;safe"
 export LEM_YATH_VCS_SUBMODULE_PATH="modules/module path;safe"
 export LEM_YATH_VCS_SUBMODULE_NAME="module-safe"
+export LEM_YATH_VCS_SUBTREE_REMOTE="$root/repos/subtree remote;safe.git"
+export LEM_YATH_VCS_SUBTREE_SEED="$root/repos/subtree seed;safe"
+export LEM_YATH_VCS_SUBTREE_PUSH="$root/repos/subtree push;safe.git"
+export LEM_YATH_VCS_SUBTREE_PREFIX="vendor/module path;safe"
+export LEM_YATH_VCS_SUBTREE_COMMIT_PREFIX="vendor/commit path;safe"
 
 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$WORKDIR" "$LEM_HOME" \
   "$LEM_YATH_VCS_COLOCATED_ROOT/nested/deeper" \
@@ -265,6 +270,28 @@ if ! git_commit "$LEM_YATH_VCS_SUBMODULE_SEED" submodule-v1 \
    ! "$git_bin" --git-dir="$LEM_YATH_VCS_SUBMODULE_REMOTE" symbolic-ref \
      HEAD refs/heads/main; then
   echo "Could not create the submodule remote topology" >&2
+  rm -rf -- "$root"
+  exit 1
+fi
+
+if ! "$git_bin" init --bare -q "$LEM_YATH_VCS_SUBTREE_REMOTE" ||
+   ! "$git_bin" init --bare -q "$LEM_YATH_VCS_SUBTREE_PUSH" ||
+   ! mkdir -p "$LEM_YATH_VCS_SUBTREE_SEED" ||
+   ! git_init "$LEM_YATH_VCS_SUBTREE_SEED"; then
+  echo "Could not initialize the subtree fixture" >&2
+  rm -rf -- "$root"
+  exit 1
+fi
+printf 'subtree version one\n' >"$LEM_YATH_VCS_SUBTREE_SEED/module.txt"
+"$git_bin" -C "$LEM_YATH_VCS_SUBTREE_SEED" add -- module.txt
+if ! git_commit "$LEM_YATH_VCS_SUBTREE_SEED" subtree-v1 \
+     '2001-01-09T00:00:00+0000' ||
+   ! "$git_bin" -C "$LEM_YATH_VCS_SUBTREE_SEED" remote add origin \
+     "$LEM_YATH_VCS_SUBTREE_REMOTE" ||
+   ! "$git_bin" -C "$LEM_YATH_VCS_SUBTREE_SEED" push -qu origin main ||
+   ! "$git_bin" --git-dir="$LEM_YATH_VCS_SUBTREE_REMOTE" symbolic-ref \
+     HEAD refs/heads/main; then
+  echo "Could not create the subtree remote topology" >&2
   rm -rf -- "$root"
   exit 1
 fi
@@ -2062,6 +2089,34 @@ enter_completion_prompt_value() {
   fi
 }
 
+enter_atomic_prompt_value() {
+  local session=$1 value=$2
+  # Avoid racing literal input against queued editing keys.  The fixture's F12
+  # command loads the exact value into Lem's kill ring, so one yank replaces
+  # the prompt atomically even when the value contains spaces or metacharacters.
+  printf '%s' "$value" >"$LEM_YATH_VCS_PROMPT_INPUT"
+  send_keys "$session" C-a C-k F12 C-y
+  sleep 0.5
+  send_keys "$session" Enter
+  sleep 0.25
+}
+
+enter_atomic_completion_prompt_value() {
+  local session=$1 value=$2 prompt=$3
+  # Clear with two settled editing events before sending the literal value.
+  # A second Enter accepts arbitrary input when completion first leaves the
+  # prompt active rather than choosing a displayed candidate.
+  send_keys "$session" C-a C-k
+  sleep 0.5
+  tmux_cmd send-keys -t "$session" -l -- "$value"
+  sleep 0.5
+  send_keys "$session" Enter
+  sleep 0.25
+  if lem_wait_for "$session" "$prompt" 1 >/dev/null 2>&1; then
+    send_keys "$session" Enter
+  fi
+}
+
 enter_path_prompt_value() {
   local session=$1 value=$2 prompt=$3
   # Directory completion can rewrite its buffer while a burst of Backspace
@@ -2259,7 +2314,7 @@ fi
 send_keys "$colocated_session" q F6
 
 if press_report "$colocated_session" F8 '^RELOAD ' 60 &&
-   grep -q '^RELOAD same=yes find=1 post=1 save=1 change=1 kill=1 global=0 source=1 directory=0 root-marker=1 todo-hook=1 bisect-hook=1 bisect=yes fetch=yes reset=yes merge=yes revert=yes branch=yes worktree=yes push=yes stash=yes remote=yes submodule=yes smart=yes git=yes jj=yes time=yes jj-refresh=yes jj-quit=yes older=yes newer=yes nth=yes fuzzy=yes short=yes full=yes blame=yes blame-quit=yes p=yes n=yes t=yes quit=yes$' \
+   grep -q '^RELOAD same=yes find=1 post=1 save=1 change=1 kill=1 global=0 source=1 directory=0 root-marker=1 todo-hook=1 bisect-hook=1 bisect=yes fetch=yes reset=yes merge=yes revert=yes branch=yes worktree=yes push=yes stash=yes remote=yes submodule=yes subtree=yes smart=yes git=yes jj=yes time=yes jj-refresh=yes jj-quit=yes older=yes newer=yes nth=yes fuzzy=yes short=yes full=yes blame=yes blame-quit=yes p=yes n=yes t=yes quit=yes$' \
      "$LEM_YATH_VCS_REPORT"; then
   pass reload-idempotence 'two VCS reloads preserved one mode, hooks, inserter, and keymaps'
 else
@@ -6437,6 +6492,288 @@ if wait_until "$WAIT_TIMEOUT" test ! -e \
 else
   fail legit-submodule-remove \
     'forced removal lost its stash/Gitdir or retained the gitlink/worktree' \
+    "$porcelain_session"
+fi
+
+# The subtree commands require a clean index.  Record the preceding submodule
+# removal, then exercise every pinned import/export action against local bare
+# repositories whose paths contain both spaces and shell metacharacters.
+if "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -u &&
+   GIT_AUTHOR_DATE='2001-01-10T00:00:00+0000' \
+   GIT_COMMITTER_DATE='2001-01-10T00:00:00+0000' \
+   "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" commit -qm \
+     'Record submodule removal'; then
+  pass legit-subtree-clean-baseline \
+    'recorded a clean baseline for subtree lifecycle coverage'
+else
+  fail legit-subtree-clean-baseline \
+    'could not record the subtree lifecycle baseline' "$porcelain_session"
+fi
+
+tmux_cmd send-keys -t "$porcelain_session" -l -- '"'
+if lem_wait_for "$porcelain_session" '\[Subtree\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" i
+fi
+if lem_wait_for "$porcelain_session" '\[Subtree import\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+  send_keys "$porcelain_session" P
+fi
+if lem_wait_for "$porcelain_session" 'Prefix:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_prompt_value "$porcelain_session" "$LEM_YATH_VCS_SUBTREE_PREFIX"
+fi
+tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+send_keys "$porcelain_session" m
+if lem_wait_for "$porcelain_session" 'Message \(blank unsets\):' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_prompt_value "$porcelain_session" 'Import subtree; safe'
+fi
+tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+send_keys "$porcelain_session" s a
+if lem_wait_for "$porcelain_session" 'From repository:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_completion_prompt_value "$porcelain_session" \
+    "$LEM_YATH_VCS_SUBTREE_REMOTE" 'From repository:'
+fi
+if lem_wait_for "$porcelain_session" 'Ref:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_completion_prompt_value "$porcelain_session" main 'Ref:'
+fi
+if wait_until "$WAIT_TIMEOUT" test -f \
+     "$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBTREE_PREFIX/module.txt" &&
+   [ "$(cat "$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBTREE_PREFIX/module.txt")" = \
+     'subtree version one' ] &&
+   [ "$($git_bin -C "$LEM_YATH_VCS_PORCELAIN_ROOT" log -1 --format=%s)" = \
+     'Import subtree; safe' ]; then
+  pass legit-subtree-add \
+    '" i -P -m -s a imported a squashed metacharacter-path subtree'
+else
+  fail legit-subtree-add \
+    'subtree add lost its direct-argv path, source ref, content, or message' \
+    "$porcelain_session"
+fi
+
+printf 'subtree version two\n' >"$LEM_YATH_VCS_SUBTREE_SEED/module.txt"
+"$git_bin" -C "$LEM_YATH_VCS_SUBTREE_SEED" add -- module.txt
+git_commit "$LEM_YATH_VCS_SUBTREE_SEED" subtree-v2 \
+  '2001-01-11T00:00:00+0000'
+"$git_bin" -C "$LEM_YATH_VCS_SUBTREE_SEED" push -qu origin main
+subtree_v2_hash=$($git_bin -C "$LEM_YATH_VCS_SUBTREE_SEED" rev-parse HEAD)
+
+tmux_cmd send-keys -t "$porcelain_session" -l -- '"'
+if lem_wait_for "$porcelain_session" '\[Subtree\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" i
+fi
+if lem_wait_for "$porcelain_session" '\[Subtree import\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+  send_keys "$porcelain_session" P
+fi
+if lem_wait_for "$porcelain_session" 'Prefix:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_prompt_value "$porcelain_session" "$LEM_YATH_VCS_SUBTREE_PREFIX"
+fi
+tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+send_keys "$porcelain_session" m
+if lem_wait_for "$porcelain_session" 'Message \(blank unsets\):' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_prompt_value "$porcelain_session" 'Pull subtree; safe'
+fi
+tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+send_keys "$porcelain_session" s f
+if lem_wait_for "$porcelain_session" 'From repository:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_completion_prompt_value "$porcelain_session" \
+    "$LEM_YATH_VCS_SUBTREE_REMOTE" 'From repository:'
+fi
+if lem_wait_for "$porcelain_session" 'Ref:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_completion_prompt_value "$porcelain_session" main 'Ref:'
+fi
+if wait_until "$WAIT_TIMEOUT" sh -c \
+     "[ \"\$(cat '$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBTREE_PREFIX/module.txt')\" = 'subtree version two' ]" &&
+   [ "$($git_bin -C "$LEM_YATH_VCS_PORCELAIN_ROOT" log -1 --format=%s)" = \
+     'Pull subtree; safe' ]; then
+  pass legit-subtree-pull \
+    '" i -P -m -s f pulled the advanced remote subtree revision'
+else
+  fail legit-subtree-pull \
+    'subtree pull did not advance content with the configured message' \
+    "$porcelain_session"
+fi
+
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" fetch -q \
+  "$LEM_YATH_VCS_SUBTREE_REMOTE" \
+  main:refs/remotes/subtree-fixture/main
+tmux_cmd send-keys -t "$porcelain_session" -l -- '"'
+if lem_wait_for "$porcelain_session" '\[Subtree\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" i
+fi
+if lem_wait_for "$porcelain_session" '\[Subtree import\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+  send_keys "$porcelain_session" P
+fi
+if lem_wait_for "$porcelain_session" 'Prefix:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_prompt_value "$porcelain_session" "$LEM_YATH_VCS_SUBTREE_COMMIT_PREFIX"
+fi
+tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+send_keys "$porcelain_session" m
+if lem_wait_for "$porcelain_session" 'Message \(blank unsets\):' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_prompt_value "$porcelain_session" 'Add commit subtree; safe'
+fi
+send_keys "$porcelain_session" c
+if lem_wait_for "$porcelain_session" 'Commit:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_prompt_value "$porcelain_session" "$subtree_v2_hash"
+fi
+if wait_until "$WAIT_TIMEOUT" test -f \
+     "$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBTREE_COMMIT_PREFIX/module.txt" &&
+   [ "$(cat "$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBTREE_COMMIT_PREFIX/module.txt")" = \
+     'subtree version two' ]; then
+  pass legit-subtree-add-commit \
+    '" i -P -m c imported an already fetched commit without squash'
+else
+  fail legit-subtree-add-commit \
+    'subtree add-commit did not resolve and import the selected commit' \
+    "$porcelain_session"
+fi
+
+printf 'subtree version three\n' >"$LEM_YATH_VCS_SUBTREE_SEED/module.txt"
+"$git_bin" -C "$LEM_YATH_VCS_SUBTREE_SEED" add -- module.txt
+git_commit "$LEM_YATH_VCS_SUBTREE_SEED" subtree-v3 \
+  '2001-01-12T00:00:00+0000'
+"$git_bin" -C "$LEM_YATH_VCS_SUBTREE_SEED" push -qu origin main
+subtree_v3_hash=$($git_bin -C "$LEM_YATH_VCS_SUBTREE_SEED" rev-parse HEAD)
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" fetch -q \
+  "$LEM_YATH_VCS_SUBTREE_REMOTE" \
+  main:refs/remotes/subtree-fixture/main
+
+tmux_cmd send-keys -t "$porcelain_session" -l -- '"'
+if lem_wait_for "$porcelain_session" '\[Subtree\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" i
+fi
+if lem_wait_for "$porcelain_session" '\[Subtree import\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+  send_keys "$porcelain_session" P
+fi
+if lem_wait_for "$porcelain_session" 'Prefix:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_prompt_value "$porcelain_session" "$LEM_YATH_VCS_SUBTREE_COMMIT_PREFIX"
+fi
+tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+send_keys "$porcelain_session" m
+if lem_wait_for "$porcelain_session" 'Message \(blank unsets\):' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_prompt_value "$porcelain_session" 'Merge subtree; safe'
+fi
+send_keys "$porcelain_session" m
+if lem_wait_for "$porcelain_session" 'Commit:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_prompt_value "$porcelain_session" "$subtree_v3_hash"
+fi
+if wait_until "$WAIT_TIMEOUT" sh -c \
+     "[ \"\$(cat '$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBTREE_COMMIT_PREFIX/module.txt')\" = 'subtree version three' ]"; then
+  pass legit-subtree-merge \
+    '" i -P -m m merged a resolved commit without squash'
+else
+  fail legit-subtree-merge \
+    'subtree merge did not advance the existing prefix to the selected commit' \
+    "$porcelain_session"
+fi
+
+tmux_cmd send-keys -t "$porcelain_session" -l -- '"'
+if lem_wait_for "$porcelain_session" '\[Subtree\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" e
+fi
+if lem_wait_for "$porcelain_session" '\[Subtree export\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+  send_keys "$porcelain_session" P
+fi
+if lem_wait_for "$porcelain_session" 'Prefix:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_prompt_value "$porcelain_session" "$LEM_YATH_VCS_SUBTREE_COMMIT_PREFIX"
+fi
+tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+send_keys "$porcelain_session" a
+if lem_wait_for "$porcelain_session" 'Annotate \(blank unsets\):' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_prompt_value "$porcelain_session" '[export] '
+fi
+tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+send_keys "$porcelain_session" b
+if lem_wait_for "$porcelain_session" 'Branch \(blank unsets\):' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_prompt_value "$porcelain_session" subtree/export-safe
+fi
+tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+send_keys "$porcelain_session" j s
+if lem_wait_for "$porcelain_session" 'Commit:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_prompt_value "$porcelain_session" HEAD
+fi
+if wait_until "$WAIT_TIMEOUT" "$git_bin" \
+     -C "$LEM_YATH_VCS_PORCELAIN_ROOT" show-ref --verify --quiet \
+     refs/heads/subtree/export-safe &&
+   [ "$($git_bin -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+        show subtree/export-safe:module.txt)" = 'subtree version three' ] &&
+   ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+     cat-file -e subtree/export-safe:porcelain.txt 2>/dev/null; then
+  pass legit-subtree-split \
+    '" e -P -a -b -j s split, annotated, branched, and rejoined subtree history'
+else
+  fail legit-subtree-split \
+    'subtree split lost its branch, root-only tree, or rejoin mutation' \
+    "$porcelain_session"
+fi
+
+tmux_cmd send-keys -t "$porcelain_session" -l -- '"'
+if lem_wait_for "$porcelain_session" '\[Subtree\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" e
+fi
+if lem_wait_for "$porcelain_session" '\[Subtree export\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+  send_keys "$porcelain_session" P
+fi
+if lem_wait_for "$porcelain_session" 'Prefix:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_prompt_value "$porcelain_session" "$LEM_YATH_VCS_SUBTREE_PREFIX"
+fi
+send_keys "$porcelain_session" p
+if lem_wait_for "$porcelain_session" 'To repository:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_completion_prompt_value "$porcelain_session" \
+    "$LEM_YATH_VCS_SUBTREE_PUSH" 'To repository:'
+fi
+if lem_wait_for "$porcelain_session" 'To reference:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_atomic_completion_prompt_value "$porcelain_session" \
+    export-safe 'To reference:'
+fi
+if wait_until "$WAIT_TIMEOUT" "$git_bin" \
+     --git-dir="$LEM_YATH_VCS_SUBTREE_PUSH" show-ref --verify --quiet \
+     refs/heads/export-safe &&
+   [ "$($git_bin --git-dir="$LEM_YATH_VCS_SUBTREE_PUSH" \
+        show refs/heads/export-safe:module.txt)" = 'subtree version two' ] &&
+   ! "$git_bin" --git-dir="$LEM_YATH_VCS_SUBTREE_PUSH" \
+     cat-file -e refs/heads/export-safe:porcelain.txt 2>/dev/null; then
+  pass legit-subtree-push \
+    '" e -P p pushed an extracted root-only history to a metacharacter path'
+else
+  fail legit-subtree-push \
+    'subtree push did not create the exact exported tree and destination ref' \
     "$porcelain_session"
 fi
 lem_stop "$porcelain_session"

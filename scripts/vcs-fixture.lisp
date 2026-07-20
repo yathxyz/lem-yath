@@ -428,6 +428,58 @@
                         "--rebase" "--remote")
                       (legit-submodule-update-arguments options))
                "magit-submodule-update-arguments"))
+      (check (eq 'lem-yath-legit-subtree
+                 (vcs-test-key-command lem/legit::*peek-legit-keymap* "\""))
+             "magit-subtree-status-dispatch")
+      (check (eq 'lem-yath-legit-subtree
+                 (vcs-test-key-command
+                  lem/legit::*legit-diff-mode-keymap* "\""))
+             "magit-subtree-diff-dispatch")
+      (dolist (key '("i" "e" "q"))
+        (check (eq 'nop-command
+                   (vcs-test-key-command
+                    (legit-subtree-top-popup-keymap) key))
+               (format nil "magit-subtree-top-~a" key)))
+      (let ((options (make-legit-subtree-import-options)))
+        (dolist (key '("- P" "- m" "- s" "a" "c" "m" "f" "q"))
+          (check (eq 'nop-command
+                     (vcs-test-key-command
+                      (legit-subtree-import-popup-keymap options) key))
+                 (format nil "magit-subtree-import-~a" key))))
+      (let ((options (make-legit-subtree-export-options)))
+        (dolist (key '("- P" "- a" "- b" "- o" "- i" "- j"
+                       "p" "s" "q"))
+          (check (eq 'nop-command
+                     (vcs-test-key-command
+                      (legit-subtree-export-popup-keymap options) key))
+                 (format nil "magit-subtree-export-~a" key))))
+      (check (and
+              (legit-subtree-prefix-valid-p "vendor/module path;safe")
+              (legit-subtree-prefix-valid-p
+               (make-string 4096 :initial-element #\m))
+              (not (legit-subtree-prefix-valid-p "../escape"))
+              (not (legit-subtree-prefix-valid-p "vendor/.git/data"))
+              (not (legit-subtree-prefix-valid-p "/absolute"))
+              (not (legit-subtree-prefix-valid-p
+                    (make-string 4097 :initial-element #\m)))
+              (not (legit-subtree-prefix-valid-p
+                    (concatenate 'string "unsafe"
+                                 (string (code-char 0))))))
+             "magit-subtree-prefix-boundary")
+      (check
+       (equal '("--message=Import message; safe" "--squash")
+              (legit-subtree-import-arguments
+               (make-legit-subtree-import-options
+                :message "Import message; safe" :squash-p t)))
+       "magit-subtree-import-arguments")
+      (check
+       (equal '("--annotate=[subtree] " "--branch=export/topic"
+                "--onto=0123456789abcdef" "--ignore-joins" "--rejoin")
+              (legit-subtree-export-arguments
+               (make-legit-subtree-export-options
+                :annotate "[subtree] " :branch "export/topic"
+                :onto "0123456789abcdef" :ignore-joins-p t :rejoin-p t)))
+       "magit-subtree-export-arguments")
       (let ((nul (string (code-char 0))))
         (check (equal '("tracked path" "ignored;path")
                       (legit-stash-split-nul
@@ -1488,6 +1540,7 @@
    :stash (vcs-test-key-command lem/legit::*peek-legit-keymap* "z")
    :remote (vcs-test-key-command lem/legit::*peek-legit-keymap* "M")
    :submodule (vcs-test-key-command lem/legit::*peek-legit-keymap* "'")
+   :subtree (vcs-test-key-command lem/legit::*peek-legit-keymap* "\"")
    :smart (leader-binding-command lem-vi-mode:*normal-keymap* "g g")
    :git (leader-binding-command lem-vi-mode:*normal-keymap* "g G")
    :jj (leader-binding-command lem-vi-mode:*normal-keymap* "g J")
@@ -1526,6 +1579,7 @@
           (load (merge-pathnames "src/git-stash.lisp" source))
           (load (merge-pathnames "src/git-remote.lisp" source))
           (load (merge-pathnames "src/git-submodule.lisp" source))
+          (load (merge-pathnames "src/git-subtree.lisp" source))
           (load (merge-pathnames "src/git-blame.lisp" source))
           (load (merge-pathnames "src/apps/timemachine.lisp" source)))
         (let ((after (vcs-test-reload-state)))
@@ -1534,7 +1588,7 @@
             'string
             "RELOAD same=~a find=~d post=~d save=~d change=~d kill=~d "
             "global=~d source=~d directory=~d root-marker=~d todo-hook=~d "
-            "bisect-hook=~d bisect=~a fetch=~a reset=~a merge=~a revert=~a branch=~a worktree=~a push=~a stash=~a remote=~a submodule=~a smart=~a git=~a jj=~a time=~a "
+            "bisect-hook=~d bisect=~a fetch=~a reset=~a merge=~a revert=~a branch=~a worktree=~a push=~a stash=~a remote=~a submodule=~a subtree=~a smart=~a git=~a jj=~a time=~a "
             "jj-refresh=~a jj-quit=~a "
             "older=~a newer=~a nth=~a fuzzy=~a short=~a full=~a blame=~a "
             "blame-quit=~a p=~a n=~a t=~a quit=~a")
@@ -1572,6 +1626,8 @@
             (eq (getf after :remote) 'lem-yath-legit-remote))
            (vcs-test-yes-no
             (eq (getf after :submodule) 'lem-yath-legit-submodule))
+           (vcs-test-yes-no
+            (eq (getf after :subtree) 'lem-yath-legit-subtree))
            (vcs-test-yes-no (eq (getf after :smart) 'lem-yath-vcs-status))
            (vcs-test-yes-no (eq (getf after :git) 'lem-yath-legit-status))
            (vcs-test-yes-no (eq (getf after :jj) 'lem-yath-jj-log))
