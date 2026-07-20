@@ -604,6 +604,18 @@ bounded operation synchronously and refreshes Legit instead of opening Magit's
 asynchronous process buffer; the nested `C` branch-configuration UI and the
 submodule argument sub-transient remain outside this port.
 
+The matching `X` reset dispatch is also available in status and diff panes.
+It retains Magit's `b` branch and `f` file actions plus `m` mixed, `s` soft,
+`h` hard, `k` keep, `i` index-only, and `w` worktree-only reset boundaries.
+Resetting a dirty current branch requires confirmation; resetting another
+local branch uses an atomic reflogged `update-ref`. File checkout uses exact
+revision-tree candidates and a literal `--` path boundary. Worktree-only reset
+uses Magit's temporary-index/read-tree/checkout-index algorithm, preserving
+both HEAD and the real index. Lem does not feed a one-commit mixed/soft/keep
+reset message into Emacs' git-commit message ring, and Legit lacks Magit's
+section-level current-file default, so the file action always presents its
+bounded tree prompt.
+
 `vc-handled-backends '(Git)` only. `magit`/`magit-todos`/`forge`/`git-gutter`/`git-timemachine` all loaded via `init-evil`.
 
 ---

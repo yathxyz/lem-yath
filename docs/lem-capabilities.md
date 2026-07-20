@@ -2198,6 +2198,12 @@ Magit-inspired. `M-x legit-status` bound **`C-x g`** (`legit/legit.lisp:65`).
   one branch, `r` an explicit refspec, and `m` populated submodules with the
   default verbose four-job policy. A missing push remote is selected and
   persisted before fetching.
+- **Reset dispatch**: `X` exposes `b` branch, `f` file, `m` mixed, `s` soft,
+  `h` hard, `k` keep, `i` index-only, and `w` worktree-only actions in status
+  and diff panes. Revision, branch, and revision-tree file completion is
+  bounded; every mutation uses direct argv. Current dirty branch reset has
+  Magit's loss confirmation, non-current branches move through reflogged
+  `update-ref`, and worktree-only reset uses a private temporary index.
 - Refresh `g`, navigate `n`/`p`/`M-n`/`M-p`, help `?`/`C-x ?`, quit `q`.
 
 Lem-yath registers the diff, commit, and rebase major-mode maps ahead of Vi's

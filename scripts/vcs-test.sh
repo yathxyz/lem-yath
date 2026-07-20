@@ -787,6 +787,133 @@ prepare_porcelain_bisect_fixture() {
   porcelain_cherry_clean
 }
 
+porcelain_reset_clean_at() {
+  [ "$1" = \
+    "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD)" ] &&
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" diff --quiet &&
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" diff --cached --quiet
+}
+
+porcelain_reset_mixed() {
+  [ "$reset_base_hash" = \
+    "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD)" ] &&
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" diff --cached --quiet &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" diff --quiet &&
+    [ "$(cat "$LEM_YATH_VCS_PORCELAIN_ROOT/reset-mode.txt")" = \
+      'reset mode step' ]
+}
+
+porcelain_reset_soft() {
+  [ "$reset_base_hash" = \
+    "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD)" ] &&
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" diff --quiet &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" diff --cached --quiet &&
+    [ "$(cat "$LEM_YATH_VCS_PORCELAIN_ROOT/reset-mode.txt")" = \
+      'reset mode step' ]
+}
+
+porcelain_reset_keep() {
+  local names
+  names=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" diff --name-only) ||
+    return 1
+  [ "$reset_base_hash" = \
+    "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD)" ] &&
+    [ "$names" = reset-keep.txt ] &&
+    [ "$(cat "$LEM_YATH_VCS_PORCELAIN_ROOT/reset-mode.txt")" = \
+      'reset mode base' ] &&
+    [ "$(cat "$LEM_YATH_VCS_PORCELAIN_ROOT/reset-keep.txt")" = \
+      'uncommitted keep value' ] &&
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" diff --cached --quiet
+}
+
+porcelain_reset_index_only() {
+  local names
+  names=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" diff --name-only) ||
+    return 1
+  porcelain_reset_clean_at "$reset_step_hash" && return 1
+  [ "$reset_step_hash" = \
+    "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD)" ] &&
+    [ "$names" = reset-index.txt ] &&
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" diff --cached --quiet &&
+    [ "$(cat "$LEM_YATH_VCS_PORCELAIN_ROOT/reset-index.txt")" = \
+      'staged index value' ]
+}
+
+porcelain_reset_worktree_only() {
+  [ "$reset_step_hash" = \
+    "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD)" ] &&
+    [ "$(cat "$LEM_YATH_VCS_PORCELAIN_ROOT/reset-worktree.txt")" = \
+      'reset worktree base' ] &&
+    [ "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      show :reset-worktree.txt)" = 'staged worktree value' ] &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      diff --cached --quiet -- reset-worktree.txt &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      diff --quiet -- reset-worktree.txt
+}
+
+porcelain_reset_file_only() {
+  [ "$(cat "$LEM_YATH_VCS_PORCELAIN_ROOT/reset dir;safe/target file.txt")" = \
+    'reset target step' ] &&
+    [ "$(cat "$LEM_YATH_VCS_PORCELAIN_ROOT/reset-other.txt")" = \
+      'other remains dirty' ] &&
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      diff --quiet -- 'reset dir;safe/target file.txt' &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      diff --quiet -- reset-other.txt
+}
+
+porcelain_reset_other_branch() {
+  local reflog
+  reflog=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    reflog show -1 --format=%gs reset-moving 2>/dev/null) || return 1
+  [ "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+       rev-parse reset-moving)" = "$reset_step_hash" ] &&
+    [ "$reflog" = "reset: moving to $reset_step_hash" ] &&
+    porcelain_reset_clean_at "$reset_step_hash"
+}
+
+prepare_porcelain_reset_fixture() {
+  porcelain_reset_clean_at "$bisect_bad_hash" || return 1
+  reset_current_branch=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    branch --show-current) || return 1
+  [ -n "$reset_current_branch" ] || return 1
+  mkdir -p "$LEM_YATH_VCS_PORCELAIN_ROOT/reset dir;safe"
+  printf 'reset mode base\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-mode.txt"
+  printf 'reset keep base\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-keep.txt"
+  printf 'reset index base\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-index.txt"
+  printf 'reset worktree base\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-worktree.txt"
+  printf 'reset target base\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset dir;safe/target file.txt"
+  printf 'reset other base\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-other.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- \
+    reset-mode.txt reset-keep.txt reset-index.txt reset-worktree.txt \
+    'reset dir;safe/target file.txt' reset-other.txt || return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_ROOT" reset-base \
+    '2001-03-01T00:00:00+0000' || return 1
+  reset_base_hash=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    rev-parse HEAD) || return 1
+
+  printf 'reset mode step\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-mode.txt"
+  printf 'reset target step\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset dir;safe/target file.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- \
+    reset-mode.txt 'reset dir;safe/target file.txt' || return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_ROOT" reset-step \
+    '2001-03-02T00:00:00+0000' || return 1
+  reset_step_hash=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    rev-parse HEAD) || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch \
+    reset-moving "$reset_base_hash" || return 1
+  porcelain_reset_clean_at "$reset_step_hash"
+}
+
 enter_prompt_value() {
   local session=$1 value=$2 index
   for index in $(seq 1 80); do
@@ -794,6 +921,20 @@ enter_prompt_value() {
   done
   tmux_cmd send-keys -t "$session" -l -- "$value"
   send_keys "$session" Enter
+}
+
+enter_completion_prompt_value() {
+  local session=$1 value=$2 prompt=$3 index
+  for index in $(seq 1 80); do
+    lem_keys "$session" BSpace
+  done
+  tmux_cmd send-keys -t "$session" -l -- "$value"
+  sleep 0.5
+  send_keys "$session" Enter
+  sleep 0.25
+  if lem_wait_for "$session" "$prompt" 1 >/dev/null 2>&1; then
+    send_keys "$session" Enter
+  fi
 }
 
 send_keys() {
@@ -960,7 +1101,7 @@ fi
 send_keys "$colocated_session" q F6
 
 if press_report "$colocated_session" F8 '^RELOAD ' 60 &&
-   grep -q '^RELOAD same=yes find=1 post=1 save=1 change=1 kill=1 global=0 source=1 directory=0 root-marker=1 todo-hook=1 bisect-hook=1 bisect=yes fetch=yes smart=yes git=yes jj=yes time=yes jj-refresh=yes jj-quit=yes older=yes newer=yes nth=yes fuzzy=yes short=yes full=yes blame=yes blame-quit=yes p=yes n=yes t=yes quit=yes$' \
+   grep -q '^RELOAD same=yes find=1 post=1 save=1 change=1 kill=1 global=0 source=1 directory=0 root-marker=1 todo-hook=1 bisect-hook=1 bisect=yes fetch=yes reset=yes smart=yes git=yes jj=yes time=yes jj-refresh=yes jj-quit=yes older=yes newer=yes nth=yes fuzzy=yes short=yes full=yes blame=yes blame-quit=yes p=yes n=yes t=yes quit=yes$' \
      "$LEM_YATH_VCS_REPORT"; then
   pass reload-idempotence 'two VCS reloads preserved one mode, hooks, inserter, and keymaps'
 else
@@ -2301,6 +2442,289 @@ if wait_until "$WAIT_TIMEOUT" porcelain_bisect_reset; then
 else
   fail legit-bisect-run-reset \
     'completed scripted bisect metadata or HEAD survived reset' \
+    "$porcelain_session"
+fi
+
+if prepare_porcelain_reset_fixture; then
+  pass legit-reset-fixture \
+    'prepared isolated base/step revisions, a movable branch, and metacharacter paths'
+else
+  fail legit-reset-fixture \
+    'could not prepare the isolated reset history' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" Escape Space g G
+wait_legit "$porcelain_session" porcelain ||
+  fail legit-reset-focus 'could not refocus Legit after reset fixture creation' \
+    "$porcelain_session"
+
+send_keys "$porcelain_session" X
+if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" m
+fi
+if lem_wait_for "$porcelain_session" 'Mixed reset:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$reset_base_hash"
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_reset_mixed; then
+  pass legit-reset-mixed \
+    'X m moved HEAD and the index while preserving the step worktree'
+else
+  fail legit-reset-mixed \
+    'mixed reset did not preserve its exact HEAD/index/worktree boundary' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" X
+if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" h
+fi
+if lem_wait_for "$porcelain_session" 'Hard reset:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$reset_step_hash"
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_reset_clean_at "$reset_step_hash"; then
+  pass legit-reset-hard \
+    'X h restored HEAD, index, and worktree to the selected step'
+else
+  fail legit-reset-hard \
+    'hard reset left HEAD, index, or worktree at the wrong revision' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" X
+if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" s
+fi
+if lem_wait_for "$porcelain_session" 'Soft reset:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$reset_base_hash"
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_reset_soft; then
+  pass legit-reset-soft \
+    'X s moved only HEAD and retained the step index and worktree'
+else
+  fail legit-reset-soft \
+    'soft reset changed or lost the retained index/worktree state' \
+    "$porcelain_session"
+fi
+send_keys "$porcelain_session" X
+if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" h
+fi
+if lem_wait_for "$porcelain_session" 'Hard reset:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$reset_step_hash"
+fi
+wait_until "$WAIT_TIMEOUT" porcelain_reset_clean_at "$reset_step_hash" ||
+  fail legit-reset-soft-cleanup \
+    'could not restore the clean step after soft reset' "$porcelain_session"
+
+printf 'uncommitted keep value\n' \
+  >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-keep.txt"
+send_keys "$porcelain_session" g X
+if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" k
+fi
+if lem_wait_for "$porcelain_session" 'Keep reset:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$reset_base_hash"
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_reset_keep; then
+  pass legit-reset-keep \
+    'X k moved HEAD/index while retaining an unrelated dirty tracked file'
+else
+  fail legit-reset-keep \
+    'keep reset lost the dirty file or retained the wrong committed tree' \
+    "$porcelain_session"
+fi
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard \
+  "$reset_step_hash"
+send_keys "$porcelain_session" g
+
+printf 'staged index value\n' \
+  >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-index.txt"
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- reset-index.txt
+send_keys "$porcelain_session" g X
+if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" i
+fi
+if lem_wait_for "$porcelain_session" 'Reset index to:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$reset_step_hash"
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_reset_index_only; then
+  pass legit-reset-index \
+    'X i reset only the index and retained the edited worktree file'
+else
+  fail legit-reset-index \
+    'index-only reset moved HEAD or discarded the worktree edit' \
+    "$porcelain_session"
+fi
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard \
+  "$reset_step_hash"
+send_keys "$porcelain_session" g
+
+printf 'staged worktree value\n' \
+  >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-worktree.txt"
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- reset-worktree.txt
+printf 'unstaged worktree value\n' \
+  >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-worktree.txt"
+send_keys "$porcelain_session" g X
+if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" w
+fi
+if lem_wait_for "$porcelain_session" 'Reset worktree to:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$reset_step_hash"
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_reset_worktree_only; then
+  pass legit-reset-worktree \
+    'X w used a temporary index and changed only worktree contents'
+else
+  fail legit-reset-worktree \
+    'worktree-only reset changed HEAD/index or retained the wrong file content' \
+    "$porcelain_session"
+fi
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard \
+  "$reset_step_hash"
+send_keys "$porcelain_session" g
+
+printf 'selected path dirty\n' \
+  >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset dir;safe/target file.txt"
+printf 'other remains dirty\n' \
+  >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-other.txt"
+send_keys "$porcelain_session" g X
+if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" f
+fi
+if lem_wait_for "$porcelain_session" 'Checkout from revision:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$reset_step_hash"
+fi
+if lem_wait_for "$porcelain_session" 'Checkout file:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  # Select the unique path through the real completion view, then submit the
+  # resulting exact prompt value.  Completion Return and prompt Return are
+  # deliberately separate Lem commands.
+  enter_completion_prompt_value "$porcelain_session" target 'Checkout file:'
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_reset_file_only; then
+  pass legit-reset-file \
+    'X f restored one exact space/semicolon path and left another dirty file alone'
+else
+  fail legit-reset-file \
+    'file checkout broadened its path scope or mishandled direct argv' \
+    "$porcelain_session"
+fi
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard \
+  "$reset_step_hash"
+send_keys "$porcelain_session" g
+
+send_keys "$porcelain_session" X
+if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" b
+fi
+if lem_wait_for "$porcelain_session" 'Reset branch:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" moving 'Reset branch:'
+fi
+if lem_wait_for "$porcelain_session" 'Reset reset-moving to:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$reset_step_hash"
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_reset_other_branch; then
+  pass legit-reset-branch-other \
+    'X b moved a non-current branch through update-ref without touching HEAD'
+else
+  fail legit-reset-branch-other \
+    'non-current branch reset changed HEAD or lost its reset reflog action' \
+    "$porcelain_session"
+fi
+
+printf 'current branch dirty\n' \
+  >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-mode.txt"
+send_keys "$porcelain_session" g X
+if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" b
+fi
+if lem_wait_for "$porcelain_session" 'Reset branch:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" \
+    "$reset_current_branch" 'Reset branch:'
+fi
+if lem_wait_for "$porcelain_session" "Reset $reset_current_branch to:" \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$reset_base_hash"
+fi
+if lem_wait_for "$porcelain_session" 'Uncommitted changes will be lost' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" n
+fi
+if [ "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD)" = \
+     "$reset_step_hash" ] &&
+   [ "$(cat "$LEM_YATH_VCS_PORCELAIN_ROOT/reset-mode.txt")" = \
+     'current branch dirty' ]; then
+  pass legit-reset-branch-decline \
+    'X b respected refusal of the current-branch destructive reset'
+else
+  fail legit-reset-branch-decline \
+    'declining the loss warning still changed HEAD or the dirty file' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" X
+if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" b
+fi
+if lem_wait_for "$porcelain_session" 'Reset branch:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" \
+    "$reset_current_branch" 'Reset branch:'
+fi
+if lem_wait_for "$porcelain_session" "Reset $reset_current_branch to:" \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$reset_base_hash"
+fi
+if lem_wait_for "$porcelain_session" 'Uncommitted changes will be lost' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_reset_clean_at "$reset_base_hash"; then
+  pass legit-reset-branch-current \
+    'X b confirmed and hard-reset the current dirty branch to its target'
+else
+  fail legit-reset-branch-current \
+    'confirmed current-branch reset did not cleanly reach the selected target' \
+    "$porcelain_session"
+fi
+
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard \
+  "$reset_step_hash"
+printf 'untracked survives reset\n' \
+  >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-untracked.txt"
+send_keys "$porcelain_session" g X
+if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" b
+fi
+if lem_wait_for "$porcelain_session" 'Reset branch:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" \
+    "$reset_current_branch" 'Reset branch:'
+fi
+if lem_wait_for "$porcelain_session" "Reset $reset_current_branch to:" \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$reset_base_hash"
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_reset_clean_at "$reset_base_hash" &&
+   [ "$(cat "$LEM_YATH_VCS_PORCELAIN_ROOT/reset-untracked.txt")" = \
+     'untracked survives reset' ]; then
+  pass legit-reset-branch-untracked \
+    'current branch reset ignored and preserved an untracked-only change'
+else
+  fail legit-reset-branch-untracked \
+    'untracked-only state prompted, blocked, or was removed by branch reset' \
     "$porcelain_session"
 fi
 lem_stop "$porcelain_session"

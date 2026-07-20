@@ -495,6 +495,12 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   it retains prune/tags/unshallow/force toggles and fetches a push remote,
   upstream, selected remote, all remotes, one branch, an explicit refspec, or
   populated submodules without moving `HEAD`.
+  Magit's `X` reset dispatch is likewise available in status and diff panes:
+  `b` resets a selected local branch, `f` checks out one revision path, and
+  `m`/`s`/`h`/`k`/`i`/`w` preserve the mixed, soft, hard, keep, index-only,
+  and worktree-only state boundaries. Current dirty branches require the
+  matching confirmation, while worktree-only reset uses a private temporary
+  index so the real index is unchanged.
   Packaged `gh` also backs
   command-accessible GitHub Forge lists, detail views, multiline creation and
   comments, close/reopen actions, external browsing, and cache-only Legit

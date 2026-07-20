@@ -45,6 +45,7 @@
                (:file "git-cherry-pick")
                (:file "git-bisect")
                (:file "git-fetch")
+               (:file "git-reset")
                (:file "git-blame")
                (:file "forge")
                (:file "project-history")
