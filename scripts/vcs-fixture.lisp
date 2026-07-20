@@ -207,12 +207,19 @@
                       (legit-fetch-popup-keymap options) key))
                  (format nil "magit-fetch-~a" key))))
       (check (eq 'lem-yath-legit-reset
-                 (vcs-test-key-command lem/legit::*peek-legit-keymap* "X"))
+                 (vcs-test-key-command lem/legit::*peek-legit-keymap* "O"))
              "magit-reset-status-dispatch")
       (check (eq 'lem-yath-legit-reset
                  (vcs-test-key-command
-                  lem/legit::*legit-diff-mode-keymap* "X"))
+                  lem/legit::*legit-diff-mode-keymap* "O"))
              "magit-reset-diff-dispatch")
+      (check (and (not (eq 'lem-yath-legit-reset
+                           (vcs-test-key-command
+                            lem/legit::*peek-legit-keymap* "X")))
+                  (not (eq 'lem-yath-legit-reset
+                           (vcs-test-key-command
+                            lem/legit::*legit-diff-mode-keymap* "X"))))
+             "magit-reset-old-dispatch-cleared")
       (dolist (key '("b" "f" "m" "s" "h" "k" "i" "w" "q"))
         (check (eq 'nop-command
                    (vcs-test-key-command *legit-reset-dispatch-keymap* key))
@@ -387,6 +394,40 @@
                   (not (legit-remote-name-valid-p "-unsafe"))
                   (not (legit-remote-name-valid-p "bad name")))
              "magit-remote-name-boundary")
+      (check (eq 'lem-yath-legit-submodule
+                 (vcs-test-key-command lem/legit::*peek-legit-keymap* "'"))
+             "magit-submodule-status-dispatch")
+      (check (eq 'lem-yath-legit-submodule
+                 (vcs-test-key-command
+                  lem/legit::*legit-diff-mode-keymap* "'"))
+             "magit-submodule-diff-dispatch")
+      (let ((options (make-legit-submodule-options)))
+        (dolist (key '("- f" "- r" "- N" "- C" "- R" "- M" "- U"
+                       "a" "r" "p" "u" "s" "d" "k" "l" "f" "q"))
+          (check (eq 'nop-command
+                     (vcs-test-key-command
+                      (legit-submodule-popup-keymap options) key))
+                 (format nil "magit-submodule-~a" key))))
+      (check (and
+              (legit-submodule-path-valid-p "modules/module path;safe")
+              (legit-submodule-path-valid-p
+               (make-string 4096 :initial-element #\m))
+              (not (legit-submodule-path-valid-p "../escape"))
+              (not (legit-submodule-path-valid-p "modules/.git/data"))
+              (not (legit-submodule-path-valid-p "/absolute"))
+              (not (legit-submodule-path-valid-p
+                    (make-string 4097 :initial-element #\m)))
+              (not (legit-submodule-path-valid-p
+                    (concatenate 'string "unsafe"
+                                 (string (code-char 0))))))
+             "magit-submodule-path-boundary")
+      (let ((options (make-legit-submodule-options
+                      :force-p t :recursive-p t :no-fetch-p t
+                      :strategy :rebase :remote-p t)))
+        (check (equal '("--force" "--recursive" "--no-fetch"
+                        "--rebase" "--remote")
+                      (legit-submodule-update-arguments options))
+               "magit-submodule-update-arguments"))
       (let ((nul (string (code-char 0))))
         (check (equal '("tracked path" "ignored;path")
                       (legit-stash-split-nul
@@ -1438,7 +1479,7 @@
                        :key #'car :test #'eq)
    :bisect (vcs-test-key-command lem/legit::*peek-legit-keymap* "B")
    :fetch (vcs-test-key-command lem/legit::*peek-legit-keymap* "f")
-   :reset (vcs-test-key-command lem/legit::*peek-legit-keymap* "X")
+   :reset (vcs-test-key-command lem/legit::*peek-legit-keymap* "O")
    :merge (vcs-test-key-command lem/legit::*peek-legit-keymap* "m")
    :revert (vcs-test-key-command lem/legit::*peek-legit-keymap* "_")
    :branch (vcs-test-key-command lem/legit::*peek-legit-keymap* "b")
@@ -1446,6 +1487,7 @@
    :push (vcs-test-key-command lem/legit::*peek-legit-keymap* "p")
    :stash (vcs-test-key-command lem/legit::*peek-legit-keymap* "z")
    :remote (vcs-test-key-command lem/legit::*peek-legit-keymap* "M")
+   :submodule (vcs-test-key-command lem/legit::*peek-legit-keymap* "'")
    :smart (leader-binding-command lem-vi-mode:*normal-keymap* "g g")
    :git (leader-binding-command lem-vi-mode:*normal-keymap* "g G")
    :jj (leader-binding-command lem-vi-mode:*normal-keymap* "g J")
@@ -1483,6 +1525,7 @@
           (load (merge-pathnames "src/git-push.lisp" source))
           (load (merge-pathnames "src/git-stash.lisp" source))
           (load (merge-pathnames "src/git-remote.lisp" source))
+          (load (merge-pathnames "src/git-submodule.lisp" source))
           (load (merge-pathnames "src/git-blame.lisp" source))
           (load (merge-pathnames "src/apps/timemachine.lisp" source)))
         (let ((after (vcs-test-reload-state)))
@@ -1491,7 +1534,7 @@
             'string
             "RELOAD same=~a find=~d post=~d save=~d change=~d kill=~d "
             "global=~d source=~d directory=~d root-marker=~d todo-hook=~d "
-            "bisect-hook=~d bisect=~a fetch=~a reset=~a merge=~a revert=~a branch=~a worktree=~a push=~a stash=~a remote=~a smart=~a git=~a jj=~a time=~a "
+            "bisect-hook=~d bisect=~a fetch=~a reset=~a merge=~a revert=~a branch=~a worktree=~a push=~a stash=~a remote=~a submodule=~a smart=~a git=~a jj=~a time=~a "
             "jj-refresh=~a jj-quit=~a "
             "older=~a newer=~a nth=~a fuzzy=~a short=~a full=~a blame=~a "
             "blame-quit=~a p=~a n=~a t=~a quit=~a")
@@ -1527,6 +1570,8 @@
             (eq (getf after :stash) 'lem-yath-legit-stash))
            (vcs-test-yes-no
             (eq (getf after :remote) 'lem-yath-legit-remote))
+           (vcs-test-yes-no
+            (eq (getf after :submodule) 'lem-yath-legit-submodule))
            (vcs-test-yes-no (eq (getf after :smart) 'lem-yath-vcs-status))
            (vcs-test-yes-no (eq (getf after :git) 'lem-yath-legit-status))
            (vcs-test-yes-no (eq (getf after :jj) 'lem-yath-jj-log))

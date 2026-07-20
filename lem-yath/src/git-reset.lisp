@@ -352,5 +352,9 @@ revision, matching Magit's branch-reset reader."
     (legit-reset-require-git vcs)
     (dispatch-legit-reset)))
 
-(define-key lem/legit::*peek-legit-keymap* "X" 'lem-yath-legit-reset)
-(define-key lem/legit::*legit-diff-mode-keymap* "X" 'lem-yath-legit-reset)
+;; Evil Collection moves Magit's top-level reset dispatch from X to O.  Clear
+;; the old binding as well so source reloads cannot retain the stale route.
+(undefine-key lem/legit::*peek-legit-keymap* "X")
+(undefine-key lem/legit::*legit-diff-mode-keymap* "X")
+(define-key lem/legit::*peek-legit-keymap* "O" 'lem-yath-legit-reset)
+(define-key lem/legit::*legit-diff-mode-keymap* "O" 'lem-yath-legit-reset)

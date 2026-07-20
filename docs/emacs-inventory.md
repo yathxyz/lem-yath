@@ -675,7 +675,21 @@ and removal and confirms destructive removal/pruning. Direct single-value
 prompts replace Magit's multi-value URL/refspec editor; the normally hidden
 level-7 unshallow action and asynchronous process presentation remain absent.
 
-The matching `X` reset dispatch is also available in status and diff panes.
+Evil Collection moves Magit's submodule dispatch to apostrophe (`'`) in status
+and diff panes, and Lem matches the normally visible lifecycle. `-f`, `-r`,
+`-N`, `-C`, `-R`, `-M`, and `-U` retain force, recursive, no-fetch, checkout,
+rebase, merge, and remote-tip arguments; `a`, `r`, `p`, `u`, `s`, `d`, `k`,
+`l`, and `f` add, register, populate, update, synchronize, unpopulate, remove,
+list, and fetch modules. The list is a bounded textual pane dismissed with
+Space rather than Magit's navigable module-list buffer. Dirty removal fails closed unless force is
+enabled, then requires an additional confirmation and stashes tracked and
+untracked content while preserving `.git/modules`. Lem selects one module per
+action instead of Magit's region/prefix multi-selection and runs bounded Git
+operations synchronously rather than in process buffers; the prefix-only
+gitdir-trash path remains absent.
+
+The matching `O` reset dispatch is also available in status and diff panes
+after Evil Collection's top-level remap from `X`.
 It retains Magit's `b` branch and `f` file actions plus `m` mixed, `s` soft,
 `h` hard, `k` keep, `i` index-only, and `w` worktree-only reset boundaries.
 Resetting a dirty current branch requires confirmation; resetting another

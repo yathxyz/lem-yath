@@ -22,6 +22,7 @@ export GIT_CONFIG_NOSYSTEM=1
 export GIT_CONFIG_GLOBAL=/dev/null
 export GIT_TERMINAL_PROMPT=0
 export GIT_PAGER=cat
+export GIT_ALLOW_PROTOCOL=file
 export JJ_CONFIG="$root/jj-config.toml"
 export JJ_PAGER=cat
 export NO_COLOR=1
@@ -49,6 +50,10 @@ export LEM_YATH_VCS_WORKTREE_MOVE_CONTAINER="$root/repos/wt container;safe"
 export LEM_YATH_VCS_WORKTREE_MOVED="${LEM_YATH_VCS_WORKTREE_MOVE_CONTAINER}/wt created;safe"
 export LEM_YATH_VCS_WORKTREE_LOCKED="$root/repos/wt locked;safe"
 export LEM_YATH_VCS_WORKTREE_STALE="$root/repos/wt stale;safe"
+export LEM_YATH_VCS_SUBMODULE_REMOTE="$root/repos/submodule remote;safe.git"
+export LEM_YATH_VCS_SUBMODULE_SEED="$root/repos/submodule seed;safe"
+export LEM_YATH_VCS_SUBMODULE_PATH="modules/module path;safe"
+export LEM_YATH_VCS_SUBMODULE_NAME="module-safe"
 
 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$WORKDIR" "$LEM_HOME" \
   "$LEM_YATH_VCS_COLOCATED_ROOT/nested/deeper" \
@@ -239,6 +244,30 @@ fi
   user.name 'Lem Yath Peer Test'
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" config \
   user.email 'lem-yath-peer@example.invalid'
+
+# A separate local remote exercises the complete submodule lifecycle without
+# requiring network or credential state.  GIT_ALLOW_PROTOCOL is scoped to this
+# disposable test HOME and permits only the local file transport.
+if ! "$git_bin" init --bare -q "$LEM_YATH_VCS_SUBMODULE_REMOTE" ||
+   ! mkdir -p "$LEM_YATH_VCS_SUBMODULE_SEED" ||
+   ! git_init "$LEM_YATH_VCS_SUBMODULE_SEED"; then
+  echo "Could not initialize the submodule fixture" >&2
+  rm -rf -- "$root"
+  exit 1
+fi
+printf 'submodule version one\n' >"$LEM_YATH_VCS_SUBMODULE_SEED/module.txt"
+"$git_bin" -C "$LEM_YATH_VCS_SUBMODULE_SEED" add -- module.txt
+if ! git_commit "$LEM_YATH_VCS_SUBMODULE_SEED" submodule-v1 \
+     '2001-01-05T00:00:00+0000' ||
+   ! "$git_bin" -C "$LEM_YATH_VCS_SUBMODULE_SEED" remote add origin \
+     "$LEM_YATH_VCS_SUBMODULE_REMOTE" ||
+   ! "$git_bin" -C "$LEM_YATH_VCS_SUBMODULE_SEED" push -qu origin main ||
+   ! "$git_bin" --git-dir="$LEM_YATH_VCS_SUBMODULE_REMOTE" symbolic-ref \
+     HEAD refs/heads/main; then
+  echo "Could not create the submodule remote topology" >&2
+  rm -rf -- "$root"
+  exit 1
+fi
 sed -i '2s/.*/porcelain-line-02 changed-first-hunk/' \
   "$LEM_YATH_VCS_PORCELAIN_FILE"
 sed -i '5s/.*/porcelain-line-05 changed-nearby-hunk/' \
@@ -2230,7 +2259,7 @@ fi
 send_keys "$colocated_session" q F6
 
 if press_report "$colocated_session" F8 '^RELOAD ' 60 &&
-   grep -q '^RELOAD same=yes find=1 post=1 save=1 change=1 kill=1 global=0 source=1 directory=0 root-marker=1 todo-hook=1 bisect-hook=1 bisect=yes fetch=yes reset=yes merge=yes revert=yes branch=yes worktree=yes push=yes stash=yes remote=yes smart=yes git=yes jj=yes time=yes jj-refresh=yes jj-quit=yes older=yes newer=yes nth=yes fuzzy=yes short=yes full=yes blame=yes blame-quit=yes p=yes n=yes t=yes quit=yes$' \
+   grep -q '^RELOAD same=yes find=1 post=1 save=1 change=1 kill=1 global=0 source=1 directory=0 root-marker=1 todo-hook=1 bisect-hook=1 bisect=yes fetch=yes reset=yes merge=yes revert=yes branch=yes worktree=yes push=yes stash=yes remote=yes submodule=yes smart=yes git=yes jj=yes time=yes jj-refresh=yes jj-quit=yes older=yes newer=yes nth=yes fuzzy=yes short=yes full=yes blame=yes blame-quit=yes p=yes n=yes t=yes quit=yes$' \
      "$LEM_YATH_VCS_REPORT"; then
   pass reload-idempotence 'two VCS reloads preserved one mode, hooks, inserter, and keymaps'
 else
@@ -4097,7 +4126,7 @@ wait_legit "$porcelain_session" porcelain ||
   fail legit-reset-focus 'could not refocus Legit after reset fixture creation' \
     "$porcelain_session"
 
-send_keys "$porcelain_session" X
+send_keys "$porcelain_session" O
 if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" m
 fi
@@ -4107,14 +4136,14 @@ if lem_wait_for "$porcelain_session" 'Mixed reset:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_reset_mixed; then
   pass legit-reset-mixed \
-    'X m moved HEAD and the index while preserving the step worktree'
+    'O m moved HEAD and the index while preserving the step worktree'
 else
   fail legit-reset-mixed \
     'mixed reset did not preserve its exact HEAD/index/worktree boundary' \
     "$porcelain_session"
 fi
 
-send_keys "$porcelain_session" X
+send_keys "$porcelain_session" O
 if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" h
 fi
@@ -4124,14 +4153,14 @@ if lem_wait_for "$porcelain_session" 'Hard reset:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_reset_clean_at "$reset_step_hash"; then
   pass legit-reset-hard \
-    'X h restored HEAD, index, and worktree to the selected step'
+    'O h restored HEAD, index, and worktree to the selected step'
 else
   fail legit-reset-hard \
     'hard reset left HEAD, index, or worktree at the wrong revision' \
     "$porcelain_session"
 fi
 
-send_keys "$porcelain_session" X
+send_keys "$porcelain_session" O
 if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" s
 fi
@@ -4141,13 +4170,13 @@ if lem_wait_for "$porcelain_session" 'Soft reset:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_reset_soft; then
   pass legit-reset-soft \
-    'X s moved only HEAD and retained the step index and worktree'
+    'O s moved only HEAD and retained the step index and worktree'
 else
   fail legit-reset-soft \
     'soft reset changed or lost the retained index/worktree state' \
     "$porcelain_session"
 fi
-send_keys "$porcelain_session" X
+send_keys "$porcelain_session" O
 if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" h
 fi
@@ -4161,7 +4190,7 @@ wait_until "$WAIT_TIMEOUT" porcelain_reset_clean_at "$reset_step_hash" ||
 
 printf 'uncommitted keep value\n' \
   >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-keep.txt"
-send_keys "$porcelain_session" g X
+send_keys "$porcelain_session" g O
 if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" k
 fi
@@ -4171,7 +4200,7 @@ if lem_wait_for "$porcelain_session" 'Keep reset:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_reset_keep; then
   pass legit-reset-keep \
-    'X k moved HEAD/index while retaining an unrelated dirty tracked file'
+    'O k moved HEAD/index while retaining an unrelated dirty tracked file'
 else
   fail legit-reset-keep \
     'keep reset lost the dirty file or retained the wrong committed tree' \
@@ -4184,7 +4213,7 @@ send_keys "$porcelain_session" g
 printf 'staged index value\n' \
   >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-index.txt"
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- reset-index.txt
-send_keys "$porcelain_session" g X
+send_keys "$porcelain_session" g O
 if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" i
 fi
@@ -4194,7 +4223,7 @@ if lem_wait_for "$porcelain_session" 'Reset index to:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_reset_index_only; then
   pass legit-reset-index \
-    'X i reset only the index and retained the edited worktree file'
+    'O i reset only the index and retained the edited worktree file'
 else
   fail legit-reset-index \
     'index-only reset moved HEAD or discarded the worktree edit' \
@@ -4209,7 +4238,7 @@ printf 'staged worktree value\n' \
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- reset-worktree.txt
 printf 'unstaged worktree value\n' \
   >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-worktree.txt"
-send_keys "$porcelain_session" g X
+send_keys "$porcelain_session" g O
 if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" w
 fi
@@ -4219,7 +4248,7 @@ if lem_wait_for "$porcelain_session" 'Reset worktree to:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_reset_worktree_only; then
   pass legit-reset-worktree \
-    'X w used a temporary index and changed only worktree contents'
+    'O w used a temporary index and changed only worktree contents'
 else
   fail legit-reset-worktree \
     'worktree-only reset changed HEAD/index or retained the wrong file content' \
@@ -4233,7 +4262,7 @@ printf 'selected path dirty\n' \
   >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset dir;safe/target file.txt"
 printf 'other remains dirty\n' \
   >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-other.txt"
-send_keys "$porcelain_session" g X
+send_keys "$porcelain_session" g O
 if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" f
 fi
@@ -4250,7 +4279,7 @@ if lem_wait_for "$porcelain_session" 'Checkout file:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_reset_file_only; then
   pass legit-reset-file \
-    'X f restored one exact space/semicolon path and left another dirty file alone'
+    'O f restored one exact space/semicolon path and left another dirty file alone'
 else
   fail legit-reset-file \
     'file checkout broadened its path scope or mishandled direct argv' \
@@ -4260,7 +4289,7 @@ fi
   "$reset_step_hash"
 send_keys "$porcelain_session" g
 
-send_keys "$porcelain_session" X
+send_keys "$porcelain_session" O
 if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" b
 fi
@@ -4274,7 +4303,7 @@ if lem_wait_for "$porcelain_session" 'Reset reset-moving to:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_reset_other_branch; then
   pass legit-reset-branch-other \
-    'X b moved a non-current branch through update-ref without touching HEAD'
+    'O b moved a non-current branch through update-ref without touching HEAD'
 else
   fail legit-reset-branch-other \
     'non-current branch reset changed HEAD or lost its reset reflog action' \
@@ -4283,7 +4312,7 @@ fi
 
 printf 'current branch dirty\n' \
   >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-mode.txt"
-send_keys "$porcelain_session" g X
+send_keys "$porcelain_session" g O
 if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" b
 fi
@@ -4305,14 +4334,14 @@ if [ "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD)" = \
    [ "$(cat "$LEM_YATH_VCS_PORCELAIN_ROOT/reset-mode.txt")" = \
      'current branch dirty' ]; then
   pass legit-reset-branch-decline \
-    'X b respected refusal of the current-branch destructive reset'
+    'O b respected refusal of the current-branch destructive reset'
 else
   fail legit-reset-branch-decline \
     'declining the loss warning still changed HEAD or the dirty file' \
     "$porcelain_session"
 fi
 
-send_keys "$porcelain_session" X
+send_keys "$porcelain_session" O
 if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" b
 fi
@@ -4331,7 +4360,7 @@ if lem_wait_for "$porcelain_session" 'Uncommitted changes will be lost' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_reset_clean_at "$reset_base_hash"; then
   pass legit-reset-branch-current \
-    'X b confirmed and hard-reset the current dirty branch to its target'
+    'O b confirmed and hard-reset the current dirty branch to its target'
 else
   fail legit-reset-branch-current \
     'confirmed current-branch reset did not cleanly reach the selected target' \
@@ -4342,7 +4371,7 @@ fi
   "$reset_step_hash"
 printf 'untracked survives reset\n' \
   >"$LEM_YATH_VCS_PORCELAIN_ROOT/reset-untracked.txt"
-send_keys "$porcelain_session" g X
+send_keys "$porcelain_session" g O
 if lem_wait_for "$porcelain_session" 'Reset' "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" b
 fi
@@ -6146,6 +6175,270 @@ fi
   "$LEM_YATH_VCS_WORKTREE_LOCKED" || true
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" worktree remove --force \
   "$LEM_YATH_VCS_WORKTREE_LOCKED" || true
+
+# Exercise Evil Collection's apostrophe submodule dispatch after all workflows
+# which require a pristine superproject index.  This covers each normally
+# visible lifecycle action against a real local bare remote.
+tmux_cmd send-keys -t "$porcelain_session" -l -- "'"
+if lem_wait_for "$porcelain_session" '\[Submodule\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" a
+fi
+if lem_wait_for "$porcelain_session" 'Submodule URL:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$LEM_YATH_VCS_SUBMODULE_REMOTE"
+fi
+if lem_wait_for "$porcelain_session" 'Submodule path:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$LEM_YATH_VCS_SUBMODULE_PATH"
+fi
+if lem_wait_for "$porcelain_session" 'Submodule name:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$LEM_YATH_VCS_SUBMODULE_NAME"
+fi
+if wait_until "$WAIT_TIMEOUT" test -f \
+     "$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBMODULE_PATH/module.txt" &&
+   [ "$($git_bin -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config --file \
+        .gitmodules --get "submodule.$LEM_YATH_VCS_SUBMODULE_NAME.path")" = \
+     "$LEM_YATH_VCS_SUBMODULE_PATH" ] &&
+   [ "$($git_bin -C "$LEM_YATH_VCS_PORCELAIN_ROOT" ls-files -s -- \
+        "$LEM_YATH_VCS_SUBMODULE_PATH" | awk '{print $1}')" = 160000 ]; then
+  pass legit-submodule-add \
+    "' a added the named metacharacter-path module and staged its gitlink"
+else
+  fail legit-submodule-add \
+    'submodule add lost its name, direct-argv path, population, or index state' \
+    "$porcelain_session"
+fi
+
+tmux_cmd send-keys -t "$porcelain_session" -l -- "'"
+if lem_wait_for "$porcelain_session" '\[Submodule\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" l
+fi
+if lem_wait_for "$porcelain_session" 'Populated submodules:' \
+     "$WAIT_TIMEOUT" >/dev/null &&
+   lem_wait_for "$porcelain_session" 'modules/module path;safe.*main' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" Space
+  pass legit-submodule-list \
+    "' l rendered a bounded populated-module pane with branch and hash"
+else
+  fail legit-submodule-list \
+    'the submodule list did not render the populated module textually' \
+    "$porcelain_session"
+fi
+
+# Record the added gitlink before testing ordinary (non-force) deinit.  A newly
+# staged gitlink is intentionally protected by Git as an uncommitted module
+# change, which is a different boundary from a clean populated submodule.
+if ! GIT_AUTHOR_DATE='2001-01-08T00:00:00+0000' \
+     GIT_COMMITTER_DATE='2001-01-08T00:00:00+0000' \
+     "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" commit -qm \
+       'Record submodule fixture' -- .gitmodules \
+       "$LEM_YATH_VCS_SUBMODULE_PATH"; then
+  fail legit-submodule-record \
+    'could not record the clean submodule baseline before deinit' \
+    "$porcelain_session"
+fi
+
+tmux_cmd send-keys -t "$porcelain_session" -l -- "'"
+if lem_wait_for "$porcelain_session" '\[Submodule\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" d
+fi
+if lem_wait_for "$porcelain_session" 'Unpopulate submodule:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" module \
+    'Unpopulate submodule:'
+fi
+if lem_wait_for "$porcelain_session" 'Unpopulate submodule modules/module path;safe' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+if wait_until "$WAIT_TIMEOUT" test ! -e \
+     "$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBMODULE_PATH/.git" &&
+   ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config --get \
+     "submodule.$LEM_YATH_VCS_SUBMODULE_NAME.url" >/dev/null 2>&1; then
+  pass legit-submodule-unpopulate \
+    "' d confirmed deinitialization without deleting the preserved module Gitdir"
+else
+  fail legit-submodule-unpopulate \
+    'submodule deinitialization retained a worktree or registration unexpectedly' \
+    "$porcelain_session"
+fi
+
+tmux_cmd send-keys -t "$porcelain_session" -l -- "'"
+if lem_wait_for "$porcelain_session" '\[Submodule\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" r
+fi
+if lem_wait_for "$porcelain_session" 'Register submodule:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" module \
+    'Register submodule:'
+fi
+if wait_until "$WAIT_TIMEOUT" "$git_bin" \
+     -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config --get \
+     "submodule.$LEM_YATH_VCS_SUBMODULE_NAME.url" >/dev/null 2>&1; then
+  pass legit-submodule-register "' r restored local submodule registration"
+else
+  fail legit-submodule-register \
+    'submodule init did not restore the declared local URL' "$porcelain_session"
+fi
+
+tmux_cmd send-keys -t "$porcelain_session" -l -- "'"
+if lem_wait_for "$porcelain_session" '\[Submodule\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+  send_keys "$porcelain_session" r p
+fi
+if lem_wait_for "$porcelain_session" 'Populate submodule:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" module \
+    'Populate submodule:'
+fi
+submodule_v1_hash=$($git_bin -C "$LEM_YATH_VCS_SUBMODULE_SEED" rev-parse HEAD)
+if wait_until "$WAIT_TIMEOUT" test -e \
+     "$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBMODULE_PATH/.git" &&
+   [ "$($git_bin -C "$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBMODULE_PATH" \
+        rev-parse HEAD)" = "$submodule_v1_hash" ]; then
+  pass legit-submodule-populate \
+    "' -r p populated the recorded revision through the recursive path"
+else
+  fail legit-submodule-populate \
+    'submodule population did not restore the exact recorded revision' \
+    "$porcelain_session"
+fi
+
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config \
+  "submodule.$LEM_YATH_VCS_SUBMODULE_NAME.url" /deliberately/wrong
+tmux_cmd send-keys -t "$porcelain_session" -l -- "'"
+if lem_wait_for "$porcelain_session" '\[Submodule\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" s
+fi
+if lem_wait_for "$porcelain_session" 'Synchronize submodule:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" module \
+    'Synchronize submodule:'
+fi
+if wait_until "$WAIT_TIMEOUT" sh -c \
+     "[ \"\$('$git_bin' -C '$LEM_YATH_VCS_PORCELAIN_ROOT' config --get 'submodule.$LEM_YATH_VCS_SUBMODULE_NAME.url')\" = '$LEM_YATH_VCS_SUBMODULE_REMOTE' ]"; then
+  pass legit-submodule-sync "' s synchronized the local URL from .gitmodules"
+else
+  fail legit-submodule-sync \
+    'submodule sync did not replace the deliberately stale local URL' \
+    "$porcelain_session"
+fi
+
+printf 'submodule version two\n' >"$LEM_YATH_VCS_SUBMODULE_SEED/module.txt"
+"$git_bin" -C "$LEM_YATH_VCS_SUBMODULE_SEED" add -- module.txt
+git_commit "$LEM_YATH_VCS_SUBMODULE_SEED" submodule-v2 \
+  '2001-01-06T00:00:00+0000'
+"$git_bin" -C "$LEM_YATH_VCS_SUBMODULE_SEED" push -qu origin main
+submodule_v2_hash=$($git_bin -C "$LEM_YATH_VCS_SUBMODULE_SEED" rev-parse HEAD)
+tmux_cmd send-keys -t "$porcelain_session" -l -- "'"
+if lem_wait_for "$porcelain_session" '\[Submodule\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+  send_keys "$porcelain_session" U u
+fi
+if lem_wait_for "$porcelain_session" 'Update submodule:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" module \
+    'Update submodule:'
+fi
+if wait_until "$WAIT_TIMEOUT" sh -c \
+     "[ \"\$('$git_bin' -C '$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBMODULE_PATH' rev-parse HEAD)\" = '$submodule_v2_hash' ]"; then
+  pass legit-submodule-update \
+    "' -U u advanced the worktree to the configured upstream tip"
+else
+  fail legit-submodule-update \
+    'remote-tip submodule update did not reach the pushed revision' \
+    "$porcelain_session"
+fi
+
+printf 'submodule version three\n' >"$LEM_YATH_VCS_SUBMODULE_SEED/module.txt"
+"$git_bin" -C "$LEM_YATH_VCS_SUBMODULE_SEED" add -- module.txt
+git_commit "$LEM_YATH_VCS_SUBMODULE_SEED" submodule-v3 \
+  '2001-01-07T00:00:00+0000'
+"$git_bin" -C "$LEM_YATH_VCS_SUBMODULE_SEED" push -qu origin main
+submodule_v3_hash=$($git_bin -C "$LEM_YATH_VCS_SUBMODULE_SEED" rev-parse HEAD)
+tmux_cmd send-keys -t "$porcelain_session" -l -- "'"
+if lem_wait_for "$porcelain_session" '\[Submodule\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" f
+fi
+if wait_until "$WAIT_TIMEOUT" sh -c \
+     "[ \"\$('$git_bin' -C '$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBMODULE_PATH' rev-parse origin/main)\" = '$submodule_v3_hash' ] && [ \"\$('$git_bin' -C '$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBMODULE_PATH' rev-parse HEAD)\" = '$submodule_v2_hash' ]"; then
+  pass legit-submodule-fetch \
+    "' f fetched the new module ref without checking it out"
+else
+  fail legit-submodule-fetch \
+    'recursive fetch lost either the fetched-ref or worktree boundary' \
+    "$porcelain_session"
+fi
+
+printf 'dirty module content\n' \
+  >"$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBMODULE_PATH/module.txt"
+printf 'untracked module backup\n' \
+  >"$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBMODULE_PATH/untracked.txt"
+tmux_cmd send-keys -t "$porcelain_session" -l -- "'"
+if lem_wait_for "$porcelain_session" '\[Submodule\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" k
+fi
+if lem_wait_for "$porcelain_session" 'Remove submodule:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" module \
+    'Remove submodule:'
+fi
+if lem_wait_for "$porcelain_session" 'is dirty; enable -f' \
+     "$WAIT_TIMEOUT" >/dev/null &&
+   [ -f "$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBMODULE_PATH/module.txt" ]; then
+  pass legit-submodule-remove-refusal \
+    "' k refused dirty removal without the force argument"
+else
+  fail legit-submodule-remove-refusal \
+    'dirty submodule removal was not rejected before mutation' \
+    "$porcelain_session"
+fi
+
+tmux_cmd send-keys -t "$porcelain_session" -l -- "'"
+if lem_wait_for "$porcelain_session" '\[Submodule\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+  send_keys "$porcelain_session" f k
+fi
+if lem_wait_for "$porcelain_session" 'Remove submodule:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" module \
+    'Remove submodule:'
+fi
+if lem_wait_for "$porcelain_session" 'Remove submodule modules/module path;safe' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+if lem_wait_for "$porcelain_session" 'Stash dirty content and force removal' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+submodule_gitdir="$LEM_YATH_VCS_PORCELAIN_ROOT/.git/modules/$LEM_YATH_VCS_SUBMODULE_NAME"
+if wait_until "$WAIT_TIMEOUT" test ! -e \
+     "$LEM_YATH_VCS_PORCELAIN_ROOT/$LEM_YATH_VCS_SUBMODULE_PATH" &&
+   [ -d "$submodule_gitdir" ] &&
+   "$git_bin" --git-dir="$submodule_gitdir" show-ref --verify --quiet \
+     refs/stash &&
+   ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" ls-files --error-unmatch \
+     -- "$LEM_YATH_VCS_SUBMODULE_PATH" >/dev/null 2>&1; then
+  pass legit-submodule-remove \
+    "' -f k stashed dirty content, removed the gitlink, and preserved its Gitdir"
+else
+  fail legit-submodule-remove \
+    'forced removal lost its stash/Gitdir or retained the gitlink/worktree' \
+    "$porcelain_session"
+fi
 lem_stop "$porcelain_session"
 
 printf '\n'

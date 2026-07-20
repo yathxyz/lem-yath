@@ -2249,6 +2249,17 @@ Magit-inspired. `M-x legit-status` bound **`C-x g`** (`legit/legit.lisp:65`).
   prompts replace Magit's multi-value URL/refspec editor, the hidden level-7
   unshallow action is absent, and execution is synchronous without a process
   buffer.
+- **Submodule dispatch**: Evil Collection's apostrophe (`'`) opens the normally
+  visible Magit submodule lifecycle in status and diff. `-f`, `-r`, `-N`,
+  `-C`, `-R`, `-M`, and `-U` configure force, recursion, fetching, update
+  strategy, and remote-tip use; `a`/`r`/`p`/`u`/`s`/`d`/`k`/`l`/`f` add,
+  register, populate, update, synchronize, unpopulate, remove, list, and fetch.
+  Paths and values are bounded and traversal-safe, direct argv preserves spaces
+  and metacharacters. The list is a bounded textual pane dismissed with Space
+  rather than Magit's navigable module-list buffer. Dirty removal requires force plus a second confirmation,
+  stashes tracked and untracked content, and preserves `.git/modules`. Lem
+  selects one prompted module rather than Magit's region/prefix multi-selection
+  and executes synchronously; the prefix-only gitdir-trash action is absent.
 - **Worktree dispatch**: the configured stock Magit uppercase `Z` opens its focused worktree
   map in status and diff. `b` checks out a branch, remote branch, or resolved
   commit in a new sibling-style path; `c` creates a branch and worktree from a
@@ -2261,7 +2272,8 @@ Magit-inspired. `M-x legit-status` bound **`C-x g`** (`legit/legit.lisp:65`).
   argv paths, and 120-second / 4-MiB / 5000-candidate / 4096-character bounds
   retain paths containing whitespace and shell metacharacters. Execution is
   synchronous and Lem opens Legit rather than Magit's Dired fallback.
-- **Reset dispatch**: `X` exposes `b` branch, `f` file, `m` mixed, `s` soft,
+- **Reset dispatch**: Evil Collection's top-level `O` exposes `b` branch, `f`
+  file, `m` mixed, `s` soft,
   `h` hard, `k` keep, `i` index-only, and `w` worktree-only actions in status
   and diff panes. Revision, branch, and revision-tree file completion is
   bounded; every mutation uses direct argv. Current dirty branch reset has

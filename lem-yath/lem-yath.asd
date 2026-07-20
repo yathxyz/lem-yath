@@ -53,6 +53,7 @@
                (:file "git-push")
                (:file "git-stash")
                (:file "git-remote")
+               (:file "git-submodule")
                (:file "git-blame")
                (:file "forge")
                (:file "project-history")
