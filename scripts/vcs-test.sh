@@ -40,6 +40,7 @@ export LEM_YATH_VCS_PORCELAIN_FILE="${LEM_YATH_VCS_PORCELAIN_ROOT}porcelain.txt"
 export LEM_YATH_VCS_PORCELAIN_REMOTE="$root/repos/porcelain-remote.git"
 export LEM_YATH_VCS_PORCELAIN_PEER="$root/repos/porcelain-peer"
 export LEM_YATH_VCS_FETCH_REMOTE="$root/repos/fetch remote;safe.git"
+export LEM_YATH_VCS_PUSH_REMOTE="$root/repos/push-target.git"
 
 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$WORKDIR" "$LEM_HOME" \
   "$LEM_YATH_VCS_COLOCATED_ROOT/nested/deeper" \
@@ -191,6 +192,7 @@ printf '(defparameter vcs-retired :recreated-untracked)\n' \
 # A separate repository exercises Legit's mutating Magit-like porcelain
 # without changing the gutter and Timemachine history fixtures above.
 if ! "$git_bin" init --bare -q "$LEM_YATH_VCS_PORCELAIN_REMOTE" ||
+   ! "$git_bin" init --bare -q "$LEM_YATH_VCS_PUSH_REMOTE" ||
    ! git_init "$LEM_YATH_VCS_PORCELAIN_ROOT"; then
   echo "Could not initialize the porcelain Git fixtures" >&2
   rm -rf -- "$root"
@@ -209,6 +211,10 @@ if ! git_commit "$LEM_YATH_VCS_PORCELAIN_ROOT" porcelain-initial \
      '2001-01-04T00:00:00+0000' ||
    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" remote add origin \
      "$LEM_YATH_VCS_PORCELAIN_REMOTE" ||
+   ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" remote add push-target \
+     "$LEM_YATH_VCS_PUSH_REMOTE" ||
+   ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" remote add -- \
+     -push-option "$LEM_YATH_VCS_PUSH_REMOTE" ||
    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" push -qu origin main ||
    ! "$git_bin" --git-dir="$LEM_YATH_VCS_PORCELAIN_REMOTE" symbolic-ref \
      HEAD refs/heads/main ||
@@ -1394,6 +1400,199 @@ prepare_porcelain_branch_fixture() {
   porcelain_branch_current_is main
 }
 
+porcelain_origin_ref_is() {
+  [ "$2" = "$("$git_bin" --git-dir="$LEM_YATH_VCS_PORCELAIN_REMOTE" \
+    rev-parse "$1" 2>/dev/null)" ]
+}
+
+porcelain_origin_branch_is() {
+  porcelain_origin_ref_is "refs/heads/$1" "$2"
+}
+
+porcelain_push_target_ref_is() {
+  [ "$2" = "$("$git_bin" --git-dir="$LEM_YATH_VCS_PUSH_REMOTE" \
+    rev-parse "$1" 2>/dev/null)" ]
+}
+
+porcelain_push_remote_complete() {
+  porcelain_origin_branch_is push-current "$push_current_tip"
+}
+
+porcelain_push_upstream_complete() {
+  porcelain_origin_branch_is push-upstream "$push_upstream_tip"
+}
+
+porcelain_push_elsewhere_complete() {
+  porcelain_origin_branch_is push-elsewhere "$push_current_tip" &&
+    [ origin/push-elsewhere = \
+      "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+        for-each-ref --format='%(upstream:short)' \
+        refs/heads/push-current)" ] &&
+    [ "$push_current_tip" = \
+      "$("$git_bin" --git-dir="$LEM_YATH_VCS_PORCELAIN_REMOTE" \
+        rev-parse refs/tags/push-follow-tag^{} 2>/dev/null)" ]
+}
+
+porcelain_push_dry_run_complete() {
+  ! "$git_bin" --git-dir="$LEM_YATH_VCS_PORCELAIN_REMOTE" \
+    show-ref --verify --quiet refs/heads/push-dry-run
+}
+
+porcelain_push_other_complete() {
+  porcelain_push_target_ref_is refs/heads/push-other-target "$push_other_tip"
+}
+
+porcelain_push_refspecs_complete() {
+  porcelain_origin_ref_is refs/heads/push-explicit "$push_other_tip" &&
+    porcelain_origin_ref_is refs/tags/push-explicit-tag \
+      "$push_one_tag_object"
+}
+
+porcelain_push_matching_complete() {
+  porcelain_origin_branch_is push-match "$push_match_tip"
+}
+
+porcelain_push_one_tag_complete() {
+  porcelain_origin_ref_is refs/tags/push-one "$push_one_tag_object"
+}
+
+porcelain_push_all_tags_complete() {
+  porcelain_origin_ref_is refs/tags/push-all-extra \
+    "$push_all_tag_object"
+}
+
+porcelain_push_notes_complete() {
+  porcelain_origin_ref_is refs/notes/review "$push_notes_tip"
+}
+
+porcelain_push_force_with_lease_complete() {
+  porcelain_origin_branch_is push-force "$push_force_tip"
+}
+
+porcelain_push_settled() {
+  local predicate=$1
+  wait_legit "$porcelain_session" porcelain && "$predicate"
+}
+
+prepare_porcelain_push_fixture() {
+  local tree
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -f main ||
+    return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard \
+    "$merge_main_hash" || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -b \
+    push-current "$merge_main_hash" || return 1
+  printf 'push current value\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/push-current.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- push-current.txt ||
+    return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_ROOT" push-current \
+    '2001-06-10T00:00:00+0000' || return 1
+  push_current_tip=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    rev-parse HEAD) || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config \
+    branch.push-current.pushRemote origin || return 1
+  if "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config --get \
+       branch.push-current.merge >/dev/null 2>&1; then
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch --unset-upstream \
+      push-current >/dev/null || return 1
+  fi
+  GIT_COMMITTER_DATE='2001-06-10T01:00:00+0000' \
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" tag -a push-one \
+      -m push-one "$push_current_tip" || return 1
+  GIT_COMMITTER_DATE='2001-06-10T02:00:00+0000' \
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" tag -a push-follow-tag \
+      -m push-follow "$push_current_tip" || return 1
+  push_one_tag_object=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    rev-parse refs/tags/push-one) || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -b \
+    push-upstream "$merge_main_hash" || return 1
+  printf 'push upstream value\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/push-upstream.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- push-upstream.txt ||
+    return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_ROOT" push-upstream \
+    '2001-06-11T00:00:00+0000' || return 1
+  push_upstream_tip=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    rev-parse HEAD) || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" push -q origin \
+    "$merge_main_hash":refs/heads/push-upstream || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref \
+    refs/remotes/origin/push-upstream "$merge_main_hash" || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch \
+    --set-upstream-to=origin/push-upstream push-upstream >/dev/null ||
+    return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -b \
+    push-other-source "$merge_main_hash" || return 1
+  printf 'push other value\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/push-other.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- push-other.txt ||
+    return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_ROOT" push-other \
+    '2001-06-12T00:00:00+0000' || return 1
+  push_other_tip=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    rev-parse HEAD) || return 1
+  GIT_COMMITTER_DATE='2001-06-12T01:00:00+0000' \
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" tag -a push-all-extra \
+      -m push-all "$push_other_tip" || return 1
+  push_all_tag_object=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    rev-parse refs/tags/push-all-extra) || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -b \
+    push-match "$merge_main_hash" || return 1
+  printf 'push matching value\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/push-match.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- push-match.txt ||
+    return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_ROOT" push-match \
+    '2001-06-13T00:00:00+0000' || return 1
+  push_match_tip=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    rev-parse HEAD) || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" push -q origin \
+    "$merge_main_hash":refs/heads/push-match || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -b \
+    push-force "$merge_main_hash" || return 1
+  printf 'push force local value\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/push-force.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- push-force.txt ||
+    return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_ROOT" push-force-local \
+    '2001-06-14T00:00:00+0000' || return 1
+  push_force_tip=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    rev-parse HEAD) || return 1
+  tree=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    rev-parse "$merge_main_hash^{tree}") || return 1
+  push_force_remote_tip=$(printf 'push force remote\n' | \
+    GIT_AUTHOR_DATE='2001-06-14T01:00:00+0000' \
+    GIT_COMMITTER_DATE='2001-06-14T01:00:00+0000' \
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" commit-tree \
+      "$tree" -p "$merge_main_hash") || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref \
+    refs/lem-yath-test/push-force-remote "$push_force_remote_tip" || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" push -q origin \
+    refs/lem-yath-test/push-force-remote:refs/heads/push-force || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref -d \
+    refs/lem-yath-test/push-force-remote || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref \
+    refs/remotes/origin/push-force "$push_force_remote_tip" || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" notes --ref=review add -f \
+    -m 'push review note' "$merge_main_hash" || return 1
+  push_notes_tip=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    rev-parse refs/notes/review) || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q push-current ||
+    return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" diff --quiet || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" diff --cached --quiet ||
+    return 1
+  porcelain_branch_current_is push-current
+}
+
 prepare_porcelain_revert_fixture() {
   "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q main || return 1
   "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard \
@@ -1542,6 +1741,22 @@ enter_completion_prompt_value() {
   if lem_wait_for "$session" "$prompt" 1 >/dev/null 2>&1; then
     send_keys "$session" Enter
   fi
+}
+
+enter_completion_prompt_value_until() {
+  local session=$1 value=$2 next_prompt=$3 index
+  for index in $(seq 1 80); do
+    lem_keys "$session" BSpace
+  done
+  tmux_cmd send-keys -t "$session" -l -- "$value"
+  sleep 0.5
+  for index in 1 2 3; do
+    send_keys "$session" Enter
+    if lem_wait_for "$session" "$next_prompt" 2 >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 send_keys() {
@@ -1708,7 +1923,7 @@ fi
 send_keys "$colocated_session" q F6
 
 if press_report "$colocated_session" F8 '^RELOAD ' 60 &&
-   grep -q '^RELOAD same=yes find=1 post=1 save=1 change=1 kill=1 global=0 source=1 directory=0 root-marker=1 todo-hook=1 bisect-hook=1 bisect=yes fetch=yes reset=yes merge=yes revert=yes branch=yes smart=yes git=yes jj=yes time=yes jj-refresh=yes jj-quit=yes older=yes newer=yes nth=yes fuzzy=yes short=yes full=yes blame=yes blame-quit=yes p=yes n=yes t=yes quit=yes$' \
+   grep -q '^RELOAD same=yes find=1 post=1 save=1 change=1 kill=1 global=0 source=1 directory=0 root-marker=1 todo-hook=1 bisect-hook=1 bisect=yes fetch=yes reset=yes merge=yes revert=yes branch=yes push=yes smart=yes git=yes jj=yes time=yes jj-refresh=yes jj-quit=yes older=yes newer=yes nth=yes fuzzy=yes short=yes full=yes blame=yes blame-quit=yes p=yes n=yes t=yes quit=yes$' \
      "$LEM_YATH_VCS_REPORT"; then
   pass reload-idempotence 'two VCS reloads preserved one mode, hooks, inserter, and keymaps'
 else
@@ -2258,11 +2473,23 @@ else
     "$porcelain_session"
 fi
 
-send_keys "$porcelain_session" P p
+send_keys "$porcelain_session" p p
+if lem_wait_for "$porcelain_session" 'Set push remote and push main there:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" origin \
+    'Set push remote and push main there:'
+fi
+if lem_wait_for "$porcelain_session" \
+     'Set origin as push remote and push main there' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
 if wait_until "$WAIT_TIMEOUT" porcelain_remote_matches_head; then
-  pass legit-push 'P p pushed the current tracked branch to origin'
+  pass legit-push \
+    'Evil Collection p p configured and pushed the current branch to origin'
 else
-  fail legit-push 'P p did not update the bare remote' "$porcelain_session"
+  fail legit-push 'p p did not configure and update the bare remote' \
+    "$porcelain_session"
 fi
 
 fetch_original_head=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
@@ -2308,6 +2535,8 @@ if "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" pull -q --ff-only &&
       'the upstream fetch lost options, refs, cleanliness, or the original HEAD' \
       "$porcelain_session"
   fi
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config --unset-all \
+    branch.main.pushRemote
   send_keys "$porcelain_session" f p
   if lem_wait_for "$porcelain_session" 'Set push remote and fetch' \
        "$WAIT_TIMEOUT" >/dev/null; then
@@ -4217,7 +4446,267 @@ fi
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -f main
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard \
   "$merge_main_hash"
-send_keys "$porcelain_session" g
+
+if prepare_porcelain_push_fixture; then
+  pass legit-push-fixture \
+    'prepared push-remote, upstream, tag, notes, matching, and divergent refs'
+else
+  fail legit-push-fixture 'could not prepare isolated push histories' \
+    "$porcelain_session"
+fi
+
+# Push is a network/process-heavy boundary and follows several deliberately
+# retained interactive Git editor sessions.  Start it in a fresh installed
+# Lem process so failures cannot be confused with stale editor callbacks from
+# the preceding rebase, cherry-pick, merge, and branch lifecycle tests.
+lem_stop "$porcelain_session"
+porcelain_session="lem-yath-vcs-push-$id"
+if start_phase porcelain "$LEM_YATH_VCS_PORCELAIN_FILE" \
+  "$porcelain_session"; then
+  pass porcelain-push-restart \
+    'restarted the installed wrapper at the isolated push boundary'
+else
+  fail porcelain-push-restart \
+    'the isolated push editor did not become ready' "$porcelain_session"
+fi
+send_keys "$porcelain_session" Space g G
+if wait_legit "$porcelain_session" porcelain; then
+  pass legit-push-status 'the fresh editor opened push-current in Legit'
+else
+  fail legit-push-status 'the fresh push status did not become interactive' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" p
+if lem_wait_for "$porcelain_session" '\[Push\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" p
+fi
+if porcelain_push_settled porcelain_push_remote_complete; then
+  pass legit-push-remote \
+    'Evil Collection p p pushed the current branch to its push remote'
+else
+  fail legit-push-remote 'p p did not update the configured remote branch' \
+    "$porcelain_session"
+fi
+
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q push-upstream
+send_keys "$porcelain_session" g p
+if lem_wait_for "$porcelain_session" '\[Push\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" u
+fi
+if porcelain_push_settled porcelain_push_upstream_complete; then
+  pass legit-push-upstream 'p u pushed the current branch to its upstream'
+else
+  fail legit-push-upstream 'p u did not update the configured upstream' \
+    "$porcelain_session"
+fi
+
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q push-current
+printf '#!/bin/sh\nexit 1\n' \
+  >"$LEM_YATH_VCS_PORCELAIN_ROOT/.git/hooks/pre-push"
+chmod +x "$LEM_YATH_VCS_PORCELAIN_ROOT/.git/hooks/pre-push"
+send_keys "$porcelain_session" g p
+if lem_wait_for "$porcelain_session" '\[Push\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+  send_keys "$porcelain_session" h
+  tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+  send_keys "$porcelain_session" u
+  tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+  send_keys "$porcelain_session" t e
+fi
+if lem_wait_for "$porcelain_session" 'Push push-current to:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" origin/push-elsewhere \
+    'Push push-current to:'
+fi
+rm -f -- "$LEM_YATH_VCS_PORCELAIN_ROOT/.git/hooks/pre-push"
+if porcelain_push_settled porcelain_push_elsewhere_complete; then
+  pass legit-push-elsewhere \
+    'p -h -u -t e bypassed the hook, set upstream, and followed its tag'
+else
+  fail legit-push-elsewhere \
+    'elsewhere push lost its ref, upstream, no-verify, or follow-tags effect' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" g p
+if lem_wait_for "$porcelain_session" '\[Push\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+  send_keys "$porcelain_session" n o
+fi
+if lem_wait_for "$porcelain_session" 'Push source branch or commit:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value_until "$porcelain_session" push-other-source \
+    'Push push-other-source to:'
+fi
+if lem_wait_for "$porcelain_session" 'Push push-other-source to:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" origin/push-dry-run \
+    'Push push-other-source to:'
+fi
+push_dry_run_finished=0
+if wait_legit "$porcelain_session" porcelain; then
+  push_dry_run_finished=1
+fi
+if [ "$push_dry_run_finished" = 1 ] &&
+   porcelain_push_dry_run_complete; then
+  pass legit-push-dry-run \
+    'p -n o refreshed after a dry run without creating the remote branch'
+else
+  fail legit-push-dry-run \
+    'dry-run push did not finish responsively or mutated the bare remote' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" g p
+if lem_wait_for "$porcelain_session" '\[Push\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" o
+fi
+if lem_wait_for "$porcelain_session" 'Push source branch or commit:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value_until "$porcelain_session" push-other-source \
+    'Push push-other-source to:'
+fi
+if lem_wait_for "$porcelain_session" 'Push push-other-source to:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" \
+    -push-option/push-other-target \
+    'Push push-other-source to:'
+fi
+if porcelain_push_settled porcelain_push_other_complete; then
+  pass legit-push-other \
+    'p o pushed an arbitrary source through an option-like remote safely'
+else
+  fail legit-push-other 'arbitrary-source push did not create its target ref' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" g p
+if lem_wait_for "$porcelain_session" '\[Push\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" r
+fi
+if lem_wait_for "$porcelain_session" 'Push to remote:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value_until "$porcelain_session" origin \
+    'Push refspecs \(comma separated\):'
+fi
+if lem_wait_for "$porcelain_session" 'Push refspecs \(comma separated\):' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" \
+    'push-other-source:refs/heads/push-explicit,refs/tags/push-one:refs/tags/push-explicit-tag'
+fi
+if porcelain_push_settled porcelain_push_refspecs_complete; then
+  pass legit-push-refspecs \
+    'p r pushed two comma-separated direct-argv refspecs exactly'
+else
+  fail legit-push-refspecs 'explicit refspec push lost a branch or tag ref' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" g p
+if lem_wait_for "$porcelain_session" '\[Push\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" m
+fi
+if lem_wait_for "$porcelain_session" 'Push matching branches to:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" origin \
+    'Push matching branches to:'
+fi
+if porcelain_push_settled porcelain_push_matching_complete; then
+  pass legit-push-matching 'p m updated branches present on both sides'
+else
+  fail legit-push-matching 'matching push did not update its shared branch' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" g p
+if lem_wait_for "$porcelain_session" '\[Push\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" T
+fi
+if lem_wait_for "$porcelain_session" 'Push tag:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value_until "$porcelain_session" push-one \
+    'Push push-one to remote:'
+fi
+if lem_wait_for "$porcelain_session" 'Push push-one to remote:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" origin \
+    'Push push-one to remote:'
+fi
+if porcelain_push_settled porcelain_push_one_tag_complete; then
+  pass legit-push-tag 'p T pushed exactly the selected annotated tag'
+else
+  fail legit-push-tag 'selected-tag push did not preserve the tag object' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" g p
+if lem_wait_for "$porcelain_session" '\[Push\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" t
+fi
+if lem_wait_for "$porcelain_session" 'Push all tags to remote:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" origin \
+    'Push all tags to remote:'
+fi
+if porcelain_push_settled porcelain_push_all_tags_complete; then
+  pass legit-push-tags 'p t pushed the complete local tag namespace'
+else
+  fail legit-push-tags 'all-tags push omitted the additional tag' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" g p
+if lem_wait_for "$porcelain_session" '\[Push\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" n
+fi
+if lem_wait_for "$porcelain_session" 'Push notes ref:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value_until "$porcelain_session" refs/notes/review \
+    'Push refs/notes/review to remote:'
+fi
+if lem_wait_for "$porcelain_session" 'Push refs/notes/review to remote:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" origin \
+    'Push refs/notes/review to remote:'
+fi
+if porcelain_push_settled porcelain_push_notes_complete; then
+  pass legit-push-notes 'p n pushed the selected notes ref without a shell'
+else
+  fail legit-push-notes 'notes push did not preserve the selected notes ref' \
+    "$porcelain_session"
+fi
+
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q push-force
+send_keys "$porcelain_session" g p
+if lem_wait_for "$porcelain_session" '\[Push\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  tmux_cmd send-keys -t "$porcelain_session" -l -- '-'
+  send_keys "$porcelain_session" f e
+fi
+if lem_wait_for "$porcelain_session" 'Push push-force to:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" origin/push-force \
+    'Push push-force to:'
+fi
+if porcelain_push_settled porcelain_push_force_with_lease_complete; then
+  pass legit-push-force-with-lease \
+    'p -f e replaced a divergent remote only under the observed lease'
+else
+  fail legit-push-force-with-lease \
+    'force-with-lease did not replace the exact observed remote tip' \
+    "$porcelain_session"
+fi
 
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q main
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard \

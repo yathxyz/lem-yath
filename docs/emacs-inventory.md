@@ -604,6 +604,23 @@ bounded operation synchronously and refreshes Legit instead of opening Magit's
 asynchronous process buffer; the nested `C` branch-configuration UI and the
 submodule argument sub-transient remain outside this port.
 
+Evil Collection's lowercase `p` opens the matching push dispatch in status
+and diff panes. `- f`/`- F` select mutually exclusive force-with-lease/force,
+while `- h`, `- n`, `- u`, `- T`, and `- t` retain no-verify, dry-run,
+set-upstream, all-tags, and follow-tags. Actions `p`/`u` push the current
+branch to its configured push remote or upstream; `e` chooses another remote
+branch, `o` chooses an arbitrary local branch or commit and destination, `r`
+accepts up to 64 comma-separated refspecs, `m` pushes matching branches, `T`/`t`
+push one/all tags, `n` pushes one notes ref, and `C` reuses branch
+configuration. A missing push remote or upstream is selected and confirmed
+before its configuration is persisted. Calls use direct argv with an explicit
+option boundary before the remote and 120-second, 4-MiB, 5000-candidate, and
+4096-character bounds. Unlike Magit, execution is
+synchronous, configured destinations cannot be temporarily reselected with a
+prefix argument, and only configured remotes—not unnamed URL upstreams—are
+accepted; Git's native credential flow replaces Magit's process/credential
+presentation.
+
 The matching `b` branch dispatch is available in status and diff panes. It
 retains checkout by revision (`b`), local or remote-tracking checkout (`l`),
 orphan creation (`o`), upstream-first create-and-checkout/create (`c`/`n`),

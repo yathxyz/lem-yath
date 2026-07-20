@@ -494,7 +494,15 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   Git status. Magit's `f` fetch dispatch is also available in status and diff:
   it retains prune/tags/unshallow/force toggles and fetches a push remote,
   upstream, selected remote, all remotes, one branch, an explicit refspec, or
-  populated submodules without moving `HEAD`.
+  populated submodules without moving `HEAD`. Evil Collection's lowercase `p`
+  opens the matching Magit push dispatch in both panes. Its
+  force-with-lease/force, no-verify, dry-run, set-upstream, all-tags, and
+  follow-tags arguments apply to current-branch push-remote or upstream
+  pushes, another destination, an arbitrary source, explicit refspecs,
+  matching branches, one/all tags, or a notes ref; `C` reuses the branch
+  configuration dispatch. Missing push remotes and upstreams require explicit
+  selection and confirmation before configuration is persisted; an argv
+  option boundary keeps even option-like configured remote names literal.
   Magit's `b` branch dispatch now replaces Legit's two direct branch commands
   in status and diff panes. It provides checkout by revision, local/remote
   tracking checkout, upstream-first branch creation, orphan creation,

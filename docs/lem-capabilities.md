@@ -2173,7 +2173,8 @@ Magit-inspired. `M-x legit-status` bound **`C-x g`** (`legit/legit.lisp:65`).
 - Commit: lem-yath replaces upstream Legit's direct `c` with `c c`; finish
   `C-c C-c`, abort `M-q`/`C-c C-k` (`legit-commit.lisp:38-41`).
 - Branches: checkout `b b`, create `b c` (`legit.lisp:74-76`).
-- Push/Pull: `P p` / `F p` (`legit.lisp:80-82`).
+- Push/Pull: lowercase `p` opens lem-yath's Evil Collection push dispatch
+  (`p p` is the ordinary push-remote action); pull remains `F p`.
 - Log: `l l`, last/first page `l F` / pagination (`legit.lisp:86-87`).
 - **Stash**: push `z z`, pop `z p` (`legit.lisp:111-112`).
 - **Interactive rebase**: `r i`; abort/continue/skip `r a`/`r c`/`r s`
@@ -2198,6 +2199,18 @@ Magit-inspired. `M-x legit-status` bound **`C-x g`** (`legit/legit.lisp:65`).
   one branch, `r` an explicit refspec, and `m` populated submodules with the
   default verbose four-job policy. A missing push remote is selected and
   persisted before fetching.
+- **Push dispatch**: Evil Collection's lowercase `p` replaces Legit's `P p`
+  entry in status and diff. `- f`/`- F`, `- h`, `- n`, `- u`, `- T`, and
+  `- t` provide force-with-lease/force, no-verify, dry-run, set-upstream,
+  all-tags, and follow-tags. `p`/`u` push the current branch to its push remote
+  or upstream; `e` chooses another target, `o` chooses an arbitrary source and
+  target, `r` accepts bounded comma-separated refspecs, `m` pushes matching
+  branches, `T`/`t` push one/all tags, `n` pushes a notes ref, and `C` enters
+  branch configuration. Missing destinations require confirmation before
+  configuration is persisted. Direct argv calls are option-delimited, bounded,
+  and synchronous;
+  temporary prefix-argument reselection, unnamed URL upstreams, and Magit's
+  process/credential-buffer presentation remain gaps.
 - **Branch dispatch**: `b` replaces Legit's direct branch bindings in status
   and diff with Magit's configured checkout, local/remote tracking checkout,
   orphan, upstream-first create, spin-off/spin-out, configure, rename, reset,
@@ -2279,8 +2292,9 @@ create), push, pull/fetch, commits log with pagination, **stash push/pop**, inte
 rebase (pick/reword/edit/fixup/squash/drop/exec/break/label/reset/merge).
 Also basic Fossil + Mercurial. **Gaps vs magit:** no multi-file staging,
 limited switches/transient submenus, no graphical remaining-revisions or process view,
-no cherry-pick harvest/donate/spinout/spinoff or argument-toggle UI, and no log
-graph filtering. Selected-line staging is verified for ordinary tracked textual
+no cherry-pick harvest/donate/spinout/spinoff, no complete argument surfaces
+outside the explicitly ported dispatches, and no log graph filtering.
+Selected-line staging is verified for ordinary tracked textual
 diffs; untracked, binary, and combined-conflict diffs still require whole-file
 handling. Customize via `lem/porcelain:*git-base-arglist*`,
 `*commits-log-page-size*`, `*nb-latest-commits*`, `*branch-sort-by*`,
