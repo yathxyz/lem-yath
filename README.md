@@ -506,10 +506,14 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   whitespace/diff-algorithm choices, GPG signing, and signoff; `m`, `e`, `n`,
   `p`, and `s` perform ordinary, edited-message, no-commit, preview, and squash
   merges. A stopped merge changes the same dispatch to commit or confirmed
-  abort, and conflicts remain visible in Legit for resolution. The current
-  checkpoint accepts one merge head; Magit's comma-separated octopus input and
-  its force-pushing, branch-deleting `a` absorb / `d` dissolve actions remain
-  tracked gaps rather than being approximated unsafely.
+  abort, and conflicts remain visible in Legit for resolution. `a` absorb and
+  `d` dissolve retain Magit's branch lifecycle: an existing configured push
+  branch is updated with `--force-with-lease`, dissolve checks out its target,
+  and the source is deleted only after a successful merge. These actions add
+  explicit side-effect and lease confirmations, protect the main branch, and
+  preserve the source on conflicts or stale leases. The current checkpoint
+  accepts one merge head; comma-separated octopus input and Forge's automatic
+  pull-request-only remote deletion remain tracked gaps.
   Packaged `gh` also backs
   command-accessible GitHub Forge lists, detail views, multiline creation and
   comments, close/reopen actions, external browsing, and cache-only Legit

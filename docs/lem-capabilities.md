@@ -2212,7 +2212,10 @@ Magit-inspired. `M-x legit-status` bound **`C-x g`** (`legit/legit.lisp:65`).
   `MERGE_HEAD` reduces the dispatch to commit or confirmed abort, and conflict
   stops retain the unmerged index for ordinary Legit resolution. Execution is
   direct argv and bounded to 120 seconds / 4 MiB, with 1-MiB message input.
-  Octopus input and Magit's force-pushing/deleting absorb and dissolve actions
+  Absorb and dissolve add explicit destructive and lease confirmations around
+  Magit's update/switch/merge/delete lifecycle; main branches are protected,
+  stale leases stop before merging, and failed merges retain their source.
+  Automatic deletion of a Forge pull-request-only remote and octopus input
   remain explicit gaps at this checkpoint.
 - Refresh `g`, navigate `n`/`p`/`M-n`/`M-p`, help `?`/`C-x ?`, quit `q`.
 

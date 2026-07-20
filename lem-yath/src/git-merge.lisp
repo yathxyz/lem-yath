@@ -5,6 +5,8 @@
 (defparameter *legit-merge-timeout* 120)
 (defparameter *legit-merge-output-limit* (* 4 1024 1024))
 (defparameter *legit-merge-message-limit* (* 1024 1024))
+(defparameter *legit-merge-main-branch-names*
+  '("main" "master" "trunk" "development"))
 (defvar *legit-merge-strategy-history* nil)
 (defvar *legit-merge-strategy-option-history* nil)
 (defvar *legit-merge-diff-algorithm-history* nil)
@@ -198,6 +200,191 @@
   (when (prompt-for-y-or-n-p "Abort merge? ")
     (legit-merge-run '("--abort") "Merge aborted.")))
 
+(defun legit-merge-ref-exists-p (ref)
+  (multiple-value-bind (output error-output status)
+      (legit-merge-run-program (list "show-ref" "--verify" "--quiet" ref))
+    (declare (ignore output))
+    (cond
+      ((eql status 0) t)
+      ((eql status 1) nil)
+      (t (editor-error "~a"
+                       (legit-command-error-text "" error-output))))))
+
+(defun legit-merge-main-branch ()
+  "Return the first existing branch Magit would treat as the main branch."
+  (let ((branches (legit-reset-local-branches))
+        (configured (legit-fetch-config-value "init.defaultBranch")))
+    (find-if
+     (lambda (name) (member name branches :test #'string=))
+     (remove-duplicates
+      (append (when configured (list configured))
+              *legit-merge-main-branch-names*)
+      :test #'string=))))
+
+(defun legit-merge-read-local-branch (prompt &key exclude initial-value)
+  (let ((branches (remove exclude (legit-reset-local-branches)
+                          :test #'string=)))
+    (unless branches
+      (editor-error "There is no other local branch to merge."))
+    (prompt-for-string
+     prompt
+     :initial-value (if (member initial-value branches :test #'string=)
+                        initial-value
+                        "")
+     :history-symbol '*legit-reset-branch-history*
+     :completion-function
+     (lambda (query) (completion-strings query branches))
+     :test-function
+     (lambda (input) (member input branches :test #'string=)))))
+
+(defun legit-merge-push-remote-for-branch (branch)
+  "Return BRANCH's configured valid push remote, if any."
+  (let* ((remotes (legit-fetch-remotes))
+         (branch-remote
+           (legit-fetch-config-value
+            (format nil "branch.~a.pushRemote" branch)))
+         (default-remote (legit-fetch-config-value "remote.pushDefault")))
+    (cond
+      ((member branch-remote remotes :test #'string=) branch-remote)
+      ((member default-remote remotes :test #'string=) default-remote))))
+
+(defun legit-merge-existing-push-remote (branch)
+  "Return the push remote only when its tracking branch already exists."
+  (alexandria:when-let ((remote (legit-merge-push-remote-for-branch branch)))
+    (when (legit-merge-ref-exists-p
+           (format nil "refs/remotes/~a/~a" remote branch))
+      remote)))
+
+(defun legit-merge-run-command (arguments)
+  "Run bounded Git ARGUMENTS, showing any failure without changing it."
+  (multiple-value-bind (output error-output status)
+      (legit-merge-run-program arguments)
+    (if (and (integerp status) (zerop status))
+        t
+        (progn
+          (lem/legit::pop-up-message
+           (legit-command-error-text output error-output))
+          nil))))
+
+(defun legit-merge-protected-source-confirmed-p (branch)
+  (or (not (equal branch (legit-merge-main-branch)))
+      (prompt-for-y-or-n-p
+       (format nil
+               "Do you really want to merge main branch ~a into another branch? "
+               branch))))
+
+(defun legit-merge-confirm-push-remote (branch)
+  "Return whether to proceed and the optional lease-protected push remote."
+  (let ((remote (legit-merge-existing-push-remote branch)))
+    (if remote
+        (values
+         (prompt-for-y-or-n-p
+          (format nil
+                  "Force-push ~a to ~a/~a with lease before merging? "
+                  branch remote branch))
+         remote)
+        (values t nil))))
+
+(defun legit-merge-force-push (branch remote)
+  (or (null remote)
+      (legit-merge-run-command
+       (list "push" "-v" "--force-with-lease" remote
+             (format nil "~a:~a" branch branch)))))
+
+(defun legit-merge-absorb-message-arguments (branch)
+  (let* ((configured
+           (legit-fetch-config-value
+            (format nil "branch.~a.pullRequest" branch)))
+         (pull-request (and configured (str:trim configured))))
+    (when (and pull-request
+               (or (> (length pull-request) 32)
+                   (zerop (length pull-request))
+                   (not (every #'digit-char-p pull-request))))
+      (editor-error "The configured pull-request number is invalid."))
+    (if pull-request
+        (let ((current (legit-reset-current-branch)))
+          (list
+           "-m"
+           (format nil "Merge branch '~a'~a [#~a]"
+                   branch
+                   (if (equal current (legit-merge-main-branch))
+                       ""
+                       (format nil " into ~a" (or current "HEAD")))
+                   pull-request)))
+        '("--no-edit"))))
+
+(defun legit-merge-delete-absorbed-branch (branch)
+  "Delete BRANCH only after its merge completed successfully."
+  (when (legit-merge-run-command (list "branch" "-D" "--" branch))
+    (lem/legit::show-legit-status)
+    (message "Absorbed and deleted branch ~a." branch)
+    t))
+
+(defun legit-merge-execute-absorb (branch options push-remote)
+  "Execute an already confirmed absorb of BRANCH into the current HEAD."
+  (let ((arguments
+          (append (legit-merge-absorb-message-arguments branch)
+                  (legit-merge-option-arguments options)
+                  (list branch))))
+    (when (legit-merge-force-push branch push-remote)
+      (when (legit-merge-run
+             arguments (format nil "Merged branch ~a; removing it." branch))
+        (legit-merge-delete-absorbed-branch branch)))))
+
+(defun legit-merge-absorb (options)
+  "Merge another local branch into HEAD and delete it after success."
+  (let ((current (legit-reset-current-branch)))
+    (alexandria:when-let
+        ((branch
+           (legit-merge-read-local-branch
+            "Absorb branch: " :exclude current)))
+      (when (and (legit-merge-assert-clean-enough)
+                 (legit-merge-protected-source-confirmed-p branch)
+                 (prompt-for-y-or-n-p
+                  (format nil
+                          "Absorb ~a into ~a and delete ~a after success? "
+                          branch (or current "detached HEAD") branch)))
+        (multiple-value-bind (proceed-p remote)
+            (legit-merge-confirm-push-remote branch)
+          (when proceed-p
+            (legit-merge-execute-absorb branch options remote)))))))
+
+(defun legit-merge-dissolve (options)
+  "Merge the current branch into another local branch and remove the former."
+  (let* ((current (legit-reset-current-branch))
+         (head (str:trim
+                (legit-merge-checked-output
+                 '("rev-parse" "--verify" "HEAD^{commit}"))))
+         (initial (or (and current (legit-reset-upstream current))
+                      (legit-merge-main-branch))))
+    (alexandria:when-let
+        ((target
+           (legit-merge-read-local-branch
+            (format nil "Merge ~a into: " (or current head))
+            :exclude current :initial-value initial)))
+      (when (and (legit-merge-assert-clean-enough)
+                 (or (null current)
+                     (legit-merge-protected-source-confirmed-p current))
+                 (prompt-for-y-or-n-p
+                  (if current
+                      (format nil
+                              "Dissolve ~a into ~a and delete ~a after success? "
+                              current target current)
+                      (format nil "Merge detached HEAD into ~a? " target))))
+        (multiple-value-bind (proceed-p remote)
+            (if current
+                (legit-merge-confirm-push-remote current)
+                (values t nil))
+          (when (and proceed-p
+                     (legit-merge-run-command (list "checkout" target)))
+            (if current
+                (legit-merge-execute-absorb current options remote)
+                (legit-merge-run
+                 (append '("--no-edit")
+                         (legit-merge-option-arguments options)
+                         (list head))
+                 "Merged detached HEAD."))))))))
+
 (defun legit-merge-read-choice (prompt choices history-symbol)
   (prompt-for-string
    prompt
@@ -256,8 +443,10 @@
                 ("m" "merge")
                 ("e" "merge and edit message")
                 ("n" "merge but do not commit")
+                ("a" "absorb branch")
                 ("p" "preview merge")
                 ("s" "squash merge")
+                ("d" "dissolve branch")
                 ("q" "cancel")))
           (legit-merge-add-popup-entry keymap (first entry) (second entry))))
     keymap))
@@ -350,11 +539,17 @@
                   ((string= name "n")
                    (legit-merge-no-commit options)
                    (return t))
+                  ((string= name "a")
+                   (legit-merge-absorb options)
+                   (return t))
                   ((string= name "p")
                    (legit-merge-preview)
                    (return t))
                   ((string= name "s")
                    (legit-merge-squash)
+                   (return t))
+                  ((string= name "d")
+                   (legit-merge-dissolve options)
                    (return t))
                   (t
                    (message "No merge action is bound to ~a" name)

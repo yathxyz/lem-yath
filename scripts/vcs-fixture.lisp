@@ -226,7 +226,7 @@
              "magit-merge-diff-dispatch")
       (let ((options (make-legit-merge-options)))
         (dolist (key '("- f" "- n" "- s" "- X" "- b" "- w" "- A"
-                       "- S" "+ s" "m" "e" "n" "p" "s" "q"))
+                       "- S" "+ s" "m" "e" "n" "a" "p" "s" "d" "q"))
           (check (eq 'nop-command
                      (vcs-test-key-command
                       (legit-merge-popup-keymap options nil) key))

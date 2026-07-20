@@ -626,11 +626,16 @@ preview, or stage a squash without moving HEAD. A real `MERGE_HEAD` changes the
 dispatch to native commit-message continuation or confirmed `git merge
 --abort`; conflicts remain visible through Legit's ordinary unmerged rows.
 Calls use direct argv with a 120-second and 4-MiB process boundary, and prepared
-messages are limited to 1 MiB. This checkpoint accepts one merge head and runs
-synchronously rather than through Magit's process buffer. Comma-separated
-octopus input and Magit's `a` absorb / `d` dissolve actions remain gaps; the
-latter force-push and delete branches or pull-request remotes and are being
-handled as a separate destructive boundary.
+messages are limited to 1 MiB. `a` absorb and `d` dissolve require explicit
+side-effect confirmation, preserve Magit's extra protection for the detected
+main branch, update an existing configured push branch only through a second
+confirmed `--force-with-lease`, and delete the local source only after a
+successful merge. A stale lease stops before merge, while conflicts retain the
+source and ordinary abort state. Pull-request configuration contributes the
+same merge-message context, but Lem deliberately does not automatically delete
+a Forge-created pull-request-only remote. This checkpoint accepts one merge
+head and runs synchronously rather than through Magit's process buffer;
+comma-separated octopus input remains a gap.
 
 `vc-handled-backends '(Git)` only. `magit`/`magit-todos`/`forge`/`git-gutter`/`git-timemachine` all loaded via `init-evil`.
 

@@ -969,6 +969,44 @@ porcelain_merge_subject_is() {
     log -1 --format=%s)" ]
 }
 
+porcelain_merge_absorbed() {
+  porcelain_branch_is "$reset_current_branch" &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      show-ref --verify --quiet refs/heads/merge-absorb &&
+    [ "$merge_absorb_hash" = \
+      "$("$git_bin" --git-dir="$LEM_YATH_VCS_PORCELAIN_REMOTE" \
+        rev-parse refs/heads/merge-absorb)" ] &&
+    [ "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+       log -1 --format=%s)" = "Merge branch 'merge-absorb' [#42]" ] &&
+    [ "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+       rev-list --parents -1 HEAD | awk '{print NF}')" = 3 ] &&
+    [ "$(cat "$LEM_YATH_VCS_PORCELAIN_ROOT/merge-absorb.txt")" = \
+      'absorb local updated value' ] &&
+    porcelain_merge_metadata_absent
+}
+
+porcelain_merge_lease_refused() {
+  [ "$merge_absorb_target_hash" = \
+    "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD)" ] &&
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      show-ref --verify --quiet refs/heads/merge-lease-fail &&
+    [ "$merge_lease_remote_hash" = \
+      "$("$git_bin" --git-dir="$LEM_YATH_VCS_PORCELAIN_REMOTE" \
+        rev-parse refs/heads/merge-lease-fail)" ] &&
+    porcelain_merge_metadata_absent
+}
+
+porcelain_merge_dissolved() {
+  porcelain_branch_is "$reset_current_branch" &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      show-ref --verify --quiet refs/heads/merge-dissolve &&
+    [ "$(cat "$LEM_YATH_VCS_PORCELAIN_ROOT/merge-dissolve.txt")" = \
+      'dissolve branch value' ] &&
+    [ "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+       rev-list --parents -1 HEAD | awk '{print NF}')" = 3 ] &&
+    porcelain_merge_metadata_absent
+}
+
 create_porcelain_merge_branch() {
   local branch=$1 filename=$2 content=$3 timestamp=$4
   "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -b \
@@ -1005,6 +1043,52 @@ prepare_porcelain_merge_fixture() {
     'preview branch value' '2001-04-06T00:00:00+0000' || return 1
   create_porcelain_merge_branch merge-conflict merge-conflict.txt \
     'merge side value' '2001-04-07T00:00:00+0000' || return 1
+  create_porcelain_merge_branch merge-absorb merge-absorb.txt \
+    'absorb remote value' '2001-04-08T00:00:00+0000' || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" push -q origin \
+    merge-absorb:merge-absorb || return 1
+  printf 'absorb local updated value\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/merge-absorb.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- \
+    merge-absorb.txt || return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_ROOT" merge-absorb-local \
+    '2001-04-09T00:00:00+0000' || return 1
+  merge_absorb_hash=$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    rev-parse HEAD) || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config \
+    branch.merge-absorb.pushRemote origin || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config \
+    branch.merge-absorb.pullRequest 42 || return 1
+
+  create_porcelain_merge_branch merge-dissolve merge-dissolve.txt \
+    'dissolve branch value' '2001-04-10T00:00:00+0000' || return 1
+
+  create_porcelain_merge_branch merge-lease-fail merge-lease.txt \
+    'lease original value' '2001-04-11T00:00:00+0000' || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" push -q origin \
+    merge-lease-fail:merge-lease-fail || return 1
+  printf 'lease local divergent value\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_ROOT/merge-lease.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- \
+    merge-lease.txt || return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_ROOT" merge-lease-local \
+    '2001-04-12T00:00:00+0000' || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config \
+    branch.merge-lease-fail.pushRemote origin || return 1
+
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" fetch -q origin || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" checkout -q -B \
+    merge-lease-fail origin/merge-lease-fail || return 1
+  printf 'lease remote advanced value\n' \
+    >"$LEM_YATH_VCS_PORCELAIN_PEER/merge-lease.txt"
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" add -- \
+    merge-lease.txt || return 1
+  git_commit "$LEM_YATH_VCS_PORCELAIN_PEER" merge-lease-remote \
+    '2001-04-13T00:00:00+0000' || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" push -q origin \
+    merge-lease-fail || return 1
+  merge_lease_remote_hash=$("$git_bin" \
+    -C "$LEM_YATH_VCS_PORCELAIN_PEER" rev-parse HEAD) || return 1
 
   "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q \
     "$reset_current_branch" || return 1
@@ -3046,6 +3130,163 @@ if wait_until "$WAIT_TIMEOUT" porcelain_merge_subject_is \
 else
   fail legit-merge-continue \
     'resolved merge did not commit with the edited message and content' \
+    "$porcelain_session"
+fi
+
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard \
+  "$merge_main_hash"
+send_keys "$porcelain_session" g m
+if lem_wait_for "$porcelain_session" '\[Merge\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" d
+fi
+if lem_wait_for "$porcelain_session" 'Merge main into:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" \
+    merge-dissolve 'Merge main into:'
+fi
+if lem_wait_for "$porcelain_session" 'Do you really want to merge main branch main' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" n
+fi
+if porcelain_merge_clean_at_main &&
+   "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+     show-ref --verify --quiet refs/heads/main; then
+  pass legit-merge-main-protection \
+    'm d refused to dissolve the configured main branch when declined'
+else
+  fail legit-merge-main-protection \
+    'declining main-branch dissolution still changed or removed main' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" m
+if lem_wait_for "$porcelain_session" '\[Merge\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" a
+fi
+if lem_wait_for "$porcelain_session" 'Absorb branch:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" \
+    merge-absorb 'Absorb branch:'
+fi
+if lem_wait_for "$porcelain_session" \
+     'Absorb merge-absorb into main and delete merge-absorb after success' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+if lem_wait_for "$porcelain_session" \
+     'Force-push merge-absorb to origin/merge-absorb with lease' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_merge_absorbed; then
+  pass legit-merge-absorb \
+    'm a lease-pushed, merged with PR context, and deleted only the local source'
+else
+  fail legit-merge-absorb \
+    'absorb lost its lease update, merge, message, or deletion boundary' \
+    "$porcelain_session"
+fi
+
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q merge-dissolve
+send_keys "$porcelain_session" g m
+if lem_wait_for "$porcelain_session" '\[Merge\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" d
+fi
+if lem_wait_for "$porcelain_session" 'Merge merge-dissolve into:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" main \
+    'Merge merge-dissolve into:'
+fi
+if lem_wait_for "$porcelain_session" \
+     'Dissolve merge-dissolve into main and delete merge-dissolve after success' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_merge_dissolved; then
+  pass legit-merge-dissolve \
+    'm d switched targets, merged the former branch, and deleted it after success'
+else
+  fail legit-merge-dissolve \
+    'dissolve lost its checkout, merge, content, or deletion boundary' \
+    "$porcelain_session"
+fi
+
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard \
+  "$merge_main_hash"
+send_keys "$porcelain_session" g m
+if lem_wait_for "$porcelain_session" '\[Merge\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" a
+fi
+if lem_wait_for "$porcelain_session" 'Absorb branch:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" \
+    merge-conflict 'Absorb branch:'
+fi
+if lem_wait_for "$porcelain_session" \
+     'Absorb merge-conflict into main and delete merge-conflict after success' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_merge_conflicted &&
+   "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+     show-ref --verify --quiet refs/heads/merge-conflict; then
+  pass legit-merge-absorb-conflict \
+    'a conflicting absorb retained MERGE_HEAD, the unmerged index, and source branch'
+else
+  fail legit-merge-absorb-conflict \
+    'a conflicting absorb deleted its source or lost recoverable merge state' \
+    "$porcelain_session"
+fi
+send_keys "$porcelain_session" m
+if lem_wait_for "$porcelain_session" 'abort merge' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" a
+fi
+if lem_wait_for "$porcelain_session" 'Abort merge' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_merge_clean_at_main; then
+  pass legit-merge-absorb-abort \
+    'the ordinary active-merge abort restored a failed absorb exactly'
+else
+  fail legit-merge-absorb-abort \
+    'aborting a failed absorb did not restore the target branch' \
+    "$porcelain_session"
+fi
+
+merge_absorb_target_hash=$("$git_bin" \
+  -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD)
+send_keys "$porcelain_session" g m
+if lem_wait_for "$porcelain_session" '\[Merge\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" a
+fi
+if lem_wait_for "$porcelain_session" 'Absorb branch:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" \
+    merge-lease-fail 'Absorb branch:'
+fi
+if lem_wait_for "$porcelain_session" \
+     'Absorb merge-lease-fail into main and delete merge-lease-fail after success' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+if lem_wait_for "$porcelain_session" \
+     'Force-push merge-lease-fail to origin/merge-lease-fail with lease' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_merge_lease_refused; then
+  pass legit-merge-lease-refusal \
+    'a stale force-with-lease stopped absorb before merge or deletion'
+else
+  fail legit-merge-lease-refusal \
+    'a rejected lease still merged, deleted, or overwrote the remote branch' \
     "$porcelain_session"
 fi
 lem_stop "$porcelain_session"
