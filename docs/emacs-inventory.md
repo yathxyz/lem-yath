@@ -601,8 +601,9 @@ branch, `r` accepts an explicit refspec, and `m` fetches populated submodules
 with Magit's default verbose four-job policy. If no push remote is configured,
 `p` prompts and persists the selected configured remote. Lem performs the
 bounded operation synchronously and refreshes Legit instead of opening Magit's
-asynchronous process buffer; the nested `C` branch-configuration UI and the
-submodule argument sub-transient remain outside this port.
+asynchronous process buffer. The `C` route reuses the complete current-branch
+configuration surface and returns to fetch. The prefix-only submodule argument
+sub-transient remains outside this port.
 
 Evil Collection's lowercase `p` opens the matching push dispatch in status
 and diff panes. `- f`/`- F` select mutually exclusive force-with-lease/force,

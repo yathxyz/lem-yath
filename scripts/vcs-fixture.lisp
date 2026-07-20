@@ -201,7 +201,7 @@
              "magit-fetch-diff-dispatch")
       (let ((options (make-legit-fetch-options)))
         (dolist (key '("- p" "- t" "- u" "- F"
-                       "p" "u" "e" "a" "o" "r" "m" "q"))
+                       "p" "u" "e" "a" "o" "r" "m" "C" "q"))
           (check (eq 'nop-command
                      (vcs-test-key-command
                       (legit-fetch-popup-keymap options) key))

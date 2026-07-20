@@ -2208,7 +2208,8 @@ Magit-inspired. `M-x legit-status` bound **`C-x g`** (`legit/legit.lisp:65`).
   remote, current upstream, another remote or URL, or all remotes; `o` fetches
   one branch, `r` an explicit refspec, and `m` populated submodules with the
   default verbose four-job policy. A missing push remote is selected and
-  persisted before fetching.
+  persisted before fetching. `C` configures the current branch's variables and
+  repository defaults, then returns to the fetch map.
 - **Push dispatch**: Evil Collection's lowercase `p` replaces Legit's `P p`
   entry in status and diff. `- f`/`- F`, `- h`, `- n`, `- u`, `- T`, and
   `- t` provide force-with-lease/force, no-verify, dry-run, set-upstream,

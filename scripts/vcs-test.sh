@@ -2980,6 +2980,35 @@ if "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_PEER" pull -q --ff-only &&
       'could not prepare the metacharacter-bearing fetch remote' \
       "$porcelain_session"
   fi
+
+  send_keys "$porcelain_session" f C
+  if lem_wait_for "$porcelain_session" '\[Configure branch\]' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$porcelain_session" d
+  fi
+  if lem_wait_for "$porcelain_session" \
+       'Description for main \(blank unsets\):' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    enter_atomic_prompt_value "$porcelain_session" \
+      'configured through fetch'
+  fi
+  if lem_wait_for "$porcelain_session" '\[Configure branch\]' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$porcelain_session" q
+  fi
+  if lem_wait_for "$porcelain_session" '\[Fetch\]' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$porcelain_session" q
+  fi
+  if [ "$($git_bin -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config --get \
+       branch.main.description)" = 'configured through fetch' ]; then
+    pass legit-fetch-configure \
+      'f C configured the current branch and returned to the fetch popup'
+  else
+    fail legit-fetch-configure \
+      'f C did not route directly through current-branch configuration' \
+      "$porcelain_session"
+  fi
 else
   fail legit-fetch 'could not prepare the independent fetch refs' \
     "$porcelain_session"

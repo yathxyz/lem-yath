@@ -237,6 +237,14 @@
                    '("--recurse-submodules" "--verbose" "--jobs=4")
                    "Fetched repository and populated submodules."))
 
+(defun legit-fetch-configure-current-branch ()
+  "Open Magit's branch-variable surface for the current branch."
+  (let ((branch (or (legit-fetch-current-branch)
+                    (editor-error "Branch configuration requires a named HEAD."))))
+    ;; git-branch.lisp is intentionally loaded later because it reuses the
+    ;; fetch helpers above.  Resolve this runtime-only reverse edge explicitly.
+    (funcall (symbol-function 'legit-branch-configure) branch)))
+
 (defun legit-fetch-add-popup-entry (keymap key description)
   (define-key keymap key 'nop-command)
   (setf (lem-core::prefix-description
@@ -267,6 +275,7 @@
             ("o" "another branch")
             ("r" "explicit refspec")
             ("m" "submodules")
+            ("C" "configure current branch")
             ("q" "cancel")))
       (legit-fetch-add-popup-entry keymap (first entry) (second entry)))
     keymap))
@@ -331,6 +340,8 @@
                   ((string= name "m")
                    (legit-fetch-submodules options)
                    (return t))
+                  ((string= name "C")
+                   (legit-fetch-configure-current-branch))
                   (t
                    (message "No fetch action is bound to ~a" name)
                    (return nil)))))
