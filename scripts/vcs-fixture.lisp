@@ -270,17 +270,35 @@
                   lem/legit::*legit-diff-mode-keymap* "b"))
              "magit-branch-diff-dispatch")
       (let ((options (make-legit-branch-options)))
-        (dolist (key '("d" "u" "r" "p" "R" "P" "- r" "b" "l"
-                       "o" "c" "s" "n" "S" "C" "m" "X" "x" "q"))
+        (dolist (key '("d" "u" "r" "p" "R" "P" "B" "- r" "b" "l"
+                       "o" "c" "s" "n" "S" "C" "m" "h" "H" "X"
+                       "x" "q"))
           (check (eq 'nop-command
                      (vcs-test-key-command
                       (legit-branch-popup-keymap options "main") key))
                  (format nil "magit-branch-initial-~a" key)))
-        (dolist (key '("d" "u" "r" "p" "R" "P" "a m" "a r" "q"))
+        (dolist (key '("d" "u" "r" "p" "R" "P" "B" "a m" "a r"
+                       "q"))
           (check (eq 'nop-command
                      (vcs-test-key-command
                       (legit-branch-config-popup-keymap "main") key))
                  (format nil "magit-branch-config-~a" key))))
+      (check (and (legit-branch-date-prefix-p "2026-07-20-topic/path")
+                  (not (legit-branch-date-prefix-p "2026-7-20-topic"))
+                  (string= "topic/path"
+                           (legit-branch-unshelved-name
+                            "2026-07-20-topic/path")))
+             "magit-branch-shelved-date-prefix")
+      (check (and
+              (equal '(("topic" . "origin/topic"))
+                     (legit-branch-delete-aliases
+                      '("main" "origin/topic") '("origin/topic")))
+              (null (legit-branch-delete-aliases
+                     '("topic" "origin/topic") '("origin/topic")))
+              (null (legit-branch-delete-aliases
+                     '("origin/topic" "upstream/topic")
+                     '("origin/topic" "upstream/topic"))))
+             "magit-branch-delete-safe-aliases")
       (check (eq 'lem-yath-legit-worktree
                  (vcs-test-key-command lem/legit::*peek-legit-keymap* "%"))
              "magit-worktree-status-dispatch")

@@ -506,21 +506,22 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   Magit's `b` branch dispatch now replaces Legit's two direct branch commands
   in status and diff panes. It provides checkout by revision, local/remote
   tracking checkout, upstream-first branch creation, orphan creation,
-  spin-off/spin-out, rename, guarded local deletion, and the existing `X`
-  reset action. Direct and nested configuration covers descriptions,
+  spin-off/spin-out, shelve/unshelve, remote-aware rename and deletion, and the
+  existing `X` reset action. Direct and nested configuration covers descriptions,
   upstreams, per-branch rebase/push remotes, repository pull/push defaults,
-  and automatic merge/rebase setup; Evil Collection's `X` reset and `x`
-  delete remap is retained. Remote checkout records both the upstream and push
-  remote, and dirty spin-out safely becomes a checked-out spin-off. The
+  default-branch migration, and automatic merge/rebase setup; Evil Collection's
+  `X` reset and `x` delete remap is retained. Remote checkout records both the
+  upstream and push remote, remote rename preserves a divergent remote tip,
+  and dirty spin-out safely becomes a checked-out spin-off. The
   separate `%` worktree dispatch matches Evil Collection's remapped Magit
   surface: `b` checks out a revision in a new worktree, `c` creates a branch
   and worktree, `m` moves one, `k` deletes one, and `g` visits its Legit
   status. Move/delete never offer the primary worktree; dirty removal requires
   explicit confirmation, locked worktrees fail closed, missing registrations
   are pruned, and moving or deleting the active linked worktree follows the
-  resulting status root. Shelve/unshelve, default-branch migration,
-  remote-side rename/deletion, and visual commit-region spin boundaries remain
-  explicit gaps.
+  resulting status root. Visual commit-region spin boundaries remain an
+  explicit gap, and Git mutations remain synchronous instead of using Magit's
+  process buffers.
   Magit's `X` reset dispatch is likewise available in status and diff panes:
   `b` resets a selected local branch, `f` checks out one revision path, and
   `m`/`s`/`h`/`k`/`i`/`w` preserve the mixed, soft, hard, keep, index-only,

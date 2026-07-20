@@ -345,6 +345,34 @@
                  checkout-p name)
         t))))
 
+(defun legit-branch-ref-exists-p (ref)
+  "Return whether exact REF exists, rejecting unexpected Git failures."
+  (multiple-value-bind (output error-output status)
+      (legit-branch-run-program (list "show-ref" "--verify" "--quiet" ref))
+    (declare (ignore output))
+    (cond
+      ((eql status 0) t)
+      ((eql status 1) nil)
+      (t (editor-error "~a"
+                       (legit-command-error-text "" error-output))))))
+
+(defun legit-branch-push-remote-for (branch)
+  "Return BRANCH's explicit or repository push remote when configured."
+  (let ((remote
+          (or (legit-branch-config-value
+               (format nil "branch.~a.pushRemote" branch))
+              (legit-branch-config-value "remote.pushDefault"))))
+    (and (member remote (legit-branch-remotes) :test #'string=)
+         remote)))
+
+(defun legit-branch-rename-remote-target-p (remote old new)
+  "Return whether OLD has a push target on REMOTE and NEW does not."
+  (and remote
+       (legit-branch-ref-exists-p
+        (format nil "refs/remotes/~a/~a" remote old))
+       (not (legit-branch-ref-exists-p
+             (format nil "refs/remotes/~a/~a" remote new)))))
+
 (defun legit-branch-rename ()
   (alexandria:when-let
       ((old (legit-branch-read-local
@@ -354,9 +382,214 @@
                (format nil "Rename branch '~a' to: " old))))
       (when (string= old new)
         (editor-error "Old and new branch names are the same."))
+      (let* ((push-remote (legit-branch-push-remote-for old))
+             (rename-remote-p
+               (legit-branch-rename-remote-target-p push-remote old new)))
+        (legit-branch-checked-output (list "branch" "-m" old new))
+        (if (and rename-remote-p
+                 (prompt-for-y-or-n-p
+                  (format nil "Also rename ~a to ~a on ~a? "
+                          old new push-remote)))
+            (legit-branch-run
+             (list "push" "--verbose" "--" push-remote
+                   (format nil "refs/remotes/~a/~a:refs/heads/~a"
+                           push-remote old new)
+                   (format nil ":refs/heads/~a" old))
+             (format nil "Renamed ~a to ~a locally and on ~a."
+                     old new push-remote))
+            (progn
+              (lem/legit::show-legit-status)
+              (message "Renamed ~a to ~a locally." old new)
+              t))))))
+
+(defun legit-branch-git-path (relative)
+  "Return Git's repository path for RELATIVE as an absolute pathname."
+  (let* ((value
+           (str:trim
+            (legit-branch-checked-output
+             (list "rev-parse" "--git-path" relative))))
+         (path (pathname value)))
+    (if (uiop:absolute-pathname-p path)
+        path
+        (merge-pathnames path
+                         (uiop:ensure-directory-pathname (uiop:getcwd))))))
+
+(defun legit-branch-rename-reflog (old-ref new-ref)
+  "Move OLD-REF's reflog to NEW-REF when one exists."
+  (let ((old (legit-branch-git-path (format nil "logs/~a" old-ref)))
+        (new (legit-branch-git-path (format nil "logs/~a" new-ref))))
+    (when (probe-file old)
+      (ensure-directories-exist new)
+      (uiop:rename-file-overwriting-target old new))))
+
+(defun legit-branch-shelved-branches ()
+  (legit-branch-lines
+   '("for-each-ref" "--format=%(refname:strip=2)" "refs/shelved")))
+
+(defun legit-branch-shelve ()
+  "Move another local branch and its reflog below refs/shelved."
+  (alexandria:when-let
+      ((branch (legit-branch-read-local "Shelve branch: ")))
+    (let* ((old (format nil "refs/heads/~a" branch))
+           (date
+             (str:trim
+              (legit-branch-checked-output
+               (list "show" "-s" "--format=%cs" branch))))
+           (new (format nil "refs/shelved/~a-~a" date branch)))
+      (legit-branch-checked-output (list "update-ref" new old ""))
+      (legit-branch-rename-reflog old new)
+      (when (legit-branch-config-value
+             (format nil "branch.~a.pushRemote" branch))
+        (legit-branch-checked-output
+         (list "config" "--unset-all"
+               (format nil "branch.~a.pushRemote" branch))))
       (legit-branch-run
-       (list "branch" "-m" old new)
-       (format nil "Renamed ~a to ~a." old new)))))
+       (list "branch" "-D" branch)
+       (format nil "Shelved ~a as ~a-~a." branch date branch)))))
+
+(defun legit-branch-date-prefix-p (name)
+  (and (>= (length name) 11)
+       (every #'digit-char-p (subseq name 0 4))
+       (char= (char name 4) #\-)
+       (every #'digit-char-p (subseq name 5 7))
+       (char= (char name 7) #\-)
+       (every #'digit-char-p (subseq name 8 10))
+       (char= (char name 10) #\-)))
+
+(defun legit-branch-unshelved-name (shelved)
+  (if (legit-branch-date-prefix-p shelved)
+      (subseq shelved 11)
+      shelved))
+
+(defun legit-branch-unshelve ()
+  "Restore one refs/shelved entry and its reflog as a local branch."
+  (let ((shelved (legit-branch-shelved-branches)))
+    (unless shelved
+      (editor-error "There is no shelved branch."))
+    (alexandria:when-let
+        ((branch
+           (prompt-for-string
+            "Unshelve branch: "
+            :history-symbol '*legit-branch-name-history*
+            :completion-function
+            (lambda (query) (completion-strings query shelved))
+            :test-function
+            (lambda (value) (member value shelved :test #'string=)))))
+      (let* ((name (legit-branch-unshelved-name branch))
+             (old (format nil "refs/shelved/~a" branch))
+             (new (format nil "refs/heads/~a" name)))
+        (unless (legit-branch-name-valid-p name)
+          (editor-error "Shelved ref ~a does not produce a valid branch name."
+                        branch))
+        (when (legit-branch-ref-exists-p new)
+          (editor-error "Local branch ~a already exists." name))
+        (legit-branch-checked-output (list "update-ref" new old ""))
+        (legit-branch-rename-reflog old new)
+        (legit-branch-checked-output (list "update-ref" "-d" old))
+        (lem/legit::show-legit-status)
+        (message "Unshelved ~a as ~a." branch name)
+        t))))
+
+(defun legit-branch-primary-remote ()
+  "Return Magit's configured primary remote, if present."
+  (let ((remotes (legit-branch-remotes)))
+    (find-if
+     (lambda (remote) (member remote remotes :test #'string=))
+     (remove-duplicates
+      (remove nil
+              (list (legit-branch-config-value "magit.primaryRemote")
+                    "upstream" "origin"))
+      :test #'string=))))
+
+(defun legit-branch-default-name (remote)
+  "Return REMOTE's locally recorded default branch name."
+  (let* ((prefix (format nil "~a/" remote))
+         (value
+           (legit-branch-optional-output
+            (list "symbolic-ref" "--quiet" "--short"
+                  (format nil "refs/remotes/~a/HEAD" remote)))))
+    (and value
+         (alexandria:starts-with-subseq prefix value)
+         (subseq value (length prefix)))))
+
+(defun legit-branch-upstream-rows ()
+  "Return local branch and upstream pairs."
+  (mapcar
+   (lambda (line)
+     (let ((tab (position #\Tab line)))
+       (list (if tab (subseq line 0 tab) line)
+             (and tab (< tab (1- (length line)))
+                  (subseq line (1+ tab))))))
+   (legit-branch-lines
+    '("for-each-ref" "--format=%(refname:short)%09%(upstream:short)"
+      "refs/heads"))))
+
+(defun legit-branch-set-default-locally (remote old new)
+  "Rename OLD to NEW when possible and migrate affected upstreams."
+  (let ((rows (legit-branch-upstream-rows)))
+    (when (and (assoc old rows :test #'string=)
+               (not (assoc new rows :test #'string=)))
+      (legit-branch-checked-output (list "branch" "-m" old new))
+      (setf (car (assoc old rows :test #'string=)) new))
+    (let ((new-upstream
+            (if (assoc new rows :test #'string=)
+                new
+                (format nil "~a/~a" remote new))))
+      (dolist (row rows)
+        (destructuring-bind (branch upstream) row
+          (cond
+            ((and upstream (string= upstream old))
+             (legit-branch-checked-output
+              (list "branch" (format nil "--set-upstream-to=~a"
+                                     new-upstream)
+                    branch)))
+            ((and upstream
+                  (string= upstream (format nil "~a/~a" remote old)))
+             (legit-branch-checked-output
+              (list "branch"
+                    (format nil "--set-upstream-to=~a/~a" remote new)
+                    branch)))))))))
+
+(defun legit-branch-update-default ()
+  "Refresh the primary remote's HEAD and migrate matching local names."
+  (let* ((remote (or (legit-branch-primary-remote)
+                     (editor-error "Cannot determine a primary remote.")))
+         (old (legit-branch-default-name remote)))
+    (legit-branch-checked-output '("fetch" "--prune"))
+    (legit-branch-checked-output
+     (list "remote" "set-head" "--auto" remote))
+    (let ((new (or (legit-branch-default-name remote)
+                   (editor-error "Cannot determine the new default branch."))))
+      (cond
+        ((and old (string= old new))
+         (alexandria:when-let
+             ((replaced
+                (prompt-for-string
+                 (format nil "Default is still ~a; old upstream branch to replace: "
+                         new)
+                 :initial-value "master"
+                 :history-symbol '*legit-branch-name-history*
+                 :test-function #'legit-branch-name-valid-p)))
+           (legit-branch-set-default-locally remote replaced new)
+           (lem/legit::show-legit-status)
+           (message "Updated upstreams from ~a to ~a." replaced new)
+           t))
+        (t
+         (let ((old
+                 (or old
+                     (legit-branch-read-local
+                      (format nil "Old default branch to rename to ~a: " new)
+                      :include-current-p t
+                      :initial-value "master"))))
+           (when (prompt-for-y-or-n-p
+                  (format nil
+                          "Default changed from ~a to ~a on ~a; do the same locally? "
+                          old new remote))
+             (legit-branch-set-default-locally remote old new)
+             (lem/legit::show-legit-status)
+             (message "Updated the local default branch from ~a to ~a."
+                      old new)
+             t)))))))
 
 (defun legit-branch-main-candidate (current)
   (find-if
@@ -382,37 +615,137 @@
             (lambda (value) (member value choices :test #'string=)))))
     input))
 
-(defun legit-branch-delete ()
-  "Delete one local branch with current and unmerged safety behavior."
-  (alexandria:when-let
-      ((branch (legit-branch-read-local
-                "Delete branch: " :include-current-p t)))
-    (let ((current (legit-branch-current)))
-      (cond
-        ((and current (string= branch current))
-         (alexandria:when-let
-             ((target (legit-branch-delete-current-target branch)))
-           (unless (or (string= target "<detach>")
-                       (legit-branch-ancestor-p branch target)
-                       (prompt-for-y-or-n-p
-                        (format nil "Branch ~a is not merged into ~a. Delete anyway? "
-                                branch target)))
-             (return-from legit-branch-delete nil))
-           (legit-branch-checked-output
-            (if (string= target "<detach>")
-                '("checkout" "--detach")
-                (list "checkout" target)))
-           (legit-branch-run
-            (list "branch" "-D" branch)
-            (format nil "Deleted ~a." branch))))
-        ((or (legit-branch-ancestor-p branch "HEAD")
-             (prompt-for-y-or-n-p
-              (format nil "Branch ~a is unmerged. Force delete? " branch)))
+(defun legit-branch-delete-aliases (choices remotes)
+  "Return safe short-name aliases for remote-tracking branch choices."
+  (let ((pairs
+          (mapcar
+           (lambda (tracking)
+             (multiple-value-bind (remote branch)
+                 (legit-branch-remote-parts tracking)
+               (declare (ignore remote))
+               (cons branch tracking)))
+           remotes)))
+    (remove-if
+     (lambda (pair)
+       (or (null (car pair))
+           (member (car pair) choices :test #'string=)
+           (> (count (car pair) pairs :key #'car :test #'string=) 1)))
+     pairs)))
+
+(defun legit-branch-read-delete ()
+  "Read one unambiguous local or remote-tracking branch."
+  (let* ((locals (legit-branch-local-branches))
+         (remotes (legit-branch-remote-branches))
+         (choices (remove-duplicates (append locals remotes) :test #'string=))
+         (aliases (legit-branch-delete-aliases choices remotes))
+         (prompt-choices (append choices (mapcar #'car aliases))))
+    (unless choices
+      (editor-error "There is no branch to delete."))
+    (alexandria:when-let
+        ((input
+           (prompt-for-string
+            "Delete branch: "
+            :history-symbol '*legit-branch-name-history*
+            :completion-function
+            (lambda (query) (completion-strings query prompt-choices))
+            :test-function
+            (lambda (value) (member value prompt-choices :test #'string=)))))
+      (let ((branch (or (cdr (assoc input aliases :test #'string=)) input)))
+        (when (and (member branch locals :test #'string=)
+                   (member branch remotes :test #'string=))
+          (editor-error "Branch name ~a is ambiguous; use Git directly."
+                        branch))
+        branch))))
+
+(defun legit-branch-remote-ref-present-p (remote branch)
+  "Return whether BRANCH still exists on REMOTE."
+  (multiple-value-bind (output error-output status)
+      (legit-branch-run-program
+       (list "ls-remote" "--exit-code" "--heads" "--" remote
+             (format nil "refs/heads/~a" branch)))
+    (declare (ignore output))
+    (cond
+      ((eql status 0) t)
+      ((eql status 2) nil)
+      (t (editor-error "~a"
+                       (legit-command-error-text "" error-output))))))
+
+(defun legit-branch-delete-remote (tracking)
+  "Delete TRACKING locally, optionally deleting its remote branch too."
+  (multiple-value-bind (remote branch)
+      (legit-branch-remote-parts tracking)
+    (unless (and remote branch
+                 (member remote (legit-branch-remotes) :test #'string=)
+                 (legit-branch-name-valid-p branch))
+      (editor-error "Remote-tracking branch ~a is invalid." tracking))
+    (let ((ref (format nil "refs/remotes/~a/~a" remote branch)))
+      (if (prompt-for-y-or-n-p
+           (format nil "Deleting local ~a; also delete on ~a? " ref remote))
+          (if (legit-branch-remote-ref-present-p remote branch)
+              (multiple-value-bind (output error-output status)
+                  (legit-branch-run-program
+                   (list "push" "--delete" "--" remote
+                         (format nil "refs/heads/~a" branch)))
+                (if (and (integerp status) (zerop status))
+                    (progn
+                      (legit-branch-checked-output
+                       (list "update-ref" "-d" ref))
+                      (lem/legit::show-legit-status)
+                      (message "Deleted ~a locally and on ~a."
+                               branch remote)
+                      t)
+                    (progn
+                      (lem/legit::pop-up-message
+                       (legit-command-error-text output error-output))
+                      nil)))
+              (progn
+                (legit-branch-checked-output (list "update-ref" "-d" ref))
+                (lem/legit::show-legit-status)
+                (message "Remote branch was already absent; deleted ~a."
+                         ref)
+                t))
+          (progn
+            (legit-branch-checked-output (list "update-ref" "-d" ref))
+            (lem/legit::show-legit-status)
+            (message "Deleted only local tracking ref ~a." ref)
+            t)))))
+
+(defun legit-branch-delete-local (branch)
+  "Delete local BRANCH with current and unmerged safety behavior."
+  (let ((current (legit-branch-current)))
+    (cond
+      ((and current (string= branch current))
+       (alexandria:when-let
+           ((target (legit-branch-delete-current-target branch)))
+         (unless (or (string= target "<detach>")
+                     (legit-branch-ancestor-p branch target)
+                     (prompt-for-y-or-n-p
+                      (format nil "Branch ~a is not merged into ~a. Delete anyway? "
+                              branch target)))
+           (return-from legit-branch-delete-local nil))
+         (legit-branch-checked-output
+          (if (string= target "<detach>")
+              '("checkout" "--detach")
+              (list "checkout" target)))
          (legit-branch-run
-          (list "branch"
-                (if (legit-branch-ancestor-p branch "HEAD") "-d" "-D")
-                branch)
-          (format nil "Deleted ~a." branch)))))))
+          (list "branch" "-D" branch)
+          (format nil "Deleted ~a." branch))))
+      ((or (legit-branch-ancestor-p branch "HEAD")
+           (prompt-for-y-or-n-p
+            (format nil "Branch ~a is unmerged. Force delete? " branch)))
+       (legit-branch-run
+        (list "branch"
+              (if (legit-branch-ancestor-p branch "HEAD") "-d" "-D")
+              branch)
+        (format nil "Deleted ~a." branch))))))
+
+(defun legit-branch-delete ()
+  "Delete one local or remote-tracking branch with Magit's safeguards."
+  (alexandria:when-let
+      ((branch (legit-branch-read-delete)))
+    (if (member branch (legit-branch-remote-branches) :test #'string=)
+        (legit-branch-delete-remote branch)
+        (legit-branch-delete-local branch))))
 
 (defun legit-branch-read-config-choice (prompt choices current)
   (let* ((unset "<unset>")
@@ -486,6 +819,8 @@
      (legit-branch-config-variable
       "remote.pushDefault" "Repository push default: "
       (legit-branch-remotes)))
+    ((string= name "B")
+     (legit-branch-update-default))
     ((string= name "a m")
      (legit-branch-config-variable
       "branch.autoSetupMerge" "Automatic upstream setup: "
@@ -529,6 +864,7 @@
                                       "inherit"))))
             ("R" "repository pull.rebase")
             ("P" "repository push default")
+            ("B" "update default branch")
             ("- r" ,(format nil "[~a] recurse submodules on checkout"
                               (if (legit-branch-options-recurse-submodules-p
                                    options) "x" " ")))
@@ -541,6 +877,8 @@
             ("S" "spin out without checkout")
             ("C" "configure another branch")
             ("m" "rename branch")
+            ("h" "shelve branch")
+            ("H" "unshelve branch")
             ("X" "reset branch")
             ("x" "delete branch")
             ("q" "cancel")))
@@ -560,6 +898,7 @@
             ("p" ,(format nil "push remote for ~a" branch))
             ("R" "repository pull.rebase")
             ("P" "repository push default")
+            ("B" "update default branch")
             ("a m" "automatic upstream setup")
             ("a r" "automatic rebase setup")
             ("q" "return")))
@@ -644,6 +983,15 @@
                      (legit-branch-configure branch)))
                   ((string= name "m")
                    (legit-branch-rename)
+                   (return t))
+                  ((string= name "h")
+                   (legit-branch-shelve)
+                   (return t))
+                  ((string= name "H")
+                   (legit-branch-unshelve)
+                   (return t))
+                  ((string= name "B")
+                   (legit-branch-update-default)
                    (return t))
                   ((string= name "X")
                    (legit-reset-branch)

@@ -1081,6 +1081,9 @@ prepare_porcelain_merge_fixture() {
     'lease original value' '2001-04-11T00:00:00+0000' || return 1
   "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" push -q origin \
     merge-lease-fail:merge-lease-fail || return 1
+  merge_lease_tracking_hash=$("$git_bin" \
+    -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    rev-parse refs/remotes/origin/merge-lease-fail) || return 1
   printf 'lease local divergent value\n' \
     >"$LEM_YATH_VCS_PORCELAIN_ROOT/merge-lease.txt"
   "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- \
@@ -1236,6 +1239,69 @@ porcelain_branch_renamed_complete() {
       show-ref --verify --quiet refs/heads/branch-no-checkout
 }
 
+porcelain_branch_remote_renamed_complete() {
+  [ "$merge_main_hash" = \
+    "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      rev-parse refs/heads/branch-remote-renamed 2>/dev/null)" ] &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      show-ref --verify --quiet refs/heads/branch-remote-rename &&
+    porcelain_origin_branch_is branch-remote-renamed "$branch_remote_hash" &&
+    ! "$git_bin" --git-dir="$LEM_YATH_VCS_PORCELAIN_REMOTE" \
+      show-ref --verify --quiet refs/heads/branch-remote-rename &&
+    [ origin = "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      config --get branch.branch-remote-renamed.pushRemote)" ]
+}
+
+porcelain_branch_shelved_complete() {
+  ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    show-ref --verify --quiet refs/heads/branch-shelve &&
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      show-ref --verify --quiet "refs/shelved/$branch_shelved_name" &&
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      reflog exists "refs/shelved/$branch_shelved_name" &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      reflog exists refs/heads/branch-shelve &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      config --get branch.branch-shelve.pushRemote >/dev/null 2>&1
+}
+
+porcelain_branch_unshelved_complete() {
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    show-ref --verify --quiet refs/heads/branch-shelve &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      show-ref --verify --quiet "refs/shelved/$branch_shelved_name" &&
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      reflog exists refs/heads/branch-shelve &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      reflog exists "refs/shelved/$branch_shelved_name"
+}
+
+porcelain_branch_remote_deleted_complete() {
+  ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    show-ref --verify --quiet refs/remotes/origin/remote-delete &&
+    ! "$git_bin" --git-dir="$LEM_YATH_VCS_PORCELAIN_REMOTE" \
+      show-ref --verify --quiet refs/heads/remote-delete
+}
+
+porcelain_branch_remote_local_only_complete() {
+  ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    show-ref --verify --quiet refs/remotes/origin/remote-keep &&
+    porcelain_origin_branch_is remote-keep "$branch_remote_hash"
+}
+
+porcelain_branch_default_updated_complete() {
+  porcelain_branch_current_is primary-next &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      show-ref --verify --quiet refs/heads/main &&
+    [ origin/primary-next = \
+      "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" symbolic-ref \
+        --quiet --short refs/remotes/origin/HEAD)" ] &&
+    [ origin/primary-next = \
+      "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+        for-each-ref --format='%(upstream:short)' \
+        refs/heads/default-follower)" ]
+}
+
 porcelain_branch_config_complete() {
   [ 'configured branch description' = \
     "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
@@ -1321,6 +1387,16 @@ prepare_porcelain_branch_fixture() {
     refs/heads/branch-delete-merged "$merge_main_hash" || return 1
   "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref \
     refs/heads/branch-current-delete "$merge_main_hash" || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref \
+    refs/heads/branch-shelve "$merge_main_hash" || return 1
+  branch_shelved_name="$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    show -s --format=%cs branch-shelve)-branch-shelve" || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config \
+    branch.branch-shelve.pushRemote origin || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref \
+    refs/heads/branch-remote-rename "$merge_main_hash" || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref \
+    refs/heads/default-follower "$merge_main_hash" || return 1
 
   "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -b \
     branch-remote-build "$merge_main_hash" || return 1
@@ -1336,6 +1412,23 @@ prepare_porcelain_branch_fixture() {
     HEAD:refs/heads/remote-topic || return 1
   "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref \
     refs/remotes/origin/remote-topic "$branch_remote_hash" || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" push -q origin \
+    "$branch_remote_hash":refs/heads/branch-remote-rename || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref \
+    refs/remotes/origin/branch-remote-rename "$branch_remote_hash" || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config \
+    branch.branch-remote-rename.pushRemote origin || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" push -q origin \
+    "$branch_remote_hash":refs/heads/remote-delete \
+    "$branch_remote_hash":refs/heads/remote-keep || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref \
+    refs/remotes/origin/remote-delete "$branch_remote_hash" || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref \
+    refs/remotes/origin/remote-keep "$branch_remote_hash" || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch \
+    --set-upstream-to=origin/main default-follower >/dev/null || return 1
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" symbolic-ref \
+    refs/remotes/origin/HEAD refs/remotes/origin/main || return 1
   "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q main || return 1
   "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch -D \
     branch-remote-build >/dev/null || return 1
@@ -4196,6 +4289,121 @@ fi
 send_keys "$porcelain_session" g b
 if lem_wait_for "$porcelain_session" '\[Branch\]' \
      "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" m
+fi
+if lem_wait_for "$porcelain_session" 'Rename branch:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" branch-remote-rename \
+    'Rename branch:'
+fi
+if lem_wait_for "$porcelain_session" \
+     "Rename branch 'branch-remote-rename' to:" \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" branch-remote-renamed
+fi
+if lem_wait_for "$porcelain_session" \
+     'Also rename branch-remote-rename to branch-remote-renamed on origin' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_branch_remote_renamed_complete; then
+  pass legit-branch-rename-remote \
+    'b m preserved the divergent remote commit while renaming its push target'
+else
+  fail legit-branch-rename-remote \
+    'remote-aware rename lost local config, rewrote the remote tip, or retained an old ref' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" g b
+if lem_wait_for "$porcelain_session" '\[Branch\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" h
+fi
+if lem_wait_for "$porcelain_session" 'Shelve branch:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" branch-shelve \
+    'Shelve branch:'
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_branch_shelved_complete; then
+  pass legit-branch-shelve \
+    'b h moved the branch, reflog, and pushRemote boundary under refs/shelved'
+else
+  fail legit-branch-shelve \
+    'shelving retained the local ref/config or lost the dated ref/reflog' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" g b
+if lem_wait_for "$porcelain_session" '\[Branch\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" H
+fi
+if lem_wait_for "$porcelain_session" 'Unshelve branch:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" "$branch_shelved_name" \
+    'Unshelve branch:'
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_branch_unshelved_complete; then
+  pass legit-branch-unshelve \
+    'b H restored the date-stripped branch and reflog without reviving pushRemote'
+else
+  fail legit-branch-unshelve \
+    'unshelving retained the shelf or lost the restored branch/reflog' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" g b
+if lem_wait_for "$porcelain_session" '\[Branch\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" x
+fi
+if lem_wait_for "$porcelain_session" 'Delete branch:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value_until "$porcelain_session" remote-delete \
+    'Deleting local refs/remotes/origin/remote-delete'
+fi
+if lem_wait_for "$porcelain_session" \
+     'Deleting local refs/remotes/origin/remote-delete; also delete on origin' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_branch_remote_deleted_complete; then
+  pass legit-branch-delete-remote \
+    'b x deleted the selected tracking ref and its confirmed remote branch'
+else
+  fail legit-branch-delete-remote \
+    'confirmed remote deletion retained a local or remote ref' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" g b
+if lem_wait_for "$porcelain_session" '\[Branch\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" x
+fi
+if lem_wait_for "$porcelain_session" 'Delete branch:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value_until "$porcelain_session" remote-keep \
+    'Deleting local refs/remotes/origin/remote-keep'
+fi
+if lem_wait_for "$porcelain_session" \
+     'Deleting local refs/remotes/origin/remote-keep; also delete on origin' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" n
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_branch_remote_local_only_complete; then
+  pass legit-branch-delete-tracking-only \
+    'declining b x removed only the stale local tracking ref'
+else
+  fail legit-branch-delete-tracking-only \
+    'tracking-only deletion retained the local ref or removed the remote branch' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" g b
+if lem_wait_for "$porcelain_session" '\[Branch\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" C
 fi
 if lem_wait_for "$porcelain_session" 'Configure branch:' \
@@ -4469,6 +4677,63 @@ fi
 
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -f main
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard \
+  "$merge_main_hash"
+
+if "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" push -q origin \
+     "$merge_main_hash":refs/heads/primary-next &&
+   "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref \
+     refs/remotes/origin/primary-next "$merge_main_hash" &&
+   "$git_bin" --git-dir="$LEM_YATH_VCS_PORCELAIN_REMOTE" symbolic-ref \
+     HEAD refs/heads/primary-next; then
+  send_keys "$porcelain_session" g b
+  if lem_wait_for "$porcelain_session" '\[Branch\]' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$porcelain_session" B
+  fi
+  if lem_wait_for "$porcelain_session" \
+       'Default changed from main to primary-next on origin' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$porcelain_session" y
+  fi
+  if wait_until "$WAIT_TIMEOUT" porcelain_branch_default_updated_complete; then
+    pass legit-branch-update-default \
+      'b B refreshed origin/HEAD, renamed the local default, and migrated upstreams'
+  else
+    fail legit-branch-update-default \
+      'default migration lost the local rename, remote HEAD, or follower upstream' \
+      "$porcelain_session"
+  fi
+else
+  fail legit-branch-update-default-fixture \
+    'could not move the disposable remote default branch' \
+    "$porcelain_session"
+fi
+
+if "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+     show-ref --verify --quiet refs/heads/primary-next &&
+   ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+     show-ref --verify --quiet refs/heads/main; then
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch -m \
+    primary-next main
+fi
+if ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q -f main ||
+   ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch \
+     --set-upstream-to=origin/main main >/dev/null ||
+   ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch \
+     --set-upstream-to=origin/main default-follower >/dev/null ||
+   ! "$git_bin" --git-dir="$LEM_YATH_VCS_PORCELAIN_REMOTE" symbolic-ref \
+     HEAD refs/heads/main ||
+   ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" remote set-head \
+     origin main ||
+   ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" push -q origin \
+     --delete primary-next; then
+  fail legit-branch-update-default-restore \
+    'could not restore main after the isolated default-migration check' \
+    "$porcelain_session"
+fi
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref -d \
+  refs/remotes/origin/primary-next
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard \
   "$merge_main_hash"
 
@@ -4866,6 +5131,14 @@ fi
 
 merge_absorb_target_hash=$("$git_bin" \
   -C "$LEM_YATH_VCS_PORCELAIN_ROOT" rev-parse HEAD)
+# Default-branch migration intentionally fetches all refs.  Re-establish the
+# recorded stale observation at the exact lease test boundary.
+if ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref \
+     refs/remotes/origin/merge-lease-fail "$merge_lease_tracking_hash"; then
+  fail legit-merge-lease-fixture \
+    'could not restore the deliberately stale remote-tracking observation' \
+    "$porcelain_session"
+fi
 send_keys "$porcelain_session" g m
 if lem_wait_for "$porcelain_session" '\[Merge\]' \
      "$WAIT_TIMEOUT" >/dev/null; then

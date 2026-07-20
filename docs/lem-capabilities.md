@@ -2214,16 +2214,19 @@ Magit-inspired. `M-x legit-status` bound **`C-x g`** (`legit/legit.lisp:65`).
 - **Branch dispatch**: `b` replaces Legit's direct branch bindings in status
   and diff with Magit's configured checkout, local/remote tracking checkout,
   orphan, upstream-first create, spin-off/spin-out, configure, rename, reset,
-  and guarded local-delete lifecycle. Direct configuration covers the current
-  branch description, upstream, rebase, and push remote plus repository pull
-  and push defaults; nested `C` also covers automatic merge/rebase setup.
+  shelve/unshelve, and guarded local/remote-delete lifecycle. Direct
+  configuration covers the current branch description, upstream, rebase, and
+  push remote plus repository pull/push defaults and default-branch migration;
+  nested `C` also covers migration and automatic merge/rebase setup.
   Evil Collection's `X` reset and `x` delete mapping is retained. Remote
   checkout records upstream and push remote, checked-out deletion switches or
-  detaches first, unmerged deletion confirms, and dirty spin-out preserves
-  edits by becoming spin-off. The `- r` checkout submodule argument is present.
-  Worktrees are covered by the separate `%` dispatch below. Shelve/unshelve,
-  default-branch migration, remote-side rename/deletion, visual commit-region
-  spin selection, and asynchronous process presentation remain gaps.
+  detaches first, unmerged and remote deletion confirm, remote rename retains
+  the remote ref's own tip, and dirty spin-out preserves edits by becoming
+  spin-off. Shelving moves the reflog under a dated ref and drops pushRemote;
+  unshelving strips that date. The `- r` checkout submodule argument is present.
+  Worktrees are covered by the separate `%` dispatch below. Visual
+  commit-region spin selection and asynchronous process presentation remain
+  gaps.
 - **Worktree dispatch**: Evil Collection's `%` opens Magit's focused worktree
   map in status and diff. `b` checks out a branch, remote branch, or resolved
   commit in a new sibling-style path; `c` creates a branch and worktree from a
