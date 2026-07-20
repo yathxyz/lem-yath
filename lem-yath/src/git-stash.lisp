@@ -586,5 +586,5 @@
     (legit-stash-require-git vcs)
     (dispatch-legit-stash)))
 
-(define-key lem/legit::*peek-legit-keymap* "Z" 'lem-yath-legit-stash)
-(define-key lem/legit::*legit-diff-mode-keymap* "Z" 'lem-yath-legit-stash)
+(define-key lem/legit::*peek-legit-keymap* "z" 'lem-yath-legit-stash)
+(define-key lem/legit::*legit-diff-mode-keymap* "z" 'lem-yath-legit-stash)

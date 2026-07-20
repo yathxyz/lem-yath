@@ -42,6 +42,7 @@ export LEM_YATH_VCS_PORCELAIN_REMOTE="$root/repos/porcelain-remote.git"
 export LEM_YATH_VCS_PORCELAIN_PEER="$root/repos/porcelain-peer"
 export LEM_YATH_VCS_FETCH_REMOTE="$root/repos/fetch remote;safe.git"
 export LEM_YATH_VCS_PUSH_REMOTE="$root/repos/push-target.git"
+export LEM_YATH_VCS_MANAGED_REMOTE="$root/repos/managed remote;safe.git"
 export LEM_YATH_VCS_WORKTREE_CHECKOUT="$root/repos/wt checkout;safe"
 export LEM_YATH_VCS_WORKTREE_CREATED="$root/repos/wt created;safe"
 export LEM_YATH_VCS_WORKTREE_MOVE_CONTAINER="$root/repos/wt container;safe"
@@ -217,6 +218,8 @@ printf 'tracked auxiliary file\n' \
   porcelain.txt auxiliary.txt
 if ! git_commit "$LEM_YATH_VCS_PORCELAIN_ROOT" porcelain-initial \
      '2001-01-04T00:00:00+0000' ||
+   ! "$git_bin" clone --bare -q "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+     "$LEM_YATH_VCS_MANAGED_REMOTE" ||
    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" remote add origin \
      "$LEM_YATH_VCS_PORCELAIN_REMOTE" ||
    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" remote add push-target \
@@ -424,6 +427,69 @@ porcelain_elsewhere_fetched() {
         rev-parse FETCH_HEAD)" ] &&
     "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" diff --quiet &&
     "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" diff --cached --quiet
+}
+
+porcelain_managed_remote_added() {
+  [ "$LEM_YATH_VCS_MANAGED_REMOTE" = \
+    "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      remote get-url managed-safe 2>/dev/null)" ] &&
+    "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      show-ref --verify --quiet refs/remotes/managed-safe/main
+}
+
+porcelain_managed_remote_configured() {
+  [ "$LEM_YATH_VCS_MANAGED_REMOTE" = \
+    "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      config --get remote.managed-safe.url)" ] &&
+    [ '+refs/heads/main:refs/remotes/managed-safe/main' = \
+      "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+        config --get-all remote.managed-safe.fetch)" ] &&
+    [ "$LEM_YATH_VCS_PUSH_REMOTE" = \
+      "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+        config --get remote.managed-safe.pushurl)" ] &&
+    [ 'refs/heads/main:refs/heads/managed-main' = \
+      "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+        config --get remote.managed-safe.push)" ] &&
+    [ --tags = "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      config --get remote.managed-safe.tagOpt)" ] &&
+    [ always = "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      config --get remote.managed-safe.followRemoteHEAD)" ]
+}
+
+porcelain_managed_remote_renamed() {
+  ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" remote get-url \
+    managed-safe >/dev/null 2>&1 &&
+    [ "$LEM_YATH_VCS_MANAGED_REMOTE" = \
+      "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+        remote get-url managed-renamed)" ] &&
+    [ managed-renamed = "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      config --get remote.pushDefault)" ] &&
+    [ managed-renamed = "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      config --get branch.main.pushRemote)" ] &&
+    [ --tags = "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      config --get remote.managed-renamed.tagOpt)" ]
+}
+
+porcelain_managed_remote_pruned() {
+  ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+    show-ref --verify --quiet refs/remotes/managed-renamed/stale
+}
+
+porcelain_managed_refspec_pruned() {
+  [ '+refs/heads/main:refs/remotes/managed-renamed/main' = \
+    "$("$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      config --get-all remote.managed-renamed.fetch)" ] &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      show-ref --verify --quiet refs/remotes/managed-renamed/absent
+}
+
+porcelain_managed_remote_removed() {
+  ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" remote get-url \
+    managed-renamed >/dev/null 2>&1 &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      config --get remote.pushDefault >/dev/null 2>&1 &&
+    ! "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" \
+      config --get branch.main.pushRemote >/dev/null 2>&1
 }
 
 porcelain_branch_is() {
@@ -2164,7 +2230,7 @@ fi
 send_keys "$colocated_session" q F6
 
 if press_report "$colocated_session" F8 '^RELOAD ' 60 &&
-   grep -q '^RELOAD same=yes find=1 post=1 save=1 change=1 kill=1 global=0 source=1 directory=0 root-marker=1 todo-hook=1 bisect-hook=1 bisect=yes fetch=yes reset=yes merge=yes revert=yes branch=yes worktree=yes push=yes stash=yes smart=yes git=yes jj=yes time=yes jj-refresh=yes jj-quit=yes older=yes newer=yes nth=yes fuzzy=yes short=yes full=yes blame=yes blame-quit=yes p=yes n=yes t=yes quit=yes$' \
+   grep -q '^RELOAD same=yes find=1 post=1 save=1 change=1 kill=1 global=0 source=1 directory=0 root-marker=1 todo-hook=1 bisect-hook=1 bisect=yes fetch=yes reset=yes merge=yes revert=yes branch=yes worktree=yes push=yes stash=yes remote=yes smart=yes git=yes jj=yes time=yes jj-refresh=yes jj-quit=yes older=yes newer=yes nth=yes fuzzy=yes short=yes full=yes blame=yes blame-quit=yes p=yes n=yes t=yes quit=yes$' \
      "$LEM_YATH_VCS_REPORT"; then
   pass reload-idempotence 'two VCS reloads preserved one mode, hooks, inserter, and keymaps'
 else
@@ -2835,6 +2901,182 @@ else
     "$porcelain_session"
 fi
 
+# Remote lifecycle: add with the default fetch argument, edit all six visible
+# variables through the nested configure map, migrate push variables on rename,
+# prune tracking refs/refspecs, and remove without leaving stale configuration.
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config \
+  remote.pushDefault origin
+send_keys "$porcelain_session" M
+if lem_wait_for "$porcelain_session" 'Remote' "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" a
+fi
+if lem_wait_for "$porcelain_session" 'Remote name:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" managed-safe
+fi
+if lem_wait_for "$porcelain_session" 'Remote URL:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$LEM_YATH_VCS_MANAGED_REMOTE"
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_managed_remote_added; then
+  pass legit-remote-add \
+    'M a fetched a metacharacter-bearing local remote without moving repository state'
+else
+  fail legit-remote-add 'M a did not add and fetch the selected remote' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" C-c f
+send_keys "$porcelain_session" M C
+if lem_wait_for "$porcelain_session" 'Configure remote:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" managed-safe \
+    'Configure remote:'
+fi
+if lem_wait_for "$porcelain_session" 'Configure remote' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" u
+fi
+if lem_wait_for "$porcelain_session" 'Fetch URL for managed-safe' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$LEM_YATH_VCS_MANAGED_REMOTE"
+fi
+send_keys "$porcelain_session" U
+if lem_wait_for "$porcelain_session" 'Fetch refspec for managed-safe' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" \
+    '+refs/heads/main:refs/remotes/managed-safe/main'
+fi
+send_keys "$porcelain_session" s
+if lem_wait_for "$porcelain_session" 'Push URL for managed-safe' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" "$LEM_YATH_VCS_PUSH_REMOTE"
+fi
+send_keys "$porcelain_session" S
+if lem_wait_for "$porcelain_session" 'Push refspec for managed-safe' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" \
+    'refs/heads/main:refs/heads/managed-main'
+fi
+send_keys "$porcelain_session" O
+if lem_wait_for "$porcelain_session" 'Tag option for managed-safe' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" --tags
+fi
+send_keys "$porcelain_session" h
+if lem_wait_for "$porcelain_session" 'Follow remote HEAD for managed-safe' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" always
+fi
+send_keys "$porcelain_session" q q
+if wait_until "$WAIT_TIMEOUT" porcelain_managed_remote_configured; then
+  pass legit-remote-configure \
+    'M C edited URL, fetch, push URL, push, tag, and follow-HEAD variables'
+else
+  fail legit-remote-configure \
+    'the nested remote configuration surface lost a visible variable' \
+    "$porcelain_session"
+fi
+
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config \
+  remote.pushDefault managed-safe
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config \
+  branch.main.pushRemote managed-safe
+send_keys "$porcelain_session" C-c f
+send_keys "$porcelain_session" M r
+if lem_wait_for "$porcelain_session" 'Rename remote:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" managed-safe \
+    'Rename remote:'
+fi
+if lem_wait_for "$porcelain_session" 'Rename managed-safe to:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_prompt_value "$porcelain_session" managed-renamed
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_managed_remote_renamed; then
+  pass legit-remote-rename \
+    'M r retained remote configuration and migrated repository/branch push targets'
+else
+  fail legit-remote-rename 'M r left a stale name or push variable' \
+    "$porcelain_session"
+fi
+
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config --unset-all \
+  remote.managed-renamed.fetch
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config --add \
+  remote.managed-renamed.fetch \
+  '+refs/heads/*:refs/remotes/managed-renamed/*'
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref \
+  refs/remotes/managed-renamed/stale HEAD
+send_keys "$porcelain_session" C-c f
+send_keys "$porcelain_session" M p
+if lem_wait_for "$porcelain_session" 'Prune stale branches of remote:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" managed-renamed \
+    'Prune stale branches of remote:'
+fi
+if lem_wait_for "$porcelain_session" \
+     'Prune stale branches of managed-renamed?' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_managed_remote_pruned; then
+  pass legit-remote-prune 'M p removed only a stale remote-tracking branch'
+else
+  fail legit-remote-prune 'M p retained the stale remote-tracking ref' \
+    "$porcelain_session"
+fi
+
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config --unset-all \
+  remote.managed-renamed.fetch
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config --add \
+  remote.managed-renamed.fetch \
+  '+refs/heads/main:refs/remotes/managed-renamed/main'
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" config --add \
+  remote.managed-renamed.fetch \
+  '+refs/heads/absent:refs/remotes/managed-renamed/absent'
+"$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" update-ref \
+  refs/remotes/managed-renamed/absent HEAD
+send_keys "$porcelain_session" C-c f
+send_keys "$porcelain_session" M P
+if lem_wait_for "$porcelain_session" 'Prune refspecs of remote:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" managed-renamed \
+    'Prune refspecs of remote:'
+fi
+if lem_wait_for "$porcelain_session" \
+     'Prune 1 stale refspec for managed-renamed?' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_managed_refspec_pruned; then
+  pass legit-remote-prune-refspec \
+    'M P removed one stale fetch mapping and its exact tracking ref'
+else
+  fail legit-remote-prune-refspec \
+    'M P crossed the valid/stale fetch-refspec boundary' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" C-c f
+send_keys "$porcelain_session" M k
+if lem_wait_for "$porcelain_session" 'Remove remote:' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  enter_completion_prompt_value "$porcelain_session" managed-renamed \
+    'Remove remote:'
+fi
+if lem_wait_for "$porcelain_session" 'Remove remote managed-renamed?' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+if wait_until "$WAIT_TIMEOUT" porcelain_managed_remote_removed; then
+  pass legit-remote-remove \
+    'M k removed the remote and cleared stale repository/branch push targets'
+else
+  fail legit-remote-remove 'M k left remote or push configuration behind' \
+    "$porcelain_session"
+fi
+
 send_keys "$porcelain_session" b c
 if lem_wait_for "$porcelain_session" \
      'Create and checkout branch starting at:' \
@@ -2874,7 +3116,7 @@ printf 'stash-untracked\n' \
   >"$LEM_YATH_VCS_PORCELAIN_ROOT/stash-untracked.txt"
 printf 'stash-ignored\n' \
   >"$LEM_YATH_VCS_PORCELAIN_ROOT/stash-ignored.txt"
-send_keys "$porcelain_session" g Z - a z
+send_keys "$porcelain_session" g z - a z
 if lem_wait_for "$porcelain_session" 'Stash message:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   tmux_cmd send-keys -t "$porcelain_session" -l -- lem-stash-all
@@ -2882,23 +3124,23 @@ if lem_wait_for "$porcelain_session" 'Stash message:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_stash_all_saved; then
   pass legit-stash-both-all \
-    'Z - a z stashed tracked, untracked, and ignored state with three parents'
+    'z - a z stashed tracked, untracked, and ignored state with three parents'
 else
   fail legit-stash-both-all \
-    'Z - a z did not preserve the complete stash topology and clean boundary' \
+    'z - a z did not preserve the complete stash topology and clean boundary' \
     "$porcelain_session"
 fi
 
-send_keys "$porcelain_session" Z p
+send_keys "$porcelain_session" z p
 if lem_wait_for "$porcelain_session" 'Pop stash:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" Enter
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_stash_all_restored; then
   pass legit-stash-pop-all \
-    'Z p restored tracked, untracked, and ignored state and removed the stash'
+    'z p restored tracked, untracked, and ignored state and removed the stash'
 else
-  fail legit-stash-pop-all 'Z p did not restore the complete selected stash' \
+  fail legit-stash-pop-all 'z p did not restore the complete selected stash' \
     "$porcelain_session"
 fi
 
@@ -2915,7 +3157,7 @@ printf 'stash-index-probe\n' \
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- auxiliary.txt
 printf 'stash-unstaged-probe\n' \
   >>"$LEM_YATH_VCS_PORCELAIN_ROOT/porcelain.txt"
-send_keys "$porcelain_session" g Z i
+send_keys "$porcelain_session" g z i
 if lem_wait_for "$porcelain_session" 'Stash message:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   tmux_cmd send-keys -t "$porcelain_session" -l -- lem-stash-index
@@ -2923,20 +3165,20 @@ if lem_wait_for "$porcelain_session" 'Stash message:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_stash_index_saved; then
   pass legit-stash-index \
-    'Z i removed only staged content while retaining an unrelated unstaged file'
+    'z i removed only staged content while retaining an unrelated unstaged file'
 else
-  fail legit-stash-index 'Z i crossed the staged/worktree state boundary' \
+  fail legit-stash-index 'z i crossed the staged/worktree state boundary' \
     "$porcelain_session"
 fi
 
-send_keys "$porcelain_session" Z p
+send_keys "$porcelain_session" z p
 if lem_wait_for "$porcelain_session" 'Pop stash:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" Enter
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_stash_index_restored; then
   pass legit-stash-index-pop \
-    'Z p restored the index-only stash to the index without losing unstaged state'
+    'z p restored the index-only stash to the index without losing unstaged state'
 else
   fail legit-stash-index-pop 'the index-only stash did not invert cleanly' \
     "$porcelain_session"
@@ -2953,7 +3195,7 @@ printf 'stash-index-probe\n' \
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- auxiliary.txt
 printf 'stash-unstaged-probe\n' \
   >>"$LEM_YATH_VCS_PORCELAIN_ROOT/porcelain.txt"
-send_keys "$porcelain_session" g Z w
+send_keys "$porcelain_session" g z w
 if lem_wait_for "$porcelain_session" 'Stash message:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   tmux_cmd send-keys -t "$porcelain_session" -l -- lem-stash-worktree
@@ -2961,20 +3203,20 @@ if lem_wait_for "$porcelain_session" 'Stash message:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_stash_worktree_saved; then
   pass legit-stash-worktree \
-    'Z w removed only unstaged content while preserving the exact index'
+    'z w removed only unstaged content while preserving the exact index'
 else
-  fail legit-stash-worktree 'Z w crossed the worktree/index state boundary' \
+  fail legit-stash-worktree 'z w crossed the worktree/index state boundary' \
     "$porcelain_session"
 fi
 
-send_keys "$porcelain_session" Z p
+send_keys "$porcelain_session" z p
 if lem_wait_for "$porcelain_session" 'Pop stash:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" Enter
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_stash_worktree_restored; then
   pass legit-stash-worktree-pop \
-    'Z p restored the worktree-only stash without changing the staged file'
+    'z p restored the worktree-only stash without changing the staged file'
 else
   fail legit-stash-worktree-pop 'the worktree-only stash did not invert cleanly' \
     "$porcelain_session"
@@ -2991,7 +3233,7 @@ printf 'stash-index-probe\n' \
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- auxiliary.txt
 printf 'stash-unstaged-probe\n' \
   >>"$LEM_YATH_VCS_PORCELAIN_ROOT/porcelain.txt"
-send_keys "$porcelain_session" g Z x
+send_keys "$porcelain_session" g z x
 if lem_wait_for "$porcelain_session" 'Stash message:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   tmux_cmd send-keys -t "$porcelain_session" -l -- lem-stash-keep-index
@@ -2999,9 +3241,9 @@ if lem_wait_for "$porcelain_session" 'Stash message:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_stash_worktree_saved; then
   pass legit-stash-keep-index \
-    'Z x stashed both layers while retaining the exact staged index'
+    'z x stashed both layers while retaining the exact staged index'
 else
-  fail legit-stash-keep-index 'Z x did not preserve the index boundary' \
+  fail legit-stash-keep-index 'z x did not preserve the index boundary' \
     "$porcelain_session"
 fi
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" stash clear
@@ -3015,7 +3257,7 @@ printf 'stash-index-probe\n' \
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" add -- auxiliary.txt
 printf 'stash-unstaged-probe\n' \
   >>"$LEM_YATH_VCS_PORCELAIN_ROOT/porcelain.txt"
-send_keys "$porcelain_session" g Z Z
+send_keys "$porcelain_session" g z Z
 if lem_wait_for "$porcelain_session" 'Stash message:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   tmux_cmd send-keys -t "$porcelain_session" -l -- lem-snapshot-both
@@ -3023,13 +3265,13 @@ if lem_wait_for "$porcelain_session" 'Stash message:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_stash_snapshot_preserved; then
   pass legit-stash-snapshot \
-    'Z Z recorded both layers without changing either live state'
+    'z Z recorded both layers without changing either live state'
 else
-  fail legit-stash-snapshot 'Z Z mutated the live index or worktree' \
+  fail legit-stash-snapshot 'z Z mutated the live index or worktree' \
     "$porcelain_session"
 fi
 
-send_keys "$porcelain_session" Z k
+send_keys "$porcelain_session" z k
 if lem_wait_for "$porcelain_session" 'Drop stash:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" Enter
@@ -3039,13 +3281,13 @@ if lem_wait_for "$porcelain_session" 'Drop stash@{0}?' \
   lem_keys "$porcelain_session" y
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_stash_count_is 0; then
-  pass legit-stash-drop 'Z k selected, confirmed, and dropped the snapshot'
+  pass legit-stash-drop 'z k selected, confirmed, and dropped the snapshot'
 else
-  fail legit-stash-drop 'Z k did not remove the selected snapshot' \
+  fail legit-stash-drop 'z k did not remove the selected snapshot' \
     "$porcelain_session"
 fi
 
-send_keys "$porcelain_session" Z I
+send_keys "$porcelain_session" z I
 if lem_wait_for "$porcelain_session" 'Stash message:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   tmux_cmd send-keys -t "$porcelain_session" -l -- lem-snapshot-index
@@ -3053,14 +3295,14 @@ if lem_wait_for "$porcelain_session" 'Stash message:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_stash_snapshot_preserved; then
   pass legit-stash-snapshot-index \
-    'Z I recorded the index without mutating live staged or unstaged content'
+    'z I recorded the index without mutating live staged or unstaged content'
 else
-  fail legit-stash-snapshot-index 'Z I changed live repository state' \
+  fail legit-stash-snapshot-index 'z I changed live repository state' \
     "$porcelain_session"
 fi
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" stash clear
 
-send_keys "$porcelain_session" Z W
+send_keys "$porcelain_session" z W
 if lem_wait_for "$porcelain_session" 'Stash message:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   tmux_cmd send-keys -t "$porcelain_session" -l -- lem-snapshot-worktree
@@ -3068,19 +3310,19 @@ if lem_wait_for "$porcelain_session" 'Stash message:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_stash_snapshot_preserved; then
   pass legit-stash-snapshot-worktree \
-    'Z W recorded the worktree without mutating live staged or unstaged content'
+    'z W recorded the worktree without mutating live staged or unstaged content'
 else
-  fail legit-stash-snapshot-worktree 'Z W changed live repository state' \
+  fail legit-stash-snapshot-worktree 'z W changed live repository state' \
     "$porcelain_session"
 fi
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" stash clear
 
-send_keys "$porcelain_session" Z r
+send_keys "$porcelain_session" z r
 if wait_until "$WAIT_TIMEOUT" porcelain_stash_wip_saved; then
   pass legit-stash-wip \
-    'Z r updated branch-scoped index/worktree WIP refs without cleaning live state'
+    'z r updated branch-scoped index/worktree WIP refs without cleaning live state'
 else
-  fail legit-stash-wip 'Z r did not preserve exact WIP ref and live-state boundaries' \
+  fail legit-stash-wip 'z r did not preserve exact WIP ref and live-state boundaries' \
     "$porcelain_session"
 fi
 
@@ -3092,7 +3334,7 @@ fi
 
 printf 'stash-inspect-probe\n' \
   >>"$LEM_YATH_VCS_PORCELAIN_ROOT/auxiliary.txt"
-send_keys "$porcelain_session" g Z z
+send_keys "$porcelain_session" g z z
 if lem_wait_for "$porcelain_session" 'Stash message:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   tmux_cmd send-keys -t "$porcelain_session" -l -- lem-stash-inspect
@@ -3106,58 +3348,58 @@ else
     'could not prepare the inspect/transform stash' "$porcelain_session"
 fi
 
-send_keys "$porcelain_session" Z a
+send_keys "$porcelain_session" z a
 if lem_wait_for "$porcelain_session" 'Apply stash:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" Enter
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_stash_applied; then
   pass legit-stash-apply \
-    'Z a restored the selected stash while retaining its reflog entry'
+    'z a restored the selected stash while retaining its reflog entry'
 else
-  fail legit-stash-apply 'Z a did not preserve apply-versus-pop semantics' \
+  fail legit-stash-apply 'z a did not preserve apply-versus-pop semantics' \
     "$porcelain_session"
 fi
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" restore -- auxiliary.txt
 
-send_keys "$porcelain_session" g Z v
+send_keys "$porcelain_session" g z v
 if lem_wait_for "$porcelain_session" 'Show stash:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" Enter
 fi
 if lem_wait_for "$porcelain_session" 'stash-inspect-probe' \
      "$WAIT_TIMEOUT" >/dev/null; then
-  pass legit-stash-show "Z v rendered the selected stash patch in Legit's diff pane"
+  pass legit-stash-show "z v rendered the selected stash patch in Legit's diff pane"
 else
-  fail legit-stash-show 'Z v did not render the selected stash patch' \
+  fail legit-stash-show 'z v did not render the selected stash patch' \
     "$porcelain_session"
 fi
 
-send_keys "$porcelain_session" Z f
+send_keys "$porcelain_session" z f
 if lem_wait_for "$porcelain_session" 'Create patch from stash:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" Enter
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_stash_patch_created; then
   pass legit-stash-format-patch \
-    'Z f created Magit-named patch content without dropping the stash'
+    'z f created Magit-named patch content without dropping the stash'
 else
-  fail legit-stash-format-patch 'Z f did not write the selected stash patch' \
+  fail legit-stash-format-patch 'z f did not write the selected stash patch' \
     "$porcelain_session"
 fi
 
-send_keys "$porcelain_session" Z l
+send_keys "$porcelain_session" z l
 if lem_wait_for "$porcelain_session" 'lem-stash-inspect' \
      "$WAIT_TIMEOUT" >/dev/null; then
-  pass legit-stash-list 'Z l displayed the bounded stash reflog entry'
+  pass legit-stash-list 'z l displayed the bounded stash reflog entry'
 else
-  fail legit-stash-list 'Z l did not display the stash list' \
+  fail legit-stash-list 'z l did not display the stash list' \
     "$porcelain_session"
 fi
 tmux_cmd send-keys -t "$porcelain_session" -l -- ' '
 sleep 0.2
 
-send_keys "$porcelain_session" Z b
+send_keys "$porcelain_session" z b
 if lem_wait_for "$porcelain_session" 'Branch from stash:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" Enter
@@ -3168,9 +3410,9 @@ if lem_wait_for "$porcelain_session" 'New branch name:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_stash_branch_complete; then
   pass legit-stash-branch \
-    'Z b created at the stash base, applied cleanly, and dropped the stash'
+    'z b created at the stash base, applied cleanly, and dropped the stash'
 else
-  fail legit-stash-branch 'Z b did not preserve stash-base branch semantics' \
+  fail legit-stash-branch 'z b did not preserve stash-base branch semantics' \
     "$porcelain_session"
 fi
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" restore -- auxiliary.txt
@@ -3181,7 +3423,7 @@ rm -f "$LEM_YATH_VCS_PORCELAIN_ROOT/0001-lem-stash-inspect.patch"
 
 printf 'stash-here-probe\n' \
   >>"$LEM_YATH_VCS_PORCELAIN_ROOT/auxiliary.txt"
-send_keys "$porcelain_session" g Z z
+send_keys "$porcelain_session" g z z
 if lem_wait_for "$porcelain_session" 'Stash message:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   tmux_cmd send-keys -t "$porcelain_session" -l -- lem-stash-here
@@ -3191,7 +3433,7 @@ if ! wait_until "$WAIT_TIMEOUT" porcelain_stash_tracked_saved; then
   fail legit-stash-branch-here-fixture \
     'could not prepare the branch-here stash' "$porcelain_session"
 fi
-send_keys "$porcelain_session" Z B
+send_keys "$porcelain_session" z B
 if lem_wait_for "$porcelain_session" 'Branch from stash:' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" Enter
@@ -3202,10 +3444,10 @@ if lem_wait_for "$porcelain_session" 'New branch name:' \
 fi
 if wait_until "$WAIT_TIMEOUT" porcelain_stash_branch_here_complete; then
   pass legit-stash-branch-here \
-    'Z B branched at current HEAD, applied the stash, and retained its reflog entry'
+    'z B branched at current HEAD, applied the stash, and retained its reflog entry'
 else
   fail legit-stash-branch-here \
-    'Z B did not preserve branch-here or retained-stash semantics' \
+    'z B did not preserve branch-here or retained-stash semantics' \
     "$porcelain_session"
 fi
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" restore -- auxiliary.txt
@@ -5615,7 +5857,7 @@ fi
 # expected stale-lease failure above leaves Legit's process error popup active,
 # while create, move, visit, and current-worktree deletion replace the status
 # root by design.  Start a fresh installed editor at this boundary so neither
-# state can consume the first `%` dispatch event.
+# state can consume the first `Z` dispatch event.
 lem_stop "$porcelain_session"
 porcelain_session="lem-yath-vcs-worktree-$id"
 if start_phase porcelain "$LEM_YATH_VCS_PORCELAIN_FILE" \
@@ -5642,7 +5884,7 @@ fi
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch -f \
   worktree-checkout "$merge_main_hash"
 
-tmux_cmd send-keys -t "$porcelain_session" -l -- '%'
+tmux_cmd send-keys -t "$porcelain_session" -l -- 'Z'
 if lem_wait_for "$porcelain_session" '\[Worktree\]' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" b
@@ -5666,14 +5908,14 @@ if wait_until "$WAIT_TIMEOUT" test -f \
    lem_wait_for "$porcelain_session" 'Branch: worktree-checkout' \
      "$WAIT_TIMEOUT" >/dev/null; then
   pass legit-worktree-checkout \
-    '% b created, registered, visited, and displayed a metacharacter path'
+    'Z b created, registered, visited, and displayed a metacharacter path'
 else
   fail legit-worktree-checkout \
-    '% b did not create and visit the selected branch worktree' \
+    'Z b did not create and visit the selected branch worktree' \
     "$porcelain_session"
 fi
 
-tmux_cmd send-keys -t "$porcelain_session" -l -- '%'
+tmux_cmd send-keys -t "$porcelain_session" -l -- 'Z'
 if lem_wait_for "$porcelain_session" '\[Worktree\]' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" g
@@ -5686,13 +5928,13 @@ fi
 if lem_wait_for "$porcelain_session" 'Branch: main' \
      "$WAIT_TIMEOUT" >/dev/null; then
   pass legit-worktree-visit \
-    '% g replaced the active status with the selected primary worktree'
+    'Z g replaced the active status with the selected primary worktree'
 else
   fail legit-worktree-visit \
-    '% g did not visit and display the primary worktree' "$porcelain_session"
+    'Z g did not visit and display the primary worktree' "$porcelain_session"
 fi
 
-tmux_cmd send-keys -t "$porcelain_session" -l -- '%'
+tmux_cmd send-keys -t "$porcelain_session" -l -- 'Z'
 if lem_wait_for "$porcelain_session" '\[Worktree\]' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" c
@@ -5722,14 +5964,14 @@ if wait_until "$WAIT_TIMEOUT" test -f \
    lem_wait_for "$porcelain_session" 'Branch: worktree-created' \
      "$WAIT_TIMEOUT" >/dev/null; then
   pass legit-worktree-create \
-    '% c created the branch and worktree at the selected start point'
+    'Z c created the branch and worktree at the selected start point'
 else
   fail legit-worktree-create \
-    '% c lost the new branch, selected revision, path, or active status' \
+    'Z c lost the new branch, selected revision, path, or active status' \
     "$porcelain_session"
 fi
 
-tmux_cmd send-keys -t "$porcelain_session" -l -- '%'
+tmux_cmd send-keys -t "$porcelain_session" -l -- 'Z'
 if lem_wait_for "$porcelain_session" '\[Worktree\]' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" m
@@ -5762,16 +6004,16 @@ if wait_until "$WAIT_TIMEOUT" test -f \
    lem_wait_for "$porcelain_session" 'Branch: worktree-created' \
      "$WAIT_TIMEOUT" >/dev/null; then
   pass legit-worktree-move \
-    '% m nested into an existing container and followed the resulting status root'
+    'Z m nested into an existing container and followed the resulting status root'
 else
   fail legit-worktree-move \
-    '% m did not preserve registration, branch, path, and active status' \
+    'Z m did not preserve registration, branch, path, and active status' \
     "$porcelain_session"
 fi
 
 printf 'uncommitted worktree edge\n' \
   >"$LEM_YATH_VCS_WORKTREE_MOVED/untracked edge;safe.txt"
-tmux_cmd send-keys -t "$porcelain_session" -l -- '%'
+tmux_cmd send-keys -t "$porcelain_session" -l -- 'Z'
 if lem_wait_for "$porcelain_session" '\[Worktree\]' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" k
@@ -5790,14 +6032,14 @@ if [ -f "$LEM_YATH_VCS_WORKTREE_MOVED/untracked edge;safe.txt" ] &&
      --porcelain | grep -Fqx \
        "worktree $LEM_YATH_VCS_WORKTREE_MOVED"; then
   pass legit-worktree-dirty-decline \
-    '% k retained a dirty current worktree when deletion was declined'
+    'Z k retained a dirty current worktree when deletion was declined'
 else
   fail legit-worktree-dirty-decline \
     'declining dirty worktree deletion still removed content or registration' \
     "$porcelain_session"
 fi
 
-tmux_cmd send-keys -t "$porcelain_session" -l -- '%'
+tmux_cmd send-keys -t "$porcelain_session" -l -- 'Z'
 if lem_wait_for "$porcelain_session" '\[Worktree\]' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" k
@@ -5819,7 +6061,7 @@ if wait_until "$WAIT_TIMEOUT" test ! -e \
    lem_wait_for "$porcelain_session" 'Branch: main' \
      "$WAIT_TIMEOUT" >/dev/null; then
   pass legit-worktree-dirty-force \
-    '% k force-removed dirty content only after confirmation and returned home'
+    'Z k force-removed dirty content only after confirmation and returned home'
 else
   fail legit-worktree-dirty-force \
     'confirmed dirty deletion failed to remove or return to the primary status' \
@@ -5830,7 +6072,7 @@ fi
   -b worktree-locked "$LEM_YATH_VCS_WORKTREE_LOCKED" "$merge_main_hash"
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" worktree lock \
   --reason lem-yath-test "$LEM_YATH_VCS_WORKTREE_LOCKED"
-tmux_cmd send-keys -t "$porcelain_session" -l -- '%'
+tmux_cmd send-keys -t "$porcelain_session" -l -- 'Z'
 if lem_wait_for "$porcelain_session" '\[Worktree\]' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" k
@@ -5844,7 +6086,7 @@ if lem_wait_for "$porcelain_session" 'Unlock the selected worktree' \
      "$WAIT_TIMEOUT" >/dev/null &&
    [ -f "$LEM_YATH_VCS_WORKTREE_LOCKED/.git" ]; then
   pass legit-worktree-locked \
-    '% k refused a locked worktree before presenting a destructive prompt'
+    'Z k refused a locked worktree before presenting a destructive prompt'
 else
   fail legit-worktree-locked \
     'locked-worktree deletion was not rejected safely' "$porcelain_session"
@@ -5853,7 +6095,7 @@ fi
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" worktree add -q \
   -b worktree-stale "$LEM_YATH_VCS_WORKTREE_STALE" "$merge_main_hash"
 rm -rf -- "$LEM_YATH_VCS_WORKTREE_STALE"
-tmux_cmd send-keys -t "$porcelain_session" -l -- '%'
+tmux_cmd send-keys -t "$porcelain_session" -l -- 'Z'
 if lem_wait_for "$porcelain_session" '\[Worktree\]' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" k
@@ -5866,7 +6108,7 @@ fi
 if wait_until "$WAIT_TIMEOUT" sh -c \
      "! '$git_bin' -C '$LEM_YATH_VCS_PORCELAIN_ROOT' worktree list --porcelain | grep -Fqx 'worktree $LEM_YATH_VCS_WORKTREE_STALE'"; then
   pass legit-worktree-stale \
-    '% k pruned missing worktree metadata without a destructive prompt'
+    'Z k pruned missing worktree metadata without a destructive prompt'
 else
   fail legit-worktree-stale \
     'missing worktree metadata remained registered after prune' \
@@ -5875,7 +6117,7 @@ fi
 
 # The primary is never offered by move/delete.  Remove the remaining clean
 # checkout through the dispatch, then clean the locked edge fixture directly.
-tmux_cmd send-keys -t "$porcelain_session" -l -- '%'
+tmux_cmd send-keys -t "$porcelain_session" -l -- 'Z'
 if lem_wait_for "$porcelain_session" '\[Worktree\]' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" k
@@ -5894,7 +6136,7 @@ if wait_until "$WAIT_TIMEOUT" test ! -e \
      "$LEM_YATH_VCS_WORKTREE_CHECKOUT" &&
    [ -d "$LEM_YATH_VCS_PORCELAIN_ROOT/.git" ]; then
   pass legit-worktree-clean-delete \
-    '% k confirmed clean linked-worktree deletion while preserving primary Git'
+    'Z k confirmed clean linked-worktree deletion while preserving primary Git'
 else
   fail legit-worktree-clean-delete \
     'clean linked deletion failed or affected the primary worktree' \

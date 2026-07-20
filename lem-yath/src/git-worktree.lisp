@@ -354,5 +354,5 @@
     (legit-worktree-require-git vcs)
     (dispatch-legit-worktree)))
 
-(define-key lem/legit::*peek-legit-keymap* "%" 'lem-yath-legit-worktree)
-(define-key lem/legit::*legit-diff-mode-keymap* "%" 'lem-yath-legit-worktree)
+(define-key lem/legit::*peek-legit-keymap* "Z" 'lem-yath-legit-worktree)
+(define-key lem/legit::*legit-diff-mode-keymap* "Z" 'lem-yath-legit-worktree)

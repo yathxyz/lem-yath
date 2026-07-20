@@ -300,11 +300,11 @@
                      '("origin/topic" "upstream/topic"))))
              "magit-branch-delete-safe-aliases")
       (check (eq 'lem-yath-legit-worktree
-                 (vcs-test-key-command lem/legit::*peek-legit-keymap* "%"))
+                 (vcs-test-key-command lem/legit::*peek-legit-keymap* "Z"))
              "magit-worktree-status-dispatch")
       (check (eq 'lem-yath-legit-worktree
                  (vcs-test-key-command
-                  lem/legit::*legit-diff-mode-keymap* "%"))
+                  lem/legit::*legit-diff-mode-keymap* "Z"))
              "magit-worktree-diff-dispatch")
       (dolist (key '("b" "c" "m" "k" "g" "q"))
         (check (eq 'nop-command
@@ -356,11 +356,11 @@
                       (legit-push-popup-keymap options) key))
                  (format nil "magit-push-~a" key))))
       (check (eq 'lem-yath-legit-stash
-                 (vcs-test-key-command lem/legit::*peek-legit-keymap* "Z"))
+                 (vcs-test-key-command lem/legit::*peek-legit-keymap* "z"))
              "magit-stash-status-dispatch")
       (check (eq 'lem-yath-legit-stash
                  (vcs-test-key-command
-                  lem/legit::*legit-diff-mode-keymap* "Z"))
+                  lem/legit::*legit-diff-mode-keymap* "z"))
              "magit-stash-diff-dispatch")
       (let ((options (make-legit-stash-options)))
         (dolist (key '("- u" "- a" "z" "i" "w" "x" "Z" "I" "W" "r"
@@ -369,6 +369,24 @@
                      (vcs-test-key-command
                       (legit-stash-popup-keymap options) key))
                  (format nil "magit-stash-~a" key))))
+      (check (eq 'lem-yath-legit-remote
+                 (vcs-test-key-command lem/legit::*peek-legit-keymap* "M"))
+             "magit-remote-status-dispatch")
+      (check (eq 'lem-yath-legit-remote
+                 (vcs-test-key-command
+                  lem/legit::*legit-diff-mode-keymap* "M"))
+             "magit-remote-diff-dispatch")
+      (let ((options (make-legit-remote-options :fetch-p t)))
+        (dolist (key '("u" "U" "s" "S" "O" "h" "- f" "a" "r" "k"
+                       "C" "p" "P" "d u" "q"))
+          (check (eq 'nop-command
+                     (vcs-test-key-command
+                      (legit-remote-popup-keymap options "origin") key))
+                 (format nil "magit-remote-~a" key))))
+      (check (and (legit-remote-name-valid-p "remote/path;safe")
+                  (not (legit-remote-name-valid-p "-unsafe"))
+                  (not (legit-remote-name-valid-p "bad name")))
+             "magit-remote-name-boundary")
       (let ((nul (string (code-char 0))))
         (check (equal '("tracked path" "ignored;path")
                       (legit-stash-split-nul
@@ -814,6 +832,14 @@
 (define-command lem-yath-test-vcs-porcelain-staged-diff () ()
   (vcs-test-position-legit-file
    "porcelain.txt" :focus-diff t :section (format nil "~%Staged changes (")))
+
+(define-command lem-yath-test-vcs-focus-legit () ()
+  "Focus the live Legit status pane without toggling or rebuilding it."
+  (when (lem/legit::legit-status-active-p)
+    (setf (current-window) lem/legit::*peek-window*)
+    (move-point
+     (buffer-point (window-buffer lem/legit::*peek-window*))
+     (buffer-start-point (window-buffer lem/legit::*peek-window*)))))
 
 (defun vcs-test-position-legit-region (staged-p)
   "Focus the first replacement's removed row in an unstaged or staged diff."
@@ -1416,9 +1442,10 @@
    :merge (vcs-test-key-command lem/legit::*peek-legit-keymap* "m")
    :revert (vcs-test-key-command lem/legit::*peek-legit-keymap* "_")
    :branch (vcs-test-key-command lem/legit::*peek-legit-keymap* "b")
-   :worktree (vcs-test-key-command lem/legit::*peek-legit-keymap* "%")
+   :worktree (vcs-test-key-command lem/legit::*peek-legit-keymap* "Z")
    :push (vcs-test-key-command lem/legit::*peek-legit-keymap* "p")
-   :stash (vcs-test-key-command lem/legit::*peek-legit-keymap* "Z")
+   :stash (vcs-test-key-command lem/legit::*peek-legit-keymap* "z")
+   :remote (vcs-test-key-command lem/legit::*peek-legit-keymap* "M")
    :smart (leader-binding-command lem-vi-mode:*normal-keymap* "g g")
    :git (leader-binding-command lem-vi-mode:*normal-keymap* "g G")
    :jj (leader-binding-command lem-vi-mode:*normal-keymap* "g J")
@@ -1455,6 +1482,7 @@
           (load (merge-pathnames "src/git-worktree.lisp" source))
           (load (merge-pathnames "src/git-push.lisp" source))
           (load (merge-pathnames "src/git-stash.lisp" source))
+          (load (merge-pathnames "src/git-remote.lisp" source))
           (load (merge-pathnames "src/git-blame.lisp" source))
           (load (merge-pathnames "src/apps/timemachine.lisp" source)))
         (let ((after (vcs-test-reload-state)))
@@ -1463,7 +1491,7 @@
             'string
             "RELOAD same=~a find=~d post=~d save=~d change=~d kill=~d "
             "global=~d source=~d directory=~d root-marker=~d todo-hook=~d "
-            "bisect-hook=~d bisect=~a fetch=~a reset=~a merge=~a revert=~a branch=~a worktree=~a push=~a stash=~a smart=~a git=~a jj=~a time=~a "
+            "bisect-hook=~d bisect=~a fetch=~a reset=~a merge=~a revert=~a branch=~a worktree=~a push=~a stash=~a remote=~a smart=~a git=~a jj=~a time=~a "
             "jj-refresh=~a jj-quit=~a "
             "older=~a newer=~a nth=~a fuzzy=~a short=~a full=~a blame=~a "
             "blame-quit=~a p=~a n=~a t=~a quit=~a")
@@ -1497,6 +1525,8 @@
             (eq (getf after :push) 'lem-yath-legit-push))
            (vcs-test-yes-no
             (eq (getf after :stash) 'lem-yath-legit-stash))
+           (vcs-test-yes-no
+            (eq (getf after :remote) 'lem-yath-legit-remote))
            (vcs-test-yes-no (eq (getf after :smart) 'lem-yath-vcs-status))
            (vcs-test-yes-no (eq (getf after :git) 'lem-yath-legit-status))
            (vcs-test-yes-no (eq (getf after :jj) 'lem-yath-jj-log))
@@ -1557,6 +1587,7 @@
 (define-key *global-keymap* "C-c t" 'lem-yath-test-vcs-todo-preview)
 (define-key *global-keymap* "C-c d" 'lem-yath-test-vcs-porcelain-diff)
 (define-key *global-keymap* "C-c e" 'lem-yath-test-vcs-porcelain-staged-diff)
+(define-key *global-keymap* "C-c f" 'lem-yath-test-vcs-focus-legit)
 (define-key *global-keymap* "C-c w" 'lem-yath-test-vcs-porcelain-region)
 (define-key *global-keymap* "C-c W" 'lem-yath-test-vcs-porcelain-staged-region)
 (define-key *global-keymap* "C-c m" 'lem-yath-test-vcs-porcelain-tracked)

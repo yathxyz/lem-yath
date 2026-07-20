@@ -638,9 +638,10 @@ spin-off without losing edits. The recurse-submodules checkout argument is
 retained. Magit's visual commit-region spin boundary remains outside this port;
 execution is bounded and synchronous rather than process-buffer based.
 
-Evil Collection reserves lowercase `z` for Magit section folds and moves the
-stash dispatch to uppercase `Z`; Lem matches that status/diff stash binding. The
-dispatch retains `- u` include-untracked and `- a` include-all, mutually
+The configuration leaves Evil Collection's optional `z`-for-folds remap
+disabled, so stock Magit lowercase `z` remains the stash dispatch and uppercase
+`Z` remains worktrees; Lem matches those effective status/diff bindings. The
+stash dispatch retains `- u` include-untracked and `- a` include-all, mutually
 exclusive at runtime. Actions `z`, `i`, `w`, and `x` save both index/worktree,
 index only, worktree only, or both while keeping the index. `Z`, `I`, and `W`
 create the corresponding non-cleaning snapshots, while `r` updates the
@@ -651,11 +652,11 @@ at current `HEAD` and retains the stash, and `f` writes Magit's derived patch
 name. Staged/worktree separation uses temporary-index and commit-tree plumbing
 rather than broader `git stash` approximations. Calls are synchronous and
 bounded to 120 seconds, 4 MiB, 5000 paths, and 4096-character prompt values.
-Legit has no section-fold primitives and retains its upstream `z z`/`z p`
-direct aliases. Magit's normally hidden level-5 pathspec push sub-transient and
-asynchronous process presentation remain outside this port.
+The stash dispatch replaces Legit's upstream direct `z z`/`z p` aliases.
+Magit's normally hidden level-5 pathspec push sub-transient and asynchronous
+process presentation remain outside this port.
 
-Evil Collection's remapped `%` opens the separate worktree dispatch in status
+Stock Magit uppercase `Z` opens the separate worktree dispatch in status
 and diff panes. Its configured `b`, `c`, `m`, `k`, and `g` actions check out a
 revision into a new worktree, create a branch plus worktree, move, delete, and
 visit. Primary worktrees cannot be selected for move/delete; dirty removal is
@@ -664,6 +665,15 @@ active linked worktree follows its new path or returns to primary status after
 move/delete. Git's NUL-delimited porcelain and direct absolute argv preserve
 spaces and shell metacharacters. Unlike Magit, the visit action consistently
 opens Legit instead of falling back to Dired, and operations are synchronous.
+
+Stock Magit `M` opens the remote dispatch in status and diff panes. Its normally
+visible surface covers fetch-after-add; fetch/push URLs and refspecs; tag and
+remote-HEAD policies; add, rename, remove, alternate-remote configuration,
+stale-branch and stale-refspec pruning; and default-branch migration. Lem also
+migrates or clears repository and branch push-remote variables across rename
+and removal and confirms destructive removal/pruning. Direct single-value
+prompts replace Magit's multi-value URL/refspec editor; the normally hidden
+level-7 unshallow action and asynchronous process presentation remain absent.
 
 The matching `X` reset dispatch is also available in status and diff panes.
 It retains Magit's `b` branch and `f` file actions plus `m` mixed, `s` soft,

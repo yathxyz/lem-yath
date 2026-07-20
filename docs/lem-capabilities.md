@@ -2176,16 +2176,17 @@ Magit-inspired. `M-x legit-status` bound **`C-x g`** (`legit/legit.lisp:65`).
 - Push/Pull: lowercase `p` opens lem-yath's Evil Collection push dispatch
   (`p p` is the ordinary push-remote action); pull remains `F p`.
 - Log: `l l`, last/first page `l F` / pagination (`legit.lisp:86-87`).
-- **Stash dispatch**: Evil Collection's uppercase `Z` opens the complete
-  normally visible Magit stash map in status and diff while lowercase `z`
-  is reserved for folds in the Emacs target. `- u`/`- a` select untracked/all files;
+- **Stash dispatch**: the configured Evil Collection default keeps Magit's
+  lowercase `z` for the complete normally visible stash map in status and
+  diff. `- u`/`- a` select untracked/all files;
   `z`/`i`/`w`/`x` stash both, index, worktree, or keep-index state;
   `Z`/`I`/`W` snapshot without cleaning; and `r` updates branch-scoped WIP
   refs. `a`/`p`/`k`, `l`/`v`, `b`/`B`, and `f` cover apply/pop/drop,
   list/show, base/current branch creation, and format-patch. Staged/worktree
   separation uses temporary-index commit-tree plumbing. The hidden level-5
-  pathspec push sub-transient is not exposed. Legit has no matching section-fold
-  primitives, and upstream `z z`/`z p` remain as direct aliases.
+  pathspec push sub-transient is not exposed. This dispatch replaces Legit's
+  upstream direct `z z`/`z p` aliases, and synchronous execution has no Magit
+  process buffer.
 - **Interactive rebase**: `r i`; abort/continue/skip `r a`/`r c`/`r s`
   (`legit.lisp:105-108`); full rebase-todo editing mode with `p r e s f x b d l t m`
   keys (`legit-rebase.lisp:49-77`).
@@ -2233,10 +2234,22 @@ Magit-inspired. `M-x legit-status` bound **`C-x g`** (`legit/legit.lisp:65`).
   the remote ref's own tip, and dirty spin-out preserves edits by becoming
   spin-off. Shelving moves the reflog under a dated ref and drops pushRemote;
   unshelving strips that date. The `- r` checkout submodule argument is present.
-  Worktrees are covered by the separate `%` dispatch below. Visual
+  Worktrees are covered by the separate `Z` dispatch below. Visual
   commit-region spin selection and asynchronous process presentation remain
   gaps.
-- **Worktree dispatch**: Evil Collection's `%` opens Magit's focused worktree
+- **Remote dispatch**: `M` opens Magit's normally visible remote map in status
+  and diff. `- f` controls fetch-after-add; `u`/`U` and `s`/`S` replace the
+  selected remote's fetch URL/refspec and push URL/refspec, while `O` and `h`
+  set tag and remote-HEAD policy. `a` adds, `r` renames, `k` removes, `C`
+  configures another remote, `p` prunes stale tracking branches, `P` prunes
+  stale fetch refspecs, and `d u` reuses the default-branch migration. Rename
+  and removal migrate or clear repository and branch push-remote settings;
+  destructive remove/prune paths confirm. Values, candidates, subprocess
+  output, and time are bounded and Git receives direct argv. Lem's single-line
+  prompts replace Magit's multi-value URL/refspec editor, the hidden level-7
+  unshallow action is absent, and execution is synchronous without a process
+  buffer.
+- **Worktree dispatch**: the configured stock Magit uppercase `Z` opens its focused worktree
   map in status and diff. `b` checks out a branch, remote branch, or resolved
   commit in a new sibling-style path; `c` creates a branch and worktree from a
   selected revision; `m` moves a linked worktree; `k` deletes or prunes one;
