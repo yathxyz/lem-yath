@@ -145,6 +145,13 @@ printf '* TODO tracked implementation task\nordinary line\n' \
   >"$LEM_YATH_VCS_GIT_MAIN/nested/deeper/todos.org"
 printf 'FIXME(owner): tracked documentation task\n' \
   >"$LEM_YATH_VCS_GIT_MAIN/nested/docs/fixmes.txt"
+printf 'nested/deeper/ignored-todo.txt\n' \
+  >"$LEM_YATH_VCS_GIT_MAIN/.gitignore"
+printf '%s\n' \
+  '[submodule "todo-fixture"]' \
+  '  path = nested/vendor/module' \
+  '  url = ../unused-module.git' \
+  >"$LEM_YATH_VCS_GIT_MAIN/.gitmodules"
 printf '%s\n' \
   'HOLD: held' 'NEXT: next' 'THEM: them' 'PROG: progress' 'OKAY: okay' \
   'DONT: avoid' 'FAIL: failed' 'MAYBE: maybe' 'KLUDGE: kludge' \
@@ -152,6 +159,7 @@ printf '%s\n' \
   'NOTE: ignored' 'DONE: ignored' 'TODO missing required colon' \
   >"$LEM_YATH_VCS_GIT_MAIN/nested/docs/keywords.txt"
 "$git_bin" -C "$LEM_YATH_VCS_GIT_MAIN" add -- \
+  .gitignore .gitmodules \
   nested/deeper/history-old.lisp nested/deeper/retired.lisp \
   nested/deeper/todos.org nested/docs/fixmes.txt nested/docs/keywords.txt \
   nested/docs/notes.md
@@ -214,6 +222,13 @@ printf '# VCS notes\n\nchanged prose\n' >"$LEM_YATH_VCS_MARKDOWN_FILE"
 # merely nonempty-history check.
 printf '(defparameter vcs-retired :recreated-untracked)\n' \
   >"$LEM_YATH_VCS_UNTRACKED_FILE"
+printf 'TODO: untracked scanner item\n' \
+  >"$LEM_YATH_VCS_GIT_ROOT/nested/deeper/untracked-todo.txt"
+printf 'TODO: ignored scanner item\n' \
+  >"$LEM_YATH_VCS_GIT_ROOT/nested/deeper/ignored-todo.txt"
+mkdir -p "$LEM_YATH_VCS_GIT_ROOT/nested/vendor/module"
+printf 'TODO: submodule scanner item\n' \
+  >"$LEM_YATH_VCS_GIT_ROOT/nested/vendor/module/todos.txt"
 
 # A separate repository exercises Legit's mutating Magit-like porcelain
 # without changing the gutter and Timemachine history fixtures above.
@@ -2913,7 +2928,7 @@ send_keys "$git_session" C-c T
 if wait_report_count '^TODO-SECTIONS ' "$((todo_sections_before + 1))" &&
    [[ $(latest_report '^TODO-SECTIONS ') == *\
 'top=yes top-hidden=yes grouped=no keyword-hidden=no path-hidden=no row-hidden=yes branch=no '* ]]; then
-  pass legit-todo-auto-collapse 'the 16-item TODO section initially collapsed above the exact limit of 10'
+  pass legit-todo-auto-collapse 'the 17-item TODO section initially collapsed above the exact limit of 10'
 else
   fail legit-todo-auto-collapse 'the initial TODO section visibility was wrong' \
     "$git_session"
@@ -2944,7 +2959,6 @@ fi
 printf '%s\n' \
   'TODO: grouped extra one' 'TODO: grouped extra two' \
   'TODO: grouped extra three' 'TODO: grouped extra four' \
-  'TODO: grouped extra five' \
   >>"$LEM_YATH_VCS_GIT_ROOT/nested/docs/keywords.txt"
 send_keys "$git_session" g
 wait_legit "$git_session" git || true

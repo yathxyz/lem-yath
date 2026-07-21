@@ -996,7 +996,7 @@
                            (not (deleted-buffer-p *vcs-test-source-buffer*))))
      (vcs-test-yes-no (vcs-test-source-raw-exact-p))
      (vcs-test-yes-no (vcs-test-source-raw-sentinel-p))
-     (vcs-test-yes-no (and text (search "Todos (16):" text)))
+     (vcs-test-yes-no (and text (search "Todos (17):" text)))
      (vcs-test-yes-no
       (and text
            (let ((hold (search "HOLD: held" text))
@@ -1008,6 +1008,10 @@
            (search "nested/deeper/todos.org:1:" text)
            (search "nested/docs/fixmes.txt:1:" text)
            (search "nested/docs/keywords.txt:14: XXXX*: literal" text)
+           (search "nested/deeper/untracked-todo.txt:1: TODO: untracked scanner item"
+                   text)
+           (not (search "ignored scanner item" text))
+           (not (search "submodule scanner item" text))
            (not (search "NOTE: ignored" text))
            (not (search "DONE: ignored" text))
            (not (search "TODO missing required colon" text))))

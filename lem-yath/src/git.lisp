@@ -585,36 +585,6 @@
                                      (< (legit-todo-line left)
                                         (legit-todo-line right))))))))))
 
-(defun parse-legit-todos (output)
-  "Parse Git grep's NUL-delimited path, line, and text records."
-  (let ((start 0)
-        (length (length output))
-        (results '()))
-    (loop :while (and (< start length)
-                      (< (length results) *legit-todo-result-limit*))
-          :for path-end := (position #\Null output :start start)
-          :for line-end := (and path-end
-                                (position #\Null output
-                                          :start (1+ path-end)))
-          :for text-end := (and line-end
-                                (or (position #\Newline output
-                                              :start (1+ line-end))
-                                    length))
-          :while (and path-end line-end text-end)
-          :for path := (subseq output start path-end)
-          :for line := (parse-integer output
-                                      :start (1+ path-end)
-                                      :end line-end
-                                      :junk-allowed t)
-          :for text := (subseq output (1+ line-end) text-end)
-          :for keyword := (detect-legit-todo-keyword text)
-          :when (and line keyword (plusp line) (plusp (length path)))
-            :do (push (make-legit-todo :path path :line line
-                                       :keyword keyword :text text)
-                      results)
-          :do (setf start (min length (1+ text-end))))
-    (sort-legit-todos (nreverse results))))
-
 (defun legit-todo-grep-regexp ()
   (let ((keywords
           (format nil "~{~a~^|~}"
@@ -627,22 +597,110 @@
             "(^[*]+[[:blank:]]+(~a)[[:blank:]]+)|((^|[[:blank:]]+)(~a)(\\([^)]{1,}\\)|\\[[^]]{1,}\\])?:)"
             keywords keywords)))
 
+(defun legit-todo-safe-relative-path-p (path)
+  (let ((components (and (stringp path)
+                         (plusp (length path))
+                         (uiop:split-string path :separator "/"))))
+    (and components
+         (char/= #\/ (char path 0))
+         (not (some (lambda (component)
+                      (or (string= component ".")
+                          (string= component "..")))
+                    components)))))
+
+(defun legit-todo-normalize-rg-path (path)
+  (if (alexandria:starts-with-subseq "./" path)
+      (subseq path 2)
+      path))
+
+(defun legit-todo-rg-match (line)
+  "Return (PATH LINE TEXT) for one safe ripgrep JSON match event."
+  (handler-case
+      (let* ((object (yason:parse line))
+             (type (and (hash-table-p object) (gethash "type" object))))
+        (when (string= type "match")
+          (let* ((data (gethash "data" object))
+                 (path-object (and (hash-table-p data)
+                                   (gethash "path" data)))
+                 (lines-object (and (hash-table-p data)
+                                    (gethash "lines" data)))
+                 (path (and (hash-table-p path-object)
+                            (gethash "text" path-object)))
+                 (text (and (hash-table-p lines-object)
+                            (gethash "text" lines-object)))
+                 (line-number (and (hash-table-p data)
+                                   (gethash "line_number" data))))
+            (when (and (stringp path) (stringp text)
+                       (integerp line-number) (plusp line-number))
+              (let ((path (legit-todo-normalize-rg-path path)))
+                (when (legit-todo-safe-relative-path-p path)
+                  (list path line-number
+                        (string-right-trim '(#\Newline #\Return)
+                                           text))))))))
+    (error () nil)))
+
+(defun parse-legit-todo-rg-output (output)
+  (let ((results '()))
+    (dolist (json-line (uiop:split-string output :separator '(#\Newline)))
+      (when (>= (length results) *legit-todo-result-limit*)
+        (return))
+      (alexandria:when-let ((match (legit-todo-rg-match json-line)))
+        (destructuring-bind (path line text) match
+          (alexandria:when-let ((keyword (detect-legit-todo-keyword text)))
+            (push (make-legit-todo :path path :line line
+                                   :keyword keyword :text text)
+                  results)))))
+    (sort-legit-todos (nreverse results))))
+
+(defun legit-todo-submodule-paths (root)
+  "Return safe submodule paths declared by ROOT's .gitmodules file."
+  (let ((pathname (merge-pathnames ".gitmodules" root)))
+    (when (uiop:file-exists-p pathname)
+      (with-open-file (stream pathname)
+        (loop :for line := (read-line stream nil)
+              :while line
+              :for registers :=
+                (nth-value
+                 1
+                 (cl-ppcre:scan-to-strings
+                  "^[ \\t]*path[ \\t]*=[ \\t]*(.*?)[ \\t]*$" line))
+              :for path := (and registers (aref registers 0))
+              :when (legit-todo-safe-relative-path-p path)
+                :collect path)))))
+
+(defun legit-todo-rg-glob-quote (path)
+  (with-output-to-string (stream)
+    (loop :for character :across path
+          :do (when (find character "\\*?[]{}" :test #'char=)
+                (write-char #\\ stream))
+              (write-char character stream))))
+
 (defun collect-legit-todos (root)
-  "Return bounded configured Magit-Todos matches from tracked files."
-  (let ((git (or (executable-find "git")
-                 (error "Git is unavailable"))))
+  "Return bounded matches using Magit-Todos' auto-selected rg semantics."
+  (let ((nice (or (executable-find "nice")
+                  (error "nice is unavailable")))
+        (rg (or (executable-find "rg")
+                (error "ripgrep is unavailable"))))
     (let ((*project-process-timeout* *legit-todo-timeout*))
       (multiple-value-bind (output error-output status)
           (run-project-program
-           (list (uiop:native-namestring git)
-                 "grep" "-n" "-I" "-z" "-E" (legit-todo-grep-regexp) "--")
+           (append
+            (list (uiop:native-namestring nice) "-n5"
+                  (uiop:native-namestring rg) "--json" "--color" "never"
+                  "--glob" "!.git/")
+            (loop :for submodule :in (legit-todo-submodule-paths root)
+                  :append
+                  (list "--glob"
+                        (format nil "!~a/**"
+                                (legit-todo-rg-glob-quote submodule))))
+            (list "--" (legit-todo-grep-regexp) "."))
            :directory root
            :output-limit *legit-todo-output-limit*)
         (cond
-          ((eql status 0) (parse-legit-todos output))
+          ((eql status 0) (parse-legit-todo-rg-output output))
           ((eql status 1) '())
           (t
-           (error "git grep failed (~a): ~a"
+           (error "ripgrep failed (~a): ~a"
                   status
                   (completion-bounded-annotation error-output))))))))
 

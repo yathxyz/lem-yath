@@ -2672,14 +2672,19 @@ conflict handling, operation log, workspaces, sparse checkout, and Majutsu's
 wider arbitrary-revision/fileset/tool split options remain outside this focused
 approximation.
 
-Git status also appends navigable Magit-Todos rows from tracked, nonbinary
-files. Moving onto a row previews the exact source line and visiting it opens
-that file. The scanner uses the installed package's 16 effective default
-keywords in package order, including literal `XXXX*`, its Org-heading form,
-and its required colon with optional parenthesized/bracketed suffix elsewhere;
+Git status also appends navigable Magit-Todos rows from non-hidden,
+non-ignored text files. It uses packaged ripgrep, matching the installed
+package's automatically selected first scanner: tracked and untracked files
+are included, native ignore rules are honored, and declared submodule paths
+are excluded by default. Moving onto a row previews the exact source line and
+visiting it opens that file. The scanner uses the installed package's 16
+effective default keywords in package order, including literal `XXXX*`, its
+Org-heading form, and its required colon with optional parenthesized/bracketed
+suffix elsewhere;
 configured ignored `NOTE` and `DONE` plus bare prose are excluded. The
-synchronous `git grep` scan stops at 200 rendered results, 1 MiB of output, or
-five seconds. Lists stay flat through 20 items and then group by keyword and
+synchronous ripgrep scan runs at the package's default `nice -n5` priority and
+stops at 200 rendered results, 1 MiB of output, or five seconds. Lists stay
+flat through 20 items and then group by keyword and
 filename. The top-level section initially folds above 10 items, nested limits
 shrink with depth, `Tab` toggles a TODO heading without replacing Legit's
 ordinary pane switch elsewhere, hidden rows are skipped by item/header
@@ -2692,9 +2697,9 @@ Magit-Todos' buffer-local `branch` -> disabled -> forced-on cycle and `B`
 selects a validated commit ref from a bounded all-ref completion list. Those
 per-repository in-memory choices and section visibility survive status refresh;
 outside a TODO section the same keys retain Legit's ordinary branch and bisect
-dispatches. Custom scanners, grouping variables, manual update mode, submodule
-scanning, and asynchronous process presentation remain outside this bounded
-approximation. A small
+dispatches. Custom scanner selection, grouping variables, manual update mode,
+opt-in submodule scanning, and asynchronous process presentation remain outside
+this bounded approximation. A small
 pinned-upstream patch exposes the status-section hook used by the integration.
 
 ### GitHub Forge workflow — `lem-yath/src/forge.lisp`
