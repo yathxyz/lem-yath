@@ -534,8 +534,29 @@ write_fixtures() {
     >"$WORKDIR/footnote-empty-inner.org"
   printf '%s\n' 'prefix [fn:note:def suffix' \
     >"$WORKDIR/footnote-malformed.org"
-  printf '%s\n' '[fn:note] Definition text' \
-    >"$WORKDIR/footnote-definition.org"
+  printf '%s\n' \
+    '[fn:note] First *bold*' \
+    'continuation' \
+    '' \
+    '  second paragraph' \
+    'second continuation' \
+    '' \
+    '' \
+    'AFTER' >"$WORKDIR/footnote-definition.org"
+  printf '%s\n' '[fn:one] First' '[fn:two] Second' '' '' 'AFTER' \
+    >"$WORKDIR/footnote-next-definition.org"
+  printf '%s\n' '[fn:empty]' '' '' 'AFTER' \
+    >"$WORKDIR/footnote-empty-definition.org"
+  printf '%s\n' \
+    'before [fn:note:first line' \
+    'second *bold* line]  after' \
+    >"$WORKDIR/footnote-multiline-inline.org"
+  printf '%s\n' 'before [fn::first' '' 'second] after' \
+    >"$WORKDIR/footnote-blank-inline.org"
+  printf '%s\n' '#+begin_src text' '[fn:fake] literal' '#+end_src' \
+    >"$WORKDIR/footnote-source-literal.org"
+  printf '%s\n' '* H' '[fn:note] Body' '' '' '* S' \
+    >"$WORKDIR/footnote-subtree.org"
   printf '%s\n' 'prefix [cite:@key] suffix' \
     >"$WORKDIR/citation-simple.org"
   printf '%s\n' 'prefix [cite:@key] suffix' \
@@ -2633,7 +2654,7 @@ if start_case multiline-latex-delimited \
       "$CASE_SESSION" \
       'register=\\[\nS_{new}\n\\]   register-type=char' 'modified=no'
   fi
-  send_keys "$CASE_SESSION" Escape g g j 2 l
+  send_keys "$CASE_SESSION" Escape g g 0 j 2 l
   if operate_and_record multiline-latex-delimited "$CASE_SESSION" y i e; then
     assert_state multiline-bracket-inner multiline-latex-delimited \
       "$CASE_SESSION" \
@@ -2953,11 +2974,180 @@ if start_case footnote-malformed "$WORKDIR/footnote-malformed.org" \
 fi
 
 if start_case footnote-definition "$WORKDIR/footnote-definition.org" \
-     'Definition'; then
-  if operate_and_record footnote-definition "$CASE_SESSION" d a e; then
-    assert_state footnote-definition-object-abort footnote-definition \
-      "$CASE_SESSION" 'text=[fn:note] Definition text\n bytes=' \
+     'First.*bold'; then
+  if operate_and_record footnote-definition "$CASE_SESSION" y a e; then
+    assert_state footnote-definition-ae footnote-definition "$CASE_SESSION" \
+      'register=[fn:note] First *bold*\ncontinuation\n\n  second paragraph\nsecond continuation\n\n\n register-type=char' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0
+  if operate_and_record footnote-definition "$CASE_SESSION" y i e; then
+    assert_state footnote-definition-ie footnote-definition "$CASE_SESSION" \
+      'register=First *bold*\ncontinuation\n\n  second paragraph\nsecond continuation\n register-type=char' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0
+  if operate_and_record footnote-definition "$CASE_SESSION" y a E; then
+    assert_state footnote-definition-aE footnote-definition "$CASE_SESSION" \
+      'register=[fn:note] First *bold*\ncontinuation\n\n  second paragraph\nsecond continuation\n\n\n register-type=char' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0
+  if operate_and_record footnote-definition "$CASE_SESSION" y i E; then
+    assert_state footnote-definition-iE footnote-definition "$CASE_SESSION" \
+      'register=First *bold*\ncontinuation\n\n  second paragraph\nsecond continuation\n register-type=char' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 10 l
+  if operate_and_record footnote-definition "$CASE_SESSION" y a e; then
+    assert_state footnote-definition-body-ae footnote-definition \
+      "$CASE_SESSION" \
+      'register=First *bold*\ncontinuation\n\n register-type=char' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 10 l
+  if operate_and_record footnote-definition "$CASE_SESSION" y i e; then
+    assert_state footnote-definition-body-ie footnote-definition \
+      "$CASE_SESSION" \
+      'register=First *bold*\ncontinuation\n register-type=char' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 10 l
+  if operate_and_record footnote-definition "$CASE_SESSION" y a E; then
+    assert_state footnote-definition-body-aE footnote-definition \
+      "$CASE_SESSION" \
+      'register=First *bold*\ncontinuation\n\n register-type=char' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 10 l
+  if operate_and_record footnote-definition "$CASE_SESSION" y i E; then
+    assert_state footnote-definition-body-iE footnote-definition \
+      "$CASE_SESSION" \
+      'register=First *bold*\ncontinuation\n register-type=char' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 17 l
+  if operate_and_record footnote-definition "$CASE_SESSION" y a e; then
+    assert_state footnote-definition-bold-ae footnote-definition \
+      "$CASE_SESSION" 'register=*bold* register-type=char' 'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 3 j 0 2 l
+  if operate_and_record footnote-definition "$CASE_SESSION" y a e; then
+    assert_state footnote-definition-second-ae footnote-definition \
+      "$CASE_SESSION" \
+      'register=  second paragraph\nsecond continuation\n register-type=char' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 10 l
+  if operate_and_record footnote-definition "$CASE_SESSION" y a r; then
+    assert_state footnote-definition-ar footnote-definition "$CASE_SESSION" \
+      'register=[fn:note] First *bold*\ncontinuation\n\n  second paragraph\nsecond continuation\n\n\n register-type=line' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 10 l
+  if operate_and_record footnote-definition "$CASE_SESSION" y i r; then
+    assert_state footnote-definition-ir footnote-definition "$CASE_SESSION" \
+      'register=First *bold*\ncontinuation\n\n  second paragraph\nsecond continuation\n register-type=char' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 5 j 0
+  if operate_and_record footnote-definition "$CASE_SESSION" y a e; then
+    assert_state footnote-definition-postblank-ae footnote-definition \
+      "$CASE_SESSION" \
+      'register=[fn:note] First *bold*\ncontinuation\n\n  second paragraph\nsecond continuation\n\n\n register-type=char' \
+      'modified=no'
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case footnote-next-definition \
+     "$WORKDIR/footnote-next-definition.org" 'fn:one.*First'; then
+  if operate_and_record footnote-next-definition "$CASE_SESSION" y a e; then
+    assert_state footnote-next-definition-ae footnote-next-definition \
+      "$CASE_SESSION" 'register=[fn:one] First\n register-type=char' \
+      'modified=no'
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case footnote-empty-definition \
+     "$WORKDIR/footnote-empty-definition.org" 'fn:empty'; then
+  if operate_and_record footnote-empty-definition "$CASE_SESSION" y i e; then
+    assert_state footnote-empty-definition-ie footnote-empty-definition \
+      "$CASE_SESSION" 'register=[fn:empty] register-type=char' 'modified=no'
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case footnote-multiline-inline \
+     "$WORKDIR/footnote-multiline-inline.org" 'first line'; then
+  send_keys "$CASE_SESSION" 9 l
+  if operate_and_record footnote-multiline-inline "$CASE_SESSION" y a e; then
+    assert_state footnote-multiline-ae footnote-multiline-inline \
+      "$CASE_SESSION" \
+      'register=[fn:note:first line\nsecond *bold* line]   register-type=char' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 9 l
+  if operate_and_record footnote-multiline-inline "$CASE_SESSION" y i e; then
+    assert_state footnote-multiline-ie footnote-multiline-inline \
+      "$CASE_SESSION" \
+      'register=first line\nsecond *bold* line register-type=char' \
+      'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 j 8 l
+  if record_state footnote-multiline-inline "$CASE_SESSION"; then
+    assert_state footnote-multiline-bold-point footnote-multiline-inline \
+      "$CASE_SESSION" 'line=2 column=8' 'modified=no'
+  fi
+  if operate_and_record footnote-multiline-inline "$CASE_SESSION" y a e; then
+    assert_state footnote-multiline-bold-ae footnote-multiline-inline \
+      "$CASE_SESSION" 'register=*bold*  register-type=char' 'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g 0 9 l
+  if operate_and_record footnote-multiline-inline "$CASE_SESSION" y a E; then
+    assert_state footnote-multiline-aE footnote-multiline-inline \
+      "$CASE_SESSION" \
+      'register=before [fn:note:first line\nsecond *bold* line]  after\n register-type=char' \
+      'modified=no'
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case footnote-blank-inline "$WORKDIR/footnote-blank-inline.org" \
+     'fn::first'; then
+  send_keys "$CASE_SESSION" 9 l
+  if operate_and_record footnote-blank-inline "$CASE_SESSION" d a e; then
+    assert_state footnote-blank-inline-abort footnote-blank-inline \
+      "$CASE_SESSION" \
+      'text=before [fn::first\n\nsecond] after\n bytes=' \
       'register= register-type=none' 'small= small-type=none' 'modified=no'
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case footnote-source-literal \
+     "$WORKDIR/footnote-source-literal.org" 'fn:fake'; then
+  send_keys "$CASE_SESSION" j 2 l
+  if operate_and_record footnote-source-literal "$CASE_SESSION" y a e; then
+    assert_state footnote-source-literal-ae footnote-source-literal \
+      "$CASE_SESSION" \
+      'register=#+begin_src text\n[fn:fake] literal\n#+end_src\n register-type=char' \
+      'modified=no'
+  fi
+  stop_case "$CASE_SESSION"
+fi
+
+if start_case footnote-subtree "$WORKDIR/footnote-subtree.org" 'fn:note'; then
+  send_keys "$CASE_SESSION" j 2 l
+  if operate_and_record footnote-subtree "$CASE_SESSION" y a R; then
+    assert_state footnote-subtree-aR footnote-subtree "$CASE_SESSION" \
+      'register=* H\n[fn:note] Body\n\n\n register-type=line' 'modified=no'
+  fi
+  send_keys "$CASE_SESSION" Escape g g j 2 l
+  if operate_and_record footnote-subtree "$CASE_SESSION" y i R; then
+    assert_state footnote-subtree-iR footnote-subtree "$CASE_SESSION" \
+      'register=[fn:note] Body\n\n\n register-type=line' 'modified=no'
   fi
   stop_case "$CASE_SESSION"
 fi

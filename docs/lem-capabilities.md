@@ -2990,8 +2990,10 @@ A separate on-demand boundary model and Vi adapter implement all eight bindings
 in the active Evil-Org text-object theme: `ae/ie`, `aE/iE`, `ar/ir`, and
 `aR/iR` in operator-pending and Visual states. The bounded model covers inline
 markup, bracket/plain links, balanced citations and citation references,
-same-line standard, labeled-inline, and anonymous inline footnote references,
-whitespace entities, explicit line breaks, timestamps, GNU-style depth-three
+same-line and paragraph-bounded multiline standard, labeled-inline, and
+anonymous inline footnote references, bounded footnote definitions with
+paragraph and nested-inline children, whitespace entities, explicit line
+breaks, timestamps, GNU-style depth-three
 subscript/superscript objects, same-line
 single/double-dollar and `\(...\)`/`\[...\]` LaTeX fragments, bounded multiline
 double-dollar and delimited LaTeX fragments, flat TeX macros/entities, table
@@ -3016,8 +3018,9 @@ unsupported or ambiguous inline/cell syntax fail object requests closed;
 empty leaf-item or inner-subtree ranges abort. These aborts occur before mutation and
 preserve text, registers, and an existing Visual selection. Type-mismatched
 inner end markers remain literal inside an otherwise matched flat block.
-Footnote-definition object contexts and multiline inline footnote references
-are not yet modeled as Evil-Org objects.
+Affiliated footnote definitions and non-paragraph nested definition children
+are not yet modeled. Footnote-looking syntax that crosses an Org paragraph
+separator fails closed instead of falling through to a paragraph object.
 
 The exact
 `TODO → NEXT → WAITING → HOLD → SOMEDAY | DONE → CANCELLED`
@@ -3064,12 +3067,14 @@ numeric reference repair, and one-step undo. It dynamically exercises all eight 
 bindings with delete/yank operators over
 opaque/nested markup, bracket/plain links, timestamps, table cells/rules and
 formula ownership, scripts, same-line and bounded multiline LaTeX
-fragments/macros, same-line footnote references, whitespace entities, explicit
+fragments/macros, same-line and multiline footnote references, definition
+marker/body/post-blank ownership and ancestry, whitespace entities, explicit
 line breaks, malformed-dollar fallback, paragraphs, headlines, flat leaf
 and recursive blocks,
 point-sensitive and empty lists, owned post-blank, and subtrees. It verifies
-object/element count anchors, footnote count traversal, empty/malformed
-footnote refusal, unsupported-syntax barriers, subtree
+object/element count anchors, footnote count traversal, adjacent and empty
+definitions, nested markup, paragraph splitting, malformed footnote refusal,
+source-block opacity, unsupported-syntax barriers, subtree
 ancestry count, character/line registers, representative one-step undo,
 normal-state aborts (including nested and opaque unsupported syntax), and exact
 Visual-abort preservation. It statically
@@ -3309,8 +3314,8 @@ contract, so this is the smaller independent replacement; exact `ox-html`
 consumers would still require a different backend.
 
 This is intentionally narrower than GNU Org and Evil-Org. Richer drawer,
-footnote-definition, multiline inline-footnote, nested-special, and malformed
-text-object contexts; structural
+affiliated or non-paragraph footnote-definition children, nested-special, and
+malformed text-object contexts; structural
 repairs beyond the bounded `d/x/X/< />` and Visual Meta behavior; generic
 Org-element movement, clocktable horizontal Shift-arrow context,
 and richer list/table semantics; mouse

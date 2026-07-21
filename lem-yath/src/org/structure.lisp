@@ -205,6 +205,127 @@ return NIL so callers retain the existing fail-closed boundary."
       ((cl-ppcre:scan "(?i)^\\s*CLOCK:" line) :timestamp)
       (t :full))))
 
+(defun %org-footnote-definition-marker-end-column (line)
+  "Return the exclusive marker end for a GNU Org footnote definition LINE."
+  (when (and (<= 5 (length line))
+             (string= line "[fn:" :end1 4 :end2 4))
+    (let ((cursor 4))
+      (loop :while (and (< cursor (length line))
+                        (%org-footnote-label-character-p
+                         (char line cursor)))
+            :do (incf cursor))
+      (and (> cursor 4)
+           (< cursor (length line))
+           (eql (char line cursor) #\])
+           (1+ cursor)))))
+
+(defun %org-footnote-definition-content-offsets (text marker-end)
+  "Return GNU Org content offsets within definition TEXT."
+  (let ((first marker-end))
+    (loop :while (and (< first (length text))
+                      (member (char text first)
+                              '(#\Space #\Tab #\Newline #\Return)))
+          :do (incf first))
+    (when (< first (length text))
+      (let* ((line-break
+               (position #\Newline text :start marker-end :end first))
+             (content-start
+               (if line-break
+                   (1+ (or (position #\Newline text :end first :from-end t)
+                           -1))
+                   first))
+             (last (1- (length text))))
+        (loop :while (and (>= last content-start)
+                          (member (char text last)
+                                  '(#\Space #\Tab #\Newline #\Return)))
+              :do (decf last))
+        (when (>= last content-start)
+          (let ((newline (position #\Newline text :start (1+ last))))
+            (values content-start
+                    (if newline (1+ newline) (length text)))))))))
+
+(defun %org-make-footnote-definition-boundary (start marker-end end)
+  "Build the footnote definition from START through exclusive END."
+  (let ((text (points-to-string start end)))
+    (multiple-value-bind (content-start content-end)
+        (%org-footnote-definition-content-offsets text marker-end)
+      (if content-start
+          (%make-org-boundary
+           (copy-point start :temporary) (copy-point end :temporary)
+           (org-navigation-point-at-offset start content-start)
+           (org-navigation-point-at-offset start content-end)
+           :character :footnote-definition)
+          (with-point ((marker-line-end start))
+            (line-end marker-line-end)
+            (%make-org-boundary
+             (copy-point start :temporary) (copy-point end :temporary)
+             (copy-point start :temporary)
+             (copy-point marker-line-end :temporary)
+             :character :footnote-definition))))))
+
+(defun %org-footnote-definition-boundary-at (origin)
+  "Return the bounded GNU Org footnote definition owning ORIGIN."
+  (with-point ((point (buffer-start-point (point-buffer origin))))
+    (loop :with open-start := nil
+          :with open-marker-end := nil
+          :with blank-count := 0
+          :with open-block-type := nil
+          :for line := (line-string point)
+          :for block-marker := (org-block-marker line)
+          :for marker-end := (and (null open-block-type)
+                                  (%org-footnote-definition-marker-end-column
+                                   line))
+          :for heading-p := (and (null open-block-type)
+                                 (org-heading-line-p point))
+          :for blank-p := (not (null (cl-ppcre:scan "^\\s*$" line)))
+          :do
+             (when (and open-start
+                        (not blank-p)
+                        (or (>= blank-count 2) heading-p marker-end))
+               (let ((boundary
+                       (%org-make-footnote-definition-boundary
+                        open-start open-marker-end point)))
+                 (when (%org-boundary-contains-point-p boundary origin)
+                   (return boundary)))
+               (setf open-start nil open-marker-end nil blank-count 0))
+             (when (and marker-end
+                        (null open-start)
+                        (not (%org-inside-drawer-p point)))
+               (setf open-start (copy-point point :temporary)
+                     open-marker-end marker-end
+                     blank-count 0))
+             (when open-start
+               (if blank-p (incf blank-count) (setf blank-count 0)))
+             (cond
+               (open-block-type
+                (when (and block-marker
+                           (eq (car block-marker) :end)
+                           (string= (cdr block-marker) open-block-type))
+                  (setf open-block-type nil)))
+               ((and block-marker (eq (car block-marker) :begin))
+                (setf open-block-type (cdr block-marker))))
+          :unless (line-offset point 1)
+            :do
+               (when open-start
+                 (let ((boundary
+                         (%org-make-footnote-definition-boundary
+                          open-start open-marker-end
+                          (buffer-end-point (point-buffer origin)))))
+                   (when (%org-boundary-contains-point-p boundary origin)
+                     (return boundary))))
+               (return nil))))
+
+(defun %org-footnote-definition-has-content-p (boundary)
+  (and boundary
+       (point< (%org-boundary-start boundary)
+               (%org-boundary-inner-start boundary))))
+
+(defun %org-footnote-definition-content-at-point-p (point boundary)
+  (and (%org-footnote-definition-has-content-p boundary)
+       (%org-point-in-half-open-range-p
+        point (%org-boundary-inner-start boundary)
+        (%org-boundary-inner-end boundary))))
+
 (defun %org-special-line-p (point)
   "Whether POINT is on syntax this conservative model does not own."
   (let ((line (line-string point)))
@@ -219,7 +340,7 @@ return NIL so callers retain the existing fail-closed boundary."
         (cl-ppcre:scan "^\\s*:\\s" line)
         (cl-ppcre:scan "^\\s*\\\\(?:begin|end)\\{" line)
         (cl-ppcre:scan "^\\s*-{5,}\\s*$" line)
-        (cl-ppcre:scan "^\\s*\\[fn:[^]]+\\]" line))))
+        (%org-footnote-definition-marker-end-column line))))
 
 ;;; --- matched typed blocks ------------------------------------------------
 
@@ -952,15 +1073,28 @@ Keep unmatched delimiters and punctuation escapes fail-closed."
 
 (defun %org-line-object-candidates (point)
   (let* ((drawer (%org-drawer-boundary-at point))
-         (drawer-kind (and drawer (%org-drawer-inline-kind point drawer))))
+         (drawer-kind (and drawer (%org-drawer-inline-kind point drawer)))
+         (definition (%org-footnote-definition-boundary-at point))
+         (definition-content-p
+           (%org-footnote-definition-content-at-point-p point definition)))
     (unless (or (%org-unclosed-block-at-p point)
                 (org-inside-block-p point)
                 (and drawer (null drawer-kind))
-                (and (null drawer) (%org-special-line-p point)))
+                (and (null drawer) (%org-special-line-p point)
+                     (not definition-content-p)))
       (let ((line (line-string point)))
         (if (eq drawer-kind :timestamp)
             (%org-timestamp-candidates line)
-            (let* ((citations (%org-citation-candidates line))
+            (let* ((footnotes
+                     (remove-if
+                      (lambda (candidate)
+                        (and definition
+                             (same-line-p
+                              point (%org-boundary-start definition))
+                             (zerop
+                              (%org-inline-candidate-start candidate))))
+                      (%org-footnote-candidates line)))
+                   (citations (%org-citation-candidates line))
                    (citation-outers
                      (remove-if-not
                       (lambda (candidate)
@@ -989,7 +1123,7 @@ Keep unmatched delimiters and punctuation escapes fail-closed."
                              citation-outers)))
                       (%org-plain-link-candidates line))))
               (append
-               (%org-footnote-candidates line)
+               footnotes
                citations
                links
                plain-links
@@ -1086,6 +1220,30 @@ Keep unmatched delimiters and punctuation escapes fail-closed."
      :character
      (%org-inline-candidate-node-type candidate))))
 
+(defun %org-multiline-footnote-boundary-at (origin)
+  "Return the recursive multiline footnote reference covering ORIGIN."
+  (let ((container (%org-element-at-point origin)))
+    (when (and container
+               (eq (%org-boundary-node-type container) :paragraph))
+      (let* ((base (%org-boundary-start container))
+             (text (points-to-string
+                    base (%org-boundary-inner-end container)))
+             (offset (org-navigation-offset-from base origin))
+             (covering
+               (remove-if-not
+                (lambda (candidate)
+                  (and (position
+                        #\Newline text
+                        :start (%org-inline-candidate-start candidate)
+                        :end (%org-inline-candidate-end candidate))
+                       (<= (%org-inline-candidate-start candidate) offset)
+                       (< offset
+                          (%org-inline-candidate-outer-end candidate))))
+                (%org-footnote-candidates text)))
+             (candidate (%org-unambiguous-inline covering)))
+        (when candidate
+          (%org-container-inline-to-boundary container candidate))))))
+
 (defun %org-multiline-latex-region-line-p (point)
   "Whether POINT can participate in one bounded multiline LaTeX scan."
   (let ((line (line-string point)))
@@ -1174,7 +1332,9 @@ Keep unmatched delimiters and punctuation escapes fail-closed."
   (or
    (%org-line-break-boundary-at origin)
    (%org-multiline-latex-boundary-at origin)
-   (let* ((column (point-charpos origin))
+   (let* ((multiline-footnote
+            (%org-multiline-footnote-boundary-at origin))
+          (column (point-charpos origin))
          (all-covering
            (remove-if-not
             (lambda (candidate)
@@ -1213,6 +1373,9 @@ Keep unmatched delimiters and punctuation escapes fail-closed."
       ((and candidate
             (%org-unsupported-opaque-at-column-p candidate column))
        (%org-inline-to-boundary origin candidate))
+      ((and multiline-footnote candidate)
+       (%org-inline-to-boundary origin candidate))
+      (multiline-footnote multiline-footnote)
       ;; Unsupported Org syntax inside opaque code/verbatim/link targets is
       ;; literal.  Everywhere else it beats a supported containing candidate
       ;; so ae cannot over-delete that container or its paragraph.
@@ -1581,6 +1744,57 @@ item."
          (not (org-inside-block-p point))
          (not (%org-special-line-p point)))))
 
+(defun %org-footnote-definition-paragraph-boundary (origin definition)
+  "Return the paragraph child of DEFINITION owning ORIGIN."
+  (when (%org-footnote-definition-content-at-point-p origin definition)
+    (let ((content-start (%org-boundary-inner-start definition))
+          (content-end (%org-boundary-inner-end definition)))
+      (with-point ((owner origin))
+        (line-start owner)
+        (when (cl-ppcre:scan "^\\s*$" (line-string owner))
+          (loop
+            (unless (line-offset owner -1)
+              (return-from %org-footnote-definition-paragraph-boundary nil))
+            (when (point< owner content-start)
+              (return-from %org-footnote-definition-paragraph-boundary nil))
+            (unless (cl-ppcre:scan "^\\s*$" (line-string owner))
+              (return))))
+        (with-point ((start owner)
+                     (last owner))
+          (loop
+            (with-point ((previous start))
+              (unless (and (line-offset previous -1)
+                           (not (point< previous content-start))
+                           (not (cl-ppcre:scan
+                                 "^\\s*$" (line-string previous))))
+                (return))
+              (move-point start previous)))
+          (when (same-line-p start content-start)
+            (move-point start content-start))
+          (loop
+            (with-point ((next last))
+              (unless (and (line-offset next 1)
+                           (point< next content-end)
+                           (not (cl-ppcre:scan
+                                 "^\\s*$" (line-string next))))
+                (return))
+              (move-point last next)))
+          (let* ((core-end (%org-line-after last))
+                 (outer-end (%org-expand-blank-lines core-end)))
+            (when (point< content-end core-end)
+              (move-point core-end content-end))
+            (when (point< content-end outer-end)
+              (move-point outer-end content-end))
+            (%make-org-boundary
+             (copy-point start :temporary) outer-end
+             (copy-point start :temporary) core-end
+             :character :paragraph)))))))
+
+(defun %org-footnote-definition-element-at-point (origin definition)
+  "Return DEFINITION or its supported child element at ORIGIN."
+  (or (%org-footnote-definition-paragraph-boundary origin definition)
+      definition))
+
 (defun %org-paragraph-boundary (origin)
   (when (%org-paragraph-line-p origin)
     (with-point ((start origin)
@@ -1727,14 +1941,17 @@ item."
 (defun %org-element-at-point (origin)
   (or (%org-block-boundary-at origin)
       (and (not (%org-unclosed-block-at-p origin))
-           (alexandria:if-let ((drawer (%org-drawer-boundary-at origin)))
-             (%org-drawer-element-at-point origin drawer)
-             (or (and (org-heading-line-p origin)
-                      (%org-heading-boundary origin :kind :character))
-                 (%org-table-element-boundary origin)
-                 (%org-list-element-boundary origin)
-                 (%org-postblank-element-boundary origin)
-                 (%org-paragraph-boundary origin))))))
+           (alexandria:if-let
+               ((definition (%org-footnote-definition-boundary-at origin)))
+             (%org-footnote-definition-element-at-point origin definition)
+             (alexandria:if-let ((drawer (%org-drawer-boundary-at origin)))
+               (%org-drawer-element-at-point origin drawer)
+               (or (and (org-heading-line-p origin)
+                        (%org-heading-boundary origin :kind :character))
+                   (%org-table-element-boundary origin)
+                   (%org-list-element-boundary origin)
+                   (%org-postblank-element-boundary origin)
+                   (%org-paragraph-boundary origin)))))))
 
 (defun %org-next-element (origin)
   (with-point ((point origin))
@@ -1764,11 +1981,13 @@ item."
 
 (defun %org-section-boundary (origin)
   (let ((block (%org-block-boundary-at origin))
-        (drawer (%org-drawer-boundary-at origin)))
+        (drawer (%org-drawer-boundary-at origin))
+        (definition (%org-footnote-definition-boundary-at origin)))
     (unless (or (%org-unclosed-block-at-p origin)
                 (and (%org-special-line-p origin)
                      (null block)
-                     (null drawer))
+                     (null drawer)
+                     (null definition))
                 (and (%org-list-continuation-context-p origin)
                      (not (%org-supported-list-context-p origin)))
                 (org-heading-line-p origin))
@@ -1826,7 +2045,16 @@ item."
 
 (defun %org-greater-chain (origin)
   (let ((block (%org-block-boundary-at origin))
-        (drawer (%org-drawer-boundary-at origin)))
+        (drawer (%org-drawer-boundary-at origin))
+        (definition (%org-footnote-definition-boundary-at origin)))
+    (when definition
+      (setf (%org-boundary-kind definition) :line)
+      (return-from %org-greater-chain
+        (append
+         (list definition)
+         (alexandria:when-let ((section (%org-section-boundary origin)))
+           (list section))
+         (%org-heading-ancestors origin))))
     (when drawer
       (setf (%org-boundary-kind drawer) :line)
       (return-from %org-greater-chain
@@ -1880,12 +2108,14 @@ item."
                     (%org-heading-ancestors origin)))))))
 
 (defun %org-subtree-boundary (origin count)
-  (let ((drawer (%org-drawer-boundary-at origin)))
+  (let ((drawer (%org-drawer-boundary-at origin))
+        (definition (%org-footnote-definition-boundary-at origin)))
     (unless (or (and (%org-inside-drawer-p origin) (null drawer))
                 (%org-unclosed-block-at-p origin)
               (and (%org-special-line-p origin)
                      (null (%org-block-boundary-at origin))
-                     (null drawer)))
+                     (null drawer)
+                     (null definition)))
       (alexandria:when-let ((heading (org-current-heading-point origin)))
         ;; Evil-Org saturates an over-large subtree count at the root heading.
         (dotimes (_ (1- count))
