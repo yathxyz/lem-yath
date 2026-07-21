@@ -396,6 +396,21 @@ report_occur_bindings() {
   return 1
 }
 
+report_occur_edit() {
+  local before attempts=0
+  before=$(grep -c '^OCCUR-EDIT ' "$LEM_YATH_BUFFER_LIST_REPORT" 2>/dev/null || true)
+  lem_keys "$session" C-c e
+  while ((attempts < 40)); do
+    if (( $(grep -c '^OCCUR-EDIT ' "$LEM_YATH_BUFFER_LIST_REPORT" 2>/dev/null || true) > before )); then
+      grep '^OCCUR-EDIT ' "$LEM_YATH_BUFFER_LIST_REPORT" | tail -1
+      return 0
+    fi
+    sleep 0.25
+    attempts=$((attempts + 1))
+  done
+  return 1
+}
+
 visit_occur_source() {
   local before attempts=0
   before=$(grep -c '^OCCUR-VISIT ' "$LEM_YATH_BUFFER_LIST_REPORT" 2>/dev/null || true)
@@ -2743,11 +2758,182 @@ fi
 occur_bindings=$(report_occur_bindings || true)
 if [[ "$occur_bindings" == *'return=LEM-YATH-BUFFER-LIST-OCCUR-VISIT control-return=LEM-YATH-BUFFER-LIST-OCCUR-VISIT'* ]] &&
    [[ "$occur_bindings" == *'shift-return=LEM-YATH-BUFFER-LIST-OCCUR-VISIT meta-return=LEM-YATH-BUFFER-LIST-OCCUR-DISPLAY other=LEM-YATH-BUFFER-LIST-OCCUR-VISIT'* ]] &&
-   [[ "$occur_bindings" == *'next=LEM-YATH-BUFFER-LIST-OCCUR-NEXT previous=LEM-YATH-BUFFER-LIST-OCCUR-PREVIOUS control-next=LEM-YATH-BUFFER-LIST-OCCUR-NEXT control-previous=LEM-YATH-BUFFER-LIST-OCCUR-PREVIOUS quit=QUIT-ACTIVE-WINDOW'* ]]; then
-  pass occur-bindings "the effective Evil-Collection Occur navigation chords resolve locally"
+   [[ "$occur_bindings" == *'next=LEM-YATH-BUFFER-LIST-OCCUR-NEXT previous=LEM-YATH-BUFFER-LIST-OCCUR-PREVIOUS control-next=LEM-YATH-BUFFER-LIST-OCCUR-NEXT control-previous=LEM-YATH-BUFFER-LIST-OCCUR-PREVIOUS'* ]] &&
+   [[ "$occur_bindings" == *'edit=LEM-YATH-BUFFER-LIST-OCCUR-EDIT edit-toggle=LEM-YATH-BUFFER-LIST-OCCUR-EDIT rename=LEM-YATH-BUFFER-LIST-OCCUR-RENAME clone=LEM-YATH-BUFFER-LIST-OCCUR-CLONE quit=QUIT-ACTIVE-WINDOW'* ]]; then
+  pass occur-bindings "the effective Evil-Collection Occur lifecycle and navigation chords resolve locally"
 else
   fail occur-bindings "one or more Occur mode bindings diverged: $occur_bindings"
 fi
+
+# Evil-Collection exposes Occur Edit from Normal state.  Result-row edits must
+# propagate immediately, result undo must propagate back, and every non-row or
+# unsafe source mutation must fail before the two buffers can diverge.
+lem_keys "$session" i
+occur_edit_enter=$(report_occur_edit || true)
+if [[ "$occur_edit_enter" == *'mode=BUFFER-LIST-OCCUR-EDIT-MODE readonly=no modified=no'* ]] &&
+   [[ "$occur_edit_enter" == *'line-targets=5 live-line-targets=5'* ]]; then
+  pass occur-edit-enter "i entered a writable row-scoped Occur Edit session"
+else
+  fail occur-edit-enter "i did not establish the editable result contract: $occur_edit_enter"
+fi
+
+lem_keys "$session" F5 x
+occur_edit_delete=$(report_occur_edit || true)
+if [[ "$occur_edit_delete" == *'result='*'      2:eedle alpha mixed\n'* ]] &&
+   [[ "$occur_edit_delete" == *'alpha=zero\needle alpha mixed\nafter'* ]]; then
+  pass occur-edit-propagate "a Normal-state row deletion propagated immediately to its exact source line"
+else
+  fail occur-edit-propagate "the result and source diverged after x: $occur_edit_delete"
+fi
+
+lem_keys "$session" u
+occur_edit_undo=$(report_occur_edit || true)
+if [[ "$occur_edit_undo" == *'modified=no'*'result='*'      2:Needle alpha mixed\n'* ]] &&
+   [[ "$occur_edit_undo" == *'alpha=zero\nNeedle alpha mixed\nafter'* ]]; then
+  pass occur-edit-undo "u restored both the Occur row and its source"
+else
+  fail occur-edit-undo "result undo did not restore both buffers: $occur_edit_undo"
+fi
+
+lem_keys "$session" F5 F6 x
+occur_edit_read_only=$(report_occur_edit || true)
+if [[ "$occur_edit_read_only" == *'alpha-readonly=yes'* ]] &&
+   [[ "$occur_edit_read_only" == *'result='*'      2:Needle alpha mixed\n'* ]] &&
+   [[ "$occur_edit_read_only" == *'alpha=zero\nNeedle alpha mixed\nafter'* ]]; then
+  pass occur-edit-read-only "a read-only source refused before mutating the result row"
+else
+  fail occur-edit-read-only "read-only refusal left divergent text: $occur_edit_read_only"
+fi
+lem_keys "$session" F6
+
+lem_keys "$session" F5 F7 x
+occur_edit_rollback=$(report_occur_edit || true)
+if [[ "$occur_edit_rollback" == *'modified=no'*'result='*'      2:Needle alpha mixed\n'* ]] &&
+   [[ "$occur_edit_rollback" == *'alpha=zero\nNeedle alpha mixed\nafter'* ]]; then
+  pass occur-edit-rollback "a source-hook failure restored the attempted result mutation"
+else
+  fail occur-edit-rollback "source failure escaped the row transaction: $occur_edit_rollback"
+fi
+
+lem_keys "$session" F5 0 x
+occur_edit_prefix=$(report_occur_edit || true)
+if [[ "$occur_edit_prefix" == *'result='*'      2:Needle alpha mixed\n'* ]] &&
+   [[ "$occur_edit_prefix" == *'alpha=zero\nNeedle alpha mixed\nafter'* ]]; then
+  pass occur-edit-prefix "line-number prefixes remained protected in edit mode"
+else
+  fail occur-edit-prefix "a protected prefix mutation changed text: $occur_edit_prefix"
+fi
+
+lem_keys "$session" F5 i Enter
+lem_wait_for "$session" 'cannot create result rows' 10 >/dev/null || true
+lem_keys "$session" Escape
+sleep 0.2
+occur_edit_newline=$(report_occur_edit || true)
+if [[ "$occur_edit_newline" == *'mode=BUFFER-LIST-OCCUR-EDIT-MODE'* ]] &&
+   [[ "$occur_edit_newline" == *'result='*'      2:Needle alpha mixed\n'* ]] &&
+   [[ "$occur_edit_newline" == *'alpha=zero\nNeedle alpha mixed\nafter'* ]]; then
+  pass occur-edit-newline "newline insertion was refused and Escape returned only to Normal state"
+else
+  fail occur-edit-newline "newline refusal or modal Escape handling diverged: $occur_edit_newline"
+fi
+
+lem_keys "$session" F5 A
+tmux_cmd send-keys -t "$session" -l ' edit-probe'
+sleep 0.3
+lem_keys "$session" Escape
+sleep 0.2
+occur_edit_insert=$(report_occur_edit || true)
+if [[ "$occur_edit_insert" == *'mode=BUFFER-LIST-OCCUR-EDIT-MODE'* ]] &&
+   [[ "$occur_edit_insert" == *'result='*'      2:Needle alpha mixed edit-probe\n'* ]] &&
+   [[ "$occur_edit_insert" == *'alpha=zero\nNeedle alpha mixed edit-probe\nafter'* ]]; then
+  pass occur-edit-insert "Insert-state text propagated while the first Escape only normalized Vi state"
+else
+  fail occur-edit-insert "Insert-state propagation or Escape handling diverged: $occur_edit_insert"
+fi
+
+lem_keys "$session" u
+sleep 0.2
+occur_edit_insert_undo=$(report_occur_edit || true)
+if [[ "$occur_edit_insert_undo" == *'result='*'      2:Needle alpha mixed\n'* ]] &&
+   [[ "$occur_edit_insert_undo" == *'alpha=zero\nNeedle alpha mixed\nafter'* ]]; then
+  pass occur-edit-insert-undo "u reversed the complete Insert-state edit in both buffers"
+else
+  fail occur-edit-insert-undo "Insert-state undo left divergent text: $occur_edit_insert_undo"
+fi
+
+# A complete row deletion collapses both live ranges to a single point.  That
+# point must remain editable: otherwise an empty matched line could be created
+# but never populated again without leaving Occur Edit.
+lem_keys "$session" F5 D
+occur_edit_empty=$(report_occur_edit || true)
+if [[ "$occur_edit_empty" == *'result='*'      2:\n'* ]] &&
+   [[ "$occur_edit_empty" == *'alpha=zero\n\nafter'* ]]; then
+  pass occur-edit-empty "deleting a complete result row produced a synchronized zero-width edit target"
+else
+  fail occur-edit-empty "complete row deletion left divergent or non-empty text: $occur_edit_empty"
+fi
+
+lem_keys "$session" A
+tmux_cmd send-keys -t "$session" -l 'empty-probe'
+sleep 0.3
+lem_keys "$session" Escape
+sleep 0.2
+occur_edit_empty_insert=$(report_occur_edit || true)
+if [[ "$occur_edit_empty_insert" == *'result='*'      2:empty-probe\n'* ]] &&
+   [[ "$occur_edit_empty_insert" == *'alpha=zero\nempty-probe\nafter'* ]]; then
+  pass occur-edit-empty-insert "a collapsed Occur row remained writable and propagated its insertion"
+else
+  fail occur-edit-empty-insert "the zero-width edit target rejected or lost its insertion: $occur_edit_empty_insert"
+fi
+
+lem_keys "$session" u u
+sleep 0.2
+occur_edit_empty_undo=$(report_occur_edit || true)
+if [[ "$occur_edit_empty_undo" == *'result='*'      2:Needle alpha mixed\n'* ]] &&
+   [[ "$occur_edit_empty_undo" == *'alpha=zero\nNeedle alpha mixed\nafter'* ]]; then
+  pass occur-edit-empty-undo "undo restored both zero-width edit operations in the result and source"
+else
+  fail occur-edit-empty-undo "zero-width edit undo left divergent text: $occur_edit_empty_undo"
+fi
+
+lem_keys "$session" F4 x
+occur_edit_controls=$(report_occur_edit || true)
+if [[ "$occur_edit_controls" == *'result='*'      9:ontrol\\t\\x9B;\\x202E;needle\n'* ]] &&
+   [[ "$occur_edit_controls" == *'alpha=zero\nNeedle alpha mixed\nafter'*'ontrol'* ]]; then
+  pass occur-edit-controls "editing a control-safe row decoded its tab and Unicode controls back into source text"
+else
+  fail occur-edit-controls "control-safe row propagation diverged: $occur_edit_controls"
+fi
+lem_keys "$session" u
+sleep 0.2
+occur_edit_controls_undo=$(report_occur_edit || true)
+if [[ "$occur_edit_controls_undo" == *'result='*'      9:control\\t\\x9B;\\x202E;needle\n'* ]] &&
+   [[ "$occur_edit_controls_undo" == *'alpha=zero\nNeedle alpha mixed\nafter'*'control'* ]]; then
+  pass occur-edit-controls-undo "u restored the escaped row and its raw control-character source"
+else
+  fail occur-edit-controls-undo "control-safe undo left divergent text: $occur_edit_controls_undo"
+fi
+
+lem_keys "$session" C-x C-q
+occur_edit_cease=$(report_occur_edit || true)
+if [[ "$occur_edit_cease" == *'mode=BUFFER-LIST-OCCUR-MODE readonly=yes'* ]] &&
+   [[ "$occur_edit_cease" == *'alpha=zero\nNeedle alpha mixed\nafter'*'control'* ]]; then
+  pass occur-edit-cease "C-x C-q restored the read-only Occur result without losing undo propagation"
+else
+  fail occur-edit-cease "the edit session did not cease cleanly: $occur_edit_cease"
+fi
+
+lem_keys "$session" C-x C-q
+occur_edit_alias_enter=$(report_occur_edit || true)
+lem_keys "$session" C-c C-c
+occur_edit_alias_exit=$(report_occur_edit || true)
+if [[ "$occur_edit_alias_enter" == *'mode=BUFFER-LIST-OCCUR-EDIT-MODE readonly=no'* ]] &&
+   [[ "$occur_edit_alias_exit" == *'mode=BUFFER-LIST-OCCUR-MODE readonly=yes'* ]]; then
+  pass occur-edit-aliases "C-x C-q and C-c C-c provide the Evil-Collection edit lifecycle aliases"
+else
+  fail occur-edit-aliases "one Occur Edit lifecycle alias diverged: $occur_edit_alias_enter / $occur_edit_alias_exit"
+fi
+lem_keys "$session" g g
 
 lem_keys "$session" g j
 first_occur=$(report_occur || true)
@@ -2783,6 +2969,47 @@ if [[ "$source" == 'OCCUR-VISIT current=buffer-list-occur-alpha line=5 column=0'
 else
   fail occur-visit "Return visited the wrong source position: $source"
 fi
+
+# c must create an independently owned result at the same point.  Killing the
+# clone must leave the original's source markers valid, and r must derive the
+# same source-qualified name as occur-rename-buffer.
+lem_keys "$session" C-x b
+tmux_cmd send-keys -t "$session" -l '*Occur*'
+lem_keys "$session" Enter c
+occur_clone=$(report_occur_edit || true)
+if [[ "$occur_clone" == *'current=*Occur*<2> mode=BUFFER-LIST-OCCUR-MODE readonly=yes'* ]] &&
+   [[ "$occur_clone" == *'line=5 '* ]] &&
+   [[ "$occur_clone" == *'line-targets=5 live-line-targets=5'* ]] &&
+   [[ "$occur_clone" == *'owned='*'*Occur*'* ]] &&
+   [[ "$occur_clone" == *'*Occur*<2>'* ]]; then
+  pass occur-clone "c cloned the result at the same point with independent live line targets"
+else
+  fail occur-clone "the cloned result contract diverged: $occur_clone"
+fi
+
+lem_keys "$session" C-x k C-a C-k
+tmux_cmd send-keys -t "$session" -l '*Occur*<2>'
+lem_keys "$session" Enter C-x b
+tmux_cmd send-keys -t "$session" -l '*Occur*'
+lem_keys "$session" Enter
+occur_after_clone_kill=$(report_occur_edit || true)
+if [[ "$occur_after_clone_kill" == *'current=*Occur* mode=BUFFER-LIST-OCCUR-MODE readonly=yes'* ]] &&
+   [[ "$occur_after_clone_kill" == *'line-targets=5 live-line-targets=5'* ]] &&
+   [[ "$occur_after_clone_kill" != *'<2>'* ]]; then
+  pass occur-clone-ownership "killing the clone preserved every original source target"
+else
+  fail occur-clone-ownership "clone cleanup damaged or retained unexpected ownership: $occur_after_clone_kill"
+fi
+
+lem_keys "$session" r
+occur_renamed=$(report_occur_edit || true)
+if [[ "$occur_renamed" == *'current=*Occur: buffer-list-occur-alpha/buffer-list-occur-beta* mode=BUFFER-LIST-OCCUR-MODE readonly=yes'* ]] &&
+   [[ "$occur_renamed" == *'line-targets=5 live-line-targets=5'* ]]; then
+  pass occur-rename "r derived the source-qualified GNU Occur result name"
+else
+  fail occur-rename "the renamed result contract diverged: $occur_renamed"
+fi
+lem_keys "$session" F10 Enter
 
 # An uppercase regexp is case-sensitive under Emacs smart-case rules.  With no
 # ordinary marks, O must manufacture and retain the current row's > mark.
@@ -2873,8 +3100,8 @@ else
 fi
 
 occur_bounds=$(report_occur_bounds || true)
-if [[ "$occur_bounds" == 'OCCUR-BOUNDS per=yes total=yes preserved=yes' ]]; then
-  pass occur-resource-bounds "per-buffer and aggregate limits refused before replacing the prior result"
+if [[ "$occur_bounds" == 'OCCUR-BOUNDS per=yes total=yes clone-total=yes preserved=yes' ]]; then
+  pass occur-resource-bounds "initial and cloned scans enforce their resource limits before replacing the prior result"
 else
   fail occur-resource-bounds "one or more Occur resource bounds failed: $occur_bounds"
 fi

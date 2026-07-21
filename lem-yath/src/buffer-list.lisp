@@ -278,6 +278,9 @@ Each nonempty group begins with a distinct heading entry."
 (defvar *buffer-list-occur-mode-keymap*
   (make-keymap :description '*buffer-list-occur-mode-keymap*))
 
+(defvar *buffer-list-occur-edit-mode-keymap*
+  (make-keymap :description '*buffer-list-occur-edit-mode-keymap*))
+
 (define-attribute buffer-list-occur-title-attribute
   (t :foreground :base0D :bold t))
 
@@ -306,6 +309,10 @@ Each nonempty group begins with a distinct heading entry."
 (defstruct buffer-list-occur-row-spec
   start
   end
+  content-start
+  content-end
+  source
+  line
   block)
 
 (defstruct buffer-list-occur-attribute-spec
@@ -324,6 +331,13 @@ Each nonempty group begins with a distinct heading entry."
   start
   end)
 
+(defstruct buffer-list-occur-line-target
+  buffer
+  source-start
+  source-end
+  result-start
+  result-end)
+
 (define-major-mode buffer-list-occur-mode nil
     (:name "Occur"
      :keymap *buffer-list-occur-mode-keymap*)
@@ -332,9 +346,18 @@ Each nonempty group begins with a distinct heading entry."
         (variable-value 'highlight-line :buffer (current-buffer)) t
         (variable-value 'lem/show-paren:enable :buffer (current-buffer)) nil))
 
+(define-major-mode buffer-list-occur-edit-mode buffer-list-occur-mode
+    (:name "Occur-Edit"
+     :keymap *buffer-list-occur-edit-mode-keymap*)
+  (setf (buffer-read-only-p (current-buffer)) nil))
+
 (defmethod lem-vi-mode/core:mode-specific-keymaps
     ((mode buffer-list-occur-mode))
   (list *buffer-list-occur-mode-keymap*))
+
+(defmethod lem-vi-mode/core:mode-specific-keymaps
+    ((mode buffer-list-occur-edit-mode))
+  (list *buffer-list-occur-edit-mode-keymap*))
 
 (defvar *buffer-list-multi-isearch-mode-keymap*
   (make-keymap :description '*buffer-list-multi-isearch-mode-keymap*))
@@ -2242,6 +2265,10 @@ mark inside a collapsed group still participates.  Deletion marks never do."
             (push (make-buffer-list-occur-row-spec
                    :start row-start
                    :end (buffer-list-occur-render-state-length state)
+                   :content-start content-start
+                   :content-end (+ content-start (length display))
+                   :source source
+                   :line line
                    :block block)
                   (buffer-list-occur-render-state-rows state))))))))
 
@@ -2362,6 +2389,17 @@ mark inside a collapsed group still participates.  Deletion marks never do."
     (ignore-errors (delete-point (buffer-list-occur-target-start target)))
     (ignore-errors (delete-point (buffer-list-occur-target-end target)))))
 
+(defun buffer-list-occur-delete-line-targets (targets)
+  (dolist (target targets)
+    (ignore-errors
+      (delete-point (buffer-list-occur-line-target-source-start target)))
+    (ignore-errors
+      (delete-point (buffer-list-occur-line-target-source-end target)))
+    (ignore-errors
+      (delete-point (buffer-list-occur-line-target-result-start target)))
+    (ignore-errors
+      (delete-point (buffer-list-occur-line-target-result-end target)))))
+
 (defun buffer-list-occur-target-map (sources)
   (let ((map (make-hash-table :test #'eq))
         targets)
@@ -2397,9 +2435,39 @@ mark inside a collapsed group still participates.  Deletion marks never do."
         (error condition)))))
 
 (defun buffer-list-occur-cleanup-buffer (buffer)
-  (let ((targets (buffer-value buffer :lem-yath-buffer-list-occur-targets)))
-    (setf (buffer-value buffer :lem-yath-buffer-list-occur-targets) nil)
-    (buffer-list-occur-delete-targets targets)))
+  (let ((targets (buffer-value buffer :lem-yath-buffer-list-occur-targets))
+        (line-targets
+          (buffer-value buffer :lem-yath-buffer-list-occur-line-targets)))
+    (setf (buffer-value buffer :lem-yath-buffer-list-occur-targets) nil
+          (buffer-value buffer :lem-yath-buffer-list-occur-line-targets) nil)
+    (buffer-list-occur-delete-targets targets)
+    (buffer-list-occur-delete-line-targets line-targets)))
+
+(defun buffer-list-occur-source-point-at-offset (buffer offset insertion-type)
+  (let ((point (copy-point (buffer-start-point buffer) :temporary)))
+    (unless (move-to-position point (1+ offset))
+      (error "Stale Occur source offset ~d in ~a" offset (buffer-name buffer)))
+    (copy-point point insertion-type)))
+
+(defun buffer-list-occur-make-line-target (output row)
+  (let* ((source (buffer-list-occur-row-spec-source row))
+         (buffer (buffer-list-occur-source-buffer source))
+         (line (buffer-list-occur-row-spec-line row)))
+    (multiple-value-bind (_raw raw-start raw-end)
+        (buffer-list-occur-source-line-string source line)
+      (declare (ignore _raw))
+      (make-buffer-list-occur-line-target
+       :buffer buffer
+       :source-start
+       (buffer-list-occur-source-point-at-offset buffer raw-start :right-inserting)
+       :source-end
+       (buffer-list-occur-source-point-at-offset buffer raw-end :left-inserting)
+       :result-start
+       (buffer-list-occur-source-point-at-offset
+        output (buffer-list-occur-row-spec-content-start row) :right-inserting)
+       :result-end
+       (buffer-list-occur-source-point-at-offset
+        output (buffer-list-occur-row-spec-content-end row) :left-inserting)))))
 
 (defun buffer-list-occur-put-property (buffer start end property value)
   (let ((start-point (copy-point (buffer-start-point buffer) :temporary))
@@ -2433,8 +2501,11 @@ mark inside a collapsed group still participates.  Deletion marks never do."
           (kill-buffer buffer)))))
 
 (defun buffer-list-occur-install-output
-    (sources state text pattern context target-map targets)
-  (let ((buffer (buffer-list-occur-prepare-output-buffer sources))
+    (sources state text pattern context target-map targets &optional output-name)
+  (let ((buffer (if output-name
+                    (get-buffer output-name)
+                    (buffer-list-occur-prepare-output-buffer sources)))
+        (line-targets nil)
         (installed-p nil))
     (when (and buffer (not (buffer-list-occur-owned-buffer-p buffer)))
       (buffer-list-occur-delete-targets targets)
@@ -2442,7 +2513,8 @@ mark inside a collapsed group still participates.  Deletion marks never do."
                     *buffer-list-occur-buffer-name*))
     (unless buffer
       (setf buffer
-            (make-buffer *buffer-list-occur-buffer-name* :enable-undo-p nil)))
+            (make-buffer (or output-name *buffer-list-occur-buffer-name*)
+                         :enable-undo-p nil)))
     (unwind-protect
          (progn
            (buffer-list-occur-cleanup-buffer buffer)
@@ -2465,11 +2537,21 @@ mark inside a collapsed group still participates.  Deletion marks never do."
               (buffer-list-occur-row-spec-start row)
               (buffer-list-occur-row-spec-end row)
               :buffer-list-occur-targets
-              (gethash (buffer-list-occur-row-spec-block row) target-map)))
+              (gethash (buffer-list-occur-row-spec-block row) target-map))
+             (let ((target (buffer-list-occur-make-line-target buffer row)))
+               (push target line-targets)
+               (buffer-list-occur-put-property
+                buffer
+                (buffer-list-occur-row-spec-content-start row)
+                (buffer-list-occur-row-spec-content-end row)
+                :buffer-list-occur-edit-target
+                target)))
            (setf (buffer-value buffer :lem-yath-buffer-list-occur-owner)
                  +buffer-list-occur-owner+
                  (buffer-value buffer :lem-yath-buffer-list-occur-targets)
                  targets
+                 (buffer-value buffer :lem-yath-buffer-list-occur-line-targets)
+                 line-targets
                  (buffer-value buffer :lem-yath-buffer-list-occur-regexp)
                  pattern
                  (buffer-value buffer :lem-yath-buffer-list-occur-context)
@@ -2482,7 +2564,8 @@ mark inside a collapsed group still participates.  Deletion marks never do."
                  installed-p t)
            buffer)
       (unless installed-p
-        (buffer-list-occur-delete-targets targets)))))
+        (buffer-list-occur-delete-targets targets)
+        (buffer-list-occur-delete-line-targets line-targets)))))
 
 (defun buffer-list-occur-action-buffers (component)
   "Return ordinary marked buffers in GNU Ibuffer's reverse display order."
@@ -2570,7 +2653,9 @@ mark inside a collapsed group still participates.  Deletion marks never do."
     (buffer-list-occur-run component buffers pattern context)))
 
 (defun buffer-list-occur-current-targets ()
-  (unless (eq (buffer-major-mode (current-buffer)) 'buffer-list-occur-mode)
+  (unless (member (buffer-major-mode (current-buffer))
+                  '(buffer-list-occur-mode buffer-list-occur-edit-mode)
+                  :test #'eq)
     (editor-error "Not in an Occur buffer"))
   (let ((point (copy-point (current-point) :temporary)))
     (line-start point)
@@ -2630,6 +2715,258 @@ mark inside a collapsed group still participates.  Deletion marks never do."
 
 (define-command lem-yath-buffer-list-occur-previous () ()
   (buffer-list-occur-move -1))
+
+(defun buffer-list-occur-line-target-live-p (target)
+  (let ((buffer (buffer-list-occur-line-target-buffer target)))
+    (and buffer
+         (not (deleted-buffer-p buffer))
+         (eq buffer (get-buffer (buffer-name buffer)))
+         (alive-point-p (buffer-list-occur-line-target-source-start target))
+         (alive-point-p (buffer-list-occur-line-target-source-end target))
+         (alive-point-p (buffer-list-occur-line-target-result-start target))
+         (alive-point-p (buffer-list-occur-line-target-result-end target)))))
+
+(defun buffer-list-occur-edit-target-for-change (buffer point change)
+  (let* ((position (position-at-point point))
+         (change-end (+ position (if (integerp change) change 0))))
+    (find-if
+     (lambda (target)
+       (and (buffer-list-occur-line-target-live-p target)
+            (<= (position-at-point
+                 (buffer-list-occur-line-target-result-start target))
+                position)
+            (<= change-end
+                (position-at-point
+                 (buffer-list-occur-line-target-result-end target)))))
+     (buffer-value buffer :lem-yath-buffer-list-occur-line-targets))))
+
+(defun buffer-list-occur-edit-before-change (point change)
+  (let* ((buffer (point-buffer point))
+         (target
+           (buffer-list-occur-edit-target-for-change buffer point change)))
+    (unless target
+      (editor-error "Occur headings, prefixes, and row boundaries are read-only"))
+    (when (and (stringp change)
+               (find-if (lambda (character)
+                          (member character '(#\Newline #\Return)))
+                        change))
+      (editor-error "Occur Edit cannot create result rows"))
+    (let ((source (buffer-list-occur-line-target-buffer target)))
+      (when (buffer-read-only-p source)
+        (editor-error "Occur source buffer ~a is read-only"
+                      (buffer-name source))))
+    (let* ((row-start
+             (position-at-point
+              (buffer-list-occur-line-target-result-start target)))
+           (relative (- (position-at-point point) row-start))
+           (display
+             (points-to-string
+              (buffer-list-occur-line-target-result-start target)
+              (buffer-list-occur-line-target-result-end target)))
+           (proposed
+             (if (stringp change)
+                 (concatenate 'string
+                              (subseq display 0 relative)
+                              change
+                              (subseq display relative))
+                 (concatenate 'string
+                              (subseq display 0 relative)
+                              (subseq display (+ relative change))))))
+      (buffer-list-occur-replace-source-line
+       target (buffer-list-occur-decode-display-line proposed))
+      (setf (buffer-value buffer :lem-yath-buffer-list-occur-edit-pending)
+            target))))
+
+(defun buffer-list-occur-decode-display-line (display)
+  "Decode the control-safe Occur DISPLAY representation into source text."
+  (with-output-to-string (stream)
+    (loop :with index := 0
+          :while (< index (length display))
+          :for character := (char display index)
+          :do
+             (if (and (char= character #\\)
+                      (< (1+ index) (length display)))
+                 (let ((next (char display (1+ index))))
+                   (cond
+                     ((char= next #\\)
+                      (write-char #\\ stream)
+                      (incf index 2))
+                     ((char= next #\t)
+                      (write-char #\Tab stream)
+                      (incf index 2))
+                     ((char= next #\r)
+                      (write-char #\Return stream)
+                      (incf index 2))
+                     ((and (char= next #\x)
+                           (alexandria:when-let
+                               ((semicolon (position #\; display
+                                                     :start (+ index 2))))
+                             (let ((digits (subseq display (+ index 2)
+                                                   semicolon)))
+                               (and (plusp (length digits))
+                                    (every (lambda (digit)
+                                             (digit-char-p digit 16))
+                                           digits)
+                                    (progn
+                                      (write-char
+                                       (code-char (parse-integer digits
+                                                                 :radix 16))
+                                       stream)
+                                      (setf index (1+ semicolon)))))))
+                      nil)
+                     (t
+                      (write-char character stream)
+                      (incf index))))
+                 (progn
+                   (write-char character stream)
+                   (incf index))))))
+
+(defun buffer-list-occur-replace-source-line (target replacement)
+  (when (find #\Newline replacement)
+    (editor-error "Occur Edit cannot insert a source newline through an escaped row"))
+  (let* ((buffer (buffer-list-occur-line-target-buffer target))
+         (start (buffer-list-occur-line-target-source-start target))
+         (end (buffer-list-occur-line-target-source-end target))
+         (group (buffer-prepare-change-group buffer)))
+    (handler-case
+        (progn
+          (delete-between-points start end)
+          (insert-string start replacement)
+          (buffer-accept-change-group group))
+      (error (condition)
+        (when (buffer-change-group-active-p group)
+          (ignore-errors (buffer-cancel-change-group group)))
+        (error condition)))))
+
+(defun buffer-list-occur-edit-after-change (start end old-length)
+  (declare (ignore start end old-length))
+  (let* ((result (current-buffer))
+         (target
+           (buffer-value result :lem-yath-buffer-list-occur-edit-pending)))
+    (setf (buffer-value result :lem-yath-buffer-list-occur-edit-pending) nil)
+    (when target
+      (put-text-property
+       (buffer-list-occur-line-target-result-start target)
+       (buffer-list-occur-line-target-result-end target)
+       :buffer-list-occur-edit-target target)
+      (remove-text-property
+       (buffer-list-occur-line-target-result-start target)
+       (buffer-list-occur-line-target-result-end target)
+       :read-only))))
+
+(define-command lem-yath-buffer-list-occur-edit () ()
+  (let* ((buffer (current-buffer))
+         (targets
+           (buffer-value buffer :lem-yath-buffer-list-occur-line-targets)))
+    (unless (and (eq (buffer-major-mode buffer) 'buffer-list-occur-mode)
+                 targets)
+      (editor-error "This is not an editable Occur result"))
+    (unless (buffer-enable-undo-p buffer)
+      (buffer-enable-undo buffer))
+    (put-text-property (buffer-start-point buffer) (buffer-end-point buffer)
+                       :read-only t)
+    (dolist (target targets)
+      (when (buffer-list-occur-line-target-live-p target)
+        (remove-text-property
+         (buffer-list-occur-line-target-result-start target)
+         (buffer-list-occur-line-target-result-end target)
+         :read-only)))
+    (setf (buffer-read-only-p buffer) nil)
+    (change-buffer-mode buffer 'buffer-list-occur-edit-mode)
+    (add-hook (variable-value 'before-change-functions :buffer buffer)
+              'buffer-list-occur-edit-before-change)
+    (add-hook (variable-value 'after-change-functions :buffer buffer)
+              'buffer-list-occur-edit-after-change)
+    (message "Editing Occur: C-c C-c returns to Occur mode")))
+
+(define-command lem-yath-buffer-list-occur-cease-edit () ()
+  (let ((buffer (current-buffer)))
+    (unless (eq (buffer-major-mode buffer) 'buffer-list-occur-edit-mode)
+      (editor-error "Occur Edit is not active"))
+    (remove-hook (variable-value 'before-change-functions :buffer buffer)
+                 'buffer-list-occur-edit-before-change)
+    (remove-hook (variable-value 'after-change-functions :buffer buffer)
+                 'buffer-list-occur-edit-after-change)
+    (setf (buffer-value buffer :lem-yath-buffer-list-occur-edit-pending) nil)
+    (remove-text-property (buffer-start-point buffer) (buffer-end-point buffer)
+                          :read-only)
+    (setf (buffer-read-only-p buffer) t)
+    (change-buffer-mode buffer 'buffer-list-occur-mode)
+    (let ((state (lem-vi-mode/core:current-state)))
+      (when (and state
+                 (not (lem-vi-mode/core:state=
+                       state
+                       (lem-vi-mode/core:ensure-state
+                        'lem-vi-mode/states:normal))))
+        (lem-vi-mode/commands:vi-normal)))
+    (message "Switching to Occur mode")))
+
+(define-command lem-yath-buffer-list-occur-edit-escape () ()
+  (let ((state (lem-vi-mode/core:current-state)))
+    (if (and state
+             (not (lem-vi-mode/core:state=
+                   state
+                   (lem-vi-mode/core:ensure-state
+                    'lem-vi-mode/states:normal))))
+        (lem-vi-mode/commands:vi-normal)
+        (lem-yath-buffer-list-occur-cease-edit))))
+
+(define-command lem-yath-buffer-list-occur-rename () ()
+  (let* ((buffer (current-buffer))
+         (sources (buffer-value buffer :lem-yath-buffer-list-occur-sources)))
+    (unless (and (buffer-list-occur-owned-buffer-p buffer) sources)
+      (editor-error "This is not an owned Occur result"))
+    (unless (every #'buffer-list-multi-isearch-live-buffer-p sources)
+      (editor-error "Cannot rename Occur: source buffer was killed"))
+    (let ((name
+            (format nil "*Occur: ~{~a~^/~}*"
+                    (mapcar #'buffer-name sources))))
+      (buffer-rename buffer name)
+      (message "Renamed Occur result to ~a" name))))
+
+(defun buffer-list-occur-clone-sources (buffers pattern)
+  (let ((scanner (buffer-list-occur-scanner pattern))
+        (total-characters 0)
+        (remaining *buffer-list-occur-match-limit*)
+        sources)
+    (dolist (buffer buffers (nreverse sources))
+      (unless (buffer-list-multi-isearch-live-buffer-p buffer)
+        (editor-error "Cannot clone Occur: source buffer was killed"))
+      (incf total-characters (completion-buffer-size buffer))
+      (when (> total-characters *buffer-list-occur-total-character-limit*)
+        (editor-error "Cannot clone Occur: input exceeds ~d total characters"
+                      *buffer-list-occur-total-character-limit*))
+      (let ((source (buffer-list-occur-source-data buffer scanner remaining)))
+        (decf remaining (buffer-list-occur-source-match-count source))
+        (push source sources)))))
+
+(define-command lem-yath-buffer-list-occur-clone () ()
+  (let* ((original (current-buffer))
+         (position (position-at-point (current-point)))
+         (pattern
+           (buffer-value original :lem-yath-buffer-list-occur-regexp))
+         (context
+           (buffer-value original :lem-yath-buffer-list-occur-context))
+         (buffers
+           (buffer-value original :lem-yath-buffer-list-occur-sources)))
+    (unless (and (buffer-list-occur-owned-buffer-p original) pattern buffers)
+      (editor-error "This is not a cloneable Occur result"))
+    (let ((sources (buffer-list-occur-clone-sources buffers pattern))
+          (name (buffer-list-emacs-unique-name original)))
+      (multiple-value-bind (state text total)
+          (buffer-list-occur-render-output sources pattern context)
+        (when (zerop total)
+          (editor-error "Cannot clone Occur: sources no longer match"))
+        (multiple-value-bind (target-map targets)
+            (buffer-list-occur-target-map sources)
+          (let ((clone
+                  (buffer-list-occur-install-output
+                   sources state text pattern context target-map targets name)))
+            (switch-to-buffer clone)
+            (move-to-position
+             (current-point)
+             (min position (position-at-point (buffer-end-point clone))))
+            (message "Cloned Occur result as ~a" (buffer-name clone))))))))
 
 (defun buffer-list-occur-kill-buffer-hook (buffer)
   (when (buffer-list-occur-owned-buffer-p buffer)
@@ -3967,10 +4304,31 @@ through later selected buffers without wrapping."
   'lem-yath-buffer-list-occur-next)
 (define-key *buffer-list-occur-mode-keymap* "p"
   'lem-yath-buffer-list-occur-previous)
+(define-key *buffer-list-occur-mode-keymap* "i"
+  'lem-yath-buffer-list-occur-edit)
+(define-key *buffer-list-occur-mode-keymap* "C-x C-q"
+  'lem-yath-buffer-list-occur-edit)
+(define-key *buffer-list-occur-mode-keymap* "r"
+  'lem-yath-buffer-list-occur-rename)
+(define-key *buffer-list-occur-mode-keymap* "c"
+  'lem-yath-buffer-list-occur-clone)
 (define-key *buffer-list-occur-mode-keymap* "q" 'quit-active-window)
 (define-key *buffer-list-occur-mode-keymap* "Z Z" 'quit-active-window)
 (define-key *buffer-list-occur-mode-keymap* "Z Q"
   'lem-vi-mode/commands:vi-quit)
+
+(define-key *buffer-list-occur-edit-mode-keymap* "C-x C-q"
+  'lem-yath-buffer-list-occur-cease-edit)
+(define-key *buffer-list-occur-edit-mode-keymap* "C-c C-c"
+  'lem-yath-buffer-list-occur-cease-edit)
+(define-key *buffer-list-occur-edit-mode-keymap* "Escape"
+  'lem-yath-buffer-list-occur-edit-escape)
+(define-key *buffer-list-occur-edit-mode-keymap* "Z Z"
+  'lem-yath-buffer-list-occur-cease-edit)
+(define-key *buffer-list-occur-edit-mode-keymap* "Z Q"
+  'lem-yath-buffer-list-occur-cease-edit)
+(define-key *buffer-list-occur-edit-mode-keymap* "C-o"
+  'lem-yath-buffer-list-occur-display)
 
 (define-key *buffer-list-multi-isearch-mode-keymap* "C-s"
   'lem-yath-buffer-list-multi-isearch-next)

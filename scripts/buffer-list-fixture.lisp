@@ -413,6 +413,96 @@
                             (buffer-end-point occur)))
          ""))))
 
+(defun buffer-list-test-occur-line-target-at-point ()
+  (buffer-list-occur-edit-target-for-change
+   (current-buffer) (current-point) 0))
+
+(defun buffer-list-test-occur-position-source-line (source line)
+  (let ((target
+          (find-if
+           (lambda (target)
+             (and (eq source (buffer-list-occur-line-target-buffer target))
+                  (= line
+                     (line-number-at-point
+                      (buffer-list-occur-line-target-source-start target)))))
+           (buffer-value (current-buffer)
+                         :lem-yath-buffer-list-occur-line-targets))))
+    (unless (and target (buffer-list-occur-line-target-live-p target))
+      (editor-error "No live Occur row for source line ~d" line))
+    (move-point (current-point)
+                (buffer-list-occur-line-target-result-start target))))
+
+(define-command lem-yath-test-buffer-list-occur-first-edit-row () ()
+  (buffer-list-test-occur-position-source-line
+   *buffer-list-test-occur-alpha* 2))
+
+(define-command lem-yath-test-buffer-list-occur-control-edit-row () ()
+  (buffer-list-test-occur-position-source-line
+   *buffer-list-test-occur-alpha* 9))
+
+(define-command lem-yath-test-buffer-list-restore-occur-name () ()
+  (buffer-rename (current-buffer) *buffer-list-occur-buffer-name*))
+
+(define-command lem-yath-test-buffer-list-occur-edit-state () ()
+  (let* ((result (current-buffer))
+         (target (ignore-errors
+                   (buffer-list-test-occur-line-target-at-point)))
+         (line-targets
+           (buffer-value result :lem-yath-buffer-list-occur-line-targets))
+         (owned
+           (remove-if-not #'buffer-list-occur-owned-buffer-p (buffer-list))))
+    (buffer-list-test-log
+     "OCCUR-EDIT current=~a mode=~a readonly=~a modified=~a line=~d column=~d target-source=~a target-line=~d line-targets=~d live-line-targets=~d owned=~{~a~^,~} alpha-readonly=~a alpha-modified=~a result=~a alpha=~a beta=~a"
+     (completion-path-display-string (buffer-name result))
+     (buffer-major-mode result)
+     (if (buffer-read-only-p result) "yes" "no")
+     (if (buffer-modified-p result) "yes" "no")
+     (line-number-at-point (current-point))
+     (point-column (current-point))
+     (if target
+         (completion-path-display-string
+          (buffer-name (buffer-list-occur-line-target-buffer target)))
+         "none")
+     (if target
+         (line-number-at-point
+          (buffer-list-occur-line-target-source-start target))
+         0)
+     (length line-targets)
+     (count-if #'buffer-list-occur-line-target-live-p line-targets)
+     (mapcar (lambda (buffer)
+               (completion-path-display-string (buffer-name buffer)))
+             owned)
+     (if (buffer-read-only-p *buffer-list-test-occur-alpha*) "yes" "no")
+     (if (buffer-modified-p *buffer-list-test-occur-alpha*) "yes" "no")
+     (completion-path-display-string
+      (points-to-string (buffer-start-point result) (buffer-end-point result)))
+     (completion-path-display-string
+      (points-to-string (buffer-start-point *buffer-list-test-occur-alpha*)
+                        (buffer-end-point *buffer-list-test-occur-alpha*)))
+     (completion-path-display-string
+      (points-to-string (buffer-start-point *buffer-list-test-occur-beta*)
+                        (buffer-end-point *buffer-list-test-occur-beta*))))))
+
+(define-command lem-yath-test-buffer-list-occur-toggle-source-read-only () ()
+  (let* ((target (or (buffer-list-test-occur-line-target-at-point)
+                     (editor-error "Point is not on an editable Occur row")))
+         (source (buffer-list-occur-line-target-buffer target)))
+    (setf (buffer-read-only-p source) (not (buffer-read-only-p source)))))
+
+(defun buffer-list-test-occur-refuse-source-change (point change)
+  (declare (ignore change))
+  (let ((buffer (point-buffer point)))
+    (remove-hook (variable-value 'before-change-functions :buffer buffer)
+                 'buffer-list-test-occur-refuse-source-change))
+  (editor-error "Fixture refused source change"))
+
+(define-command lem-yath-test-buffer-list-occur-refuse-next-source-change () ()
+  (let* ((target (or (buffer-list-test-occur-line-target-at-point)
+                     (editor-error "Point is not on an editable Occur row")))
+         (source (buffer-list-occur-line-target-buffer target)))
+    (add-hook (variable-value 'before-change-functions :buffer source)
+              'buffer-list-test-occur-refuse-source-change)))
+
 (define-command lem-yath-test-buffer-list-occur-shift-source () ()
   (let* ((target (first (buffer-list-occur-current-targets)))
          (buffer (buffer-list-occur-target-buffer target)))
@@ -465,11 +555,19 @@
              (buffer-list-test-occur-refused-p
               (lambda ()
                 (buffer-list-occur-run
-                 nil (list *buffer-list-test-occur-alpha*) "Needle" 0))))))
+                 nil (list *buffer-list-test-occur-alpha*) "Needle" 0)))))
+         (clone-total-p
+           (let ((*buffer-list-occur-buffer-character-limit*
+                   most-positive-fixnum)
+                 (*buffer-list-occur-total-character-limit* 1))
+             (buffer-list-test-occur-refused-p
+              (lambda ()
+                (lem-yath-buffer-list-occur-clone))))))
     (buffer-list-test-log
-     "OCCUR-BOUNDS per=~a total=~a preserved=~a"
+     "OCCUR-BOUNDS per=~a total=~a clone-total=~a preserved=~a"
      (if per-buffer-p "yes" "no")
      (if total-p "yes" "no")
+     (if clone-total-p "yes" "no")
      (if (and occur
               (string= before
                        (points-to-string (buffer-start-point occur)
@@ -591,7 +689,7 @@
 
 (define-command lem-yath-test-buffer-list-occur-bindings () ()
   (buffer-list-test-log
-   "OCCUR-BINDINGS return=~a control-return=~a shift-return=~a meta-return=~a other=~a next=~a previous=~a control-next=~a control-previous=~a quit=~a"
+   "OCCUR-BINDINGS return=~a control-return=~a shift-return=~a meta-return=~a other=~a next=~a previous=~a control-next=~a control-previous=~a edit=~a edit-toggle=~a rename=~a clone=~a quit=~a"
    (buffer-list-test-binding "Return")
    (buffer-list-test-binding "C-c C-c")
    (buffer-list-test-binding "S-Return")
@@ -601,6 +699,10 @@
    (buffer-list-test-binding "g k")
    (buffer-list-test-binding "C-j")
    (buffer-list-test-binding "C-k")
+   (buffer-list-test-binding "i")
+   (buffer-list-test-binding "C-x C-q")
+   (buffer-list-test-binding "r")
+   (buffer-list-test-binding "c")
    (buffer-list-test-binding "q")))
 
 (define-command lem-yath-test-buffer-list-select-occur-window () ()
@@ -957,6 +1059,22 @@
   'lem-yath-test-buffer-list-occur-bounds)
 (define-key *buffer-list-occur-mode-keymap* "F9"
   'lem-yath-test-buffer-list-occur-source-zero-match)
+(define-key *buffer-list-occur-mode-keymap* "F10"
+  'lem-yath-test-buffer-list-restore-occur-name)
+(define-key *buffer-list-occur-edit-mode-keymap* "F4"
+  'lem-yath-test-buffer-list-occur-control-edit-row)
+(define-key *buffer-list-occur-edit-mode-keymap* "F5"
+  'lem-yath-test-buffer-list-occur-first-edit-row)
+(define-key *buffer-list-occur-edit-mode-keymap* "F6"
+  'lem-yath-test-buffer-list-occur-toggle-source-read-only)
+(define-key *buffer-list-occur-edit-mode-keymap* "F7"
+  'lem-yath-test-buffer-list-occur-refuse-next-source-change)
+(define-key *buffer-list-occur-edit-mode-keymap* "F8"
+  'lem-yath-test-buffer-list-occur-edit-state)
+(define-key *buffer-list-occur-mode-keymap* "C-c e"
+  'lem-yath-test-buffer-list-occur-edit-state)
+(define-key *buffer-list-occur-edit-mode-keymap* "C-c e"
+  'lem-yath-test-buffer-list-occur-edit-state)
 (define-key *buffer-list-multi-isearch-mode-keymap* "F5"
   'lem-yath-test-buffer-list-multi-isearch-state)
 (define-key *global-keymap* "F12"

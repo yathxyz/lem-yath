@@ -1143,7 +1143,14 @@ through the ncurses editor.
   retain the previous result, zero matches remove it, source edits move retained
   targets, and killed sources fail closed. Scanning is capped at 16 million
   characters per buffer and 64 million total, 10,000 matches, and 2 MiB of
-  output.
+  output. `i` and `C-x C-q` enter row-scoped Occur Edit. Vi insertion/deletion
+  and native undo update the exact live source line transactionally; protected
+  headings, prefixes and row boundaries, newline-created rows, read-only
+  sources, and source-hook rejection fail before divergence. Control-safe rows
+  decode on write-through, and collapsed empty rows remain writable with `A`.
+  `C-x C-q`, `C-c C-c`, `ZZ`, and `ZQ` cease editing. `r` derives a name from
+  the live sources, and `c` rescans them into an independently owned clone with
+  separate navigation and edit markers.
   The effective Evil Collection `M-s a C-s` and `M-s a M-C-s` chords start
   literal or regexp incremental search over explicit ordinary marks in display
   order, excluding `D`, and refuse an empty marked set. Input pauses in the
@@ -1164,9 +1171,8 @@ through the ncurses editor.
   Regexp replacement expands `\&`, `\1`–`\9`, `\\`, and a per-buffer `\#`
   count. Read-only target sets, invalid regexps or replacement directives, and
   regexps with empty matches fail before mutation.
-  Ibuffer's predicate filters, compound/saved filter operations, other-frame,
-  view-and-eval, Occur
-  edit/rename/clone, shell, eval, and print operations are not reproduced.
+  Ibuffer's arbitrary Emacs-Lisp predicate filters, other-frame, view-and-eval,
+  shell, eval, and print operations are not reproduced.
   Marked-buffer regexp query-replace omits GNU Lisp-evaluated `\,`, per-match
   `\?` editing, zero-width matching, and the advanced `^`, `u/U`, `e/E`, and
   recursive-edit response paths.

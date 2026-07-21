@@ -397,8 +397,14 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   read-only `*Occur*` result supports multiline matches, numeric context,
   same-line grouping, live source points, Return/`g o` visits,
   `M-Return` no-select display, and `gj/gk` or `C-j/C-k` match navigation while
-  leaving the chooser selected when first displayed. Invalid regexps preserve
-  the previous result, zero matches remove it, and killed sources fail closed.
+  leaving the chooser selected when first displayed. `i` or `C-x C-q` enters
+  row-scoped Occur Edit: Vi edits and native undo write through to exact live
+  source lines, including escaped control characters and zero-width rows, while
+  headings, prefixes, row creation, read-only sources, and rejected source
+  changes fail before the result can diverge. `C-x C-q`, `C-c C-c`, `ZZ`, or
+  `ZQ` returns to read-only Occur; `r` derives a source-qualified name and `c`
+  creates an independently owned live clone. Invalid regexps preserve the
+  previous result, zero matches remove it, and killed sources fail closed.
   `M-s a C-s` and `M-s a M-C-s` start literal or regexp incremental search over
   explicit ordinary marks in display order, excluding `D`. Input pauses in the
   first buffer; `C-s`/`C-r` continue and wrap through the marked set, Return
