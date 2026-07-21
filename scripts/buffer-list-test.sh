@@ -2478,9 +2478,9 @@ else
   fail query-read-only-preflight "Q did not fail closed on a read-only marked buffer"
 fi
 
-# Invalid and empty-matching regexps fail while Ibuffer is still present.  A
-# valid regexp is case-insensitive like ibuffer-case-fold-search; q exits only
-# beta's per-buffer query after the first accepted match.
+# Invalid regexps fail while Ibuffer is still present.  Empty matches make
+# bounded forward progress like GNU perform-replace, and a valid consuming
+# regexp remains case-insensitive like ibuffer-case-fold-search.
 lem_keys "$session" U
 lem_keys "$session" s n
 tmux_cmd send-keys -t "$session" -l 'buffer-list-query-beta'
@@ -2504,19 +2504,41 @@ if lem_wait_for "$session" 'Query replace regexp' 10 >/dev/null; then
   tmux_cmd send-keys -t "$session" -l 'prefix'
   lem_keys "$session" Enter
 fi
-if lem_wait_for "$session" 'Ibuffer query-replace refuses a regexp with empty matches' 10 >/dev/null; then
-  pass query-empty-regexp "I refused an empty-matching regexp before entering its query loop"
+if lem_wait_for "$session" 'y/n/!' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l '!'
+fi
+if lem_wait_for "$session" 'Query replace finished; 4 replacements in 1 buffer' 10 >/dev/null; then
+  query_empty_regexp=$(report_query_state || true)
+  if [[ "$query_empty_regexp" == *'beta=modified:writable:prefixfoo beta one\nprefixbar 42\nprefixBAR 99\nprefix'* ]]; then
+    pass query-empty-regexp "I matched every line start, including the empty final line, like GNU perform-replace"
+  else
+    fail query-empty-regexp "zero-width regexp replacement produced unexpected text: $query_empty_regexp"
+  fi
 else
-  fail query-empty-regexp "I did not fail closed on an empty-matching regexp"
+  fail query-empty-regexp "I did not finish the bounded zero-width replacement"
 fi
 
-lem_keys "$session" I
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'buffer-list-query-beta'
+lem_keys "$session" Enter Enter u
+beta_empty_undo=$(report_current || true)
+if [[ "$beta_empty_undo" == *'text=foo beta one\nbar 42\nBAR 99\n'* ]]; then
+  pass query-empty-regexp-undo "one undo restored every zero-width replacement"
+else
+  fail query-empty-regexp-undo "zero-width replacements did not remain one undo unit: $beta_empty_undo"
+fi
+
+lem_keys "$session" C-x C-b
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'buffer-list-query-beta'
+lem_keys "$session" Enter I
 if lem_wait_for "$session" 'Query replace regexp' 10 >/dev/null; then
   tmux_cmd send-keys -t "$session" -l 'bar [0-9]+'
   lem_keys "$session" Enter
   tmux_cmd send-keys -t "$session" -l 'num'
   lem_keys "$session" Enter
 fi
+
 if lem_wait_for "$session" 'bar 42' 10 >/dev/null &&
    lem_wait_for "$session" 'Replace "bar.*with "num"' 10 >/dev/null; then
   lem_keys "$session" y
@@ -2544,6 +2566,60 @@ if [[ "$beta_regexp_undo" == *'text=foo beta one\nbar 42\nBAR 99\n'* ]]; then
   pass query-regexp-undo "one undo restored the regexp query replacement"
 else
   fail query-regexp-undo "regexp query replacement was not one undo unit: $beta_regexp_undo"
+fi
+
+# GNU's in-loop response state is live rather than a yes/no prompt.  Comma
+# replaces without advancing; u can undo that current replacement; ^ revisits
+# the prior match; U restores all accepted matches and rewinds to the oldest;
+# e transfers match case while E applies the edited replacement literally.
+lem_keys "$session" C-x C-b U o a
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'buffer-list-query-alpha'
+lem_keys "$session" Enter Q
+if lem_wait_for "$session" 'Query replace' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l 'foo'
+  lem_keys "$session" Enter
+  tmux_cmd send-keys -t "$session" -l 'zap'
+  lem_keys "$session" Enter
+fi
+if lem_wait_for "$session" 'Replace "foo" with "zap"' 10 >/dev/null; then
+  lem_keys "$session" , u y y
+  if lem_wait_for "$session" 'foo alpha three' 10 >/dev/null; then
+    lem_keys "$session" '^' u y
+  fi
+  if lem_wait_for "$session" 'foo alpha three' 10 >/dev/null; then
+    lem_keys "$session" U n
+  fi
+  if lem_wait_for "$session" 'FOO alpha two' 10 >/dev/null; then
+    lem_keys "$session" e C-a C-k
+    tmux_cmd send-keys -t "$session" -l 'changed'
+    lem_keys "$session" Enter
+  fi
+  if lem_wait_for "$session" 'foo alpha three' 10 >/dev/null; then
+    lem_keys "$session" E C-a C-k
+    tmux_cmd send-keys -t "$session" -l 'Exact'
+    lem_keys "$session" Enter
+  fi
+fi
+if lem_wait_for "$session" 'Query replace finished; 2 replacements in 1 buffer' 10 >/dev/null; then
+  query_responses=$(report_query_state || true)
+  if [[ "$query_responses" == *'alpha=modified:writable:foo alpha one\nCHANGED alpha two\nExact alpha three\n'* ]]; then
+    pass query-advanced-responses "comma, ^, u/U, e, and E retained GNU's live per-buffer response semantics"
+  else
+    fail query-advanced-responses "advanced response state produced unexpected text: $query_responses"
+  fi
+else
+  fail query-advanced-responses "the advanced response sequence did not finish with two replacements"
+fi
+
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'buffer-list-query-alpha'
+lem_keys "$session" Enter Enter u
+alpha_response_undo=$(report_current || true)
+if [[ "$alpha_response_undo" == *'text=foo alpha one\nFOO alpha two\nfoo alpha three\n'* ]]; then
+  pass query-advanced-undo "one Normal undo restored the complete query despite in-loop undo and rewind"
+else
+  fail query-advanced-undo "advanced response edits escaped the single buffer undo unit: $alpha_response_undo"
 fi
 
 # GNU regexp replacement expands the whole match, groups, the per-command

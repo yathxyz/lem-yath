@@ -415,15 +415,18 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   visibly marking the current row when no ordinary marks exist. Each buffer is
   queried from its beginning with the chooser hidden; `y`/Space replaces,
   `n`/Backspace skips, `!` replaces the rest of only that buffer, `q`/Return
-  moves on, and `.` replaces once before moving on. The chooser, focus, marks,
-  source window, and point return afterward, and each affected buffer is one
-  undo unit. Lowercase searches transfer lower, all-caps, or initial-cap case
-  patterns; uppercase searches are case-sensitive and keep exact replacement
-  case. Regexp replacement expands `\&`, `\1`–`\9`, `\\`, and a per-buffer
-  `\#` count. Read-only sets, invalid regexps or replacement directives, and
-  regexps with empty matches fail before mutation. GNU Lisp-evaluated `\,`,
-  per-match `\?` editing, zero-width replacement, and advanced interactive
-  actions remain gaps.
+  moves on, and `.` replaces once before moving on. `,` replaces without
+  advancing, `^` backs up, `u`/`U` undo the latest/all live replacements, and
+  `e`/`E` edit the current replacement with transferred/exact case. The
+  chooser, focus, marks, source window, and point return afterward, and each
+  affected buffer is one undo unit, including after in-loop undo. Lowercase
+  searches transfer lower, all-caps, or initial-cap case patterns; uppercase
+  searches are case-sensitive and keep exact replacement case. Regexp
+  replacement expands `\&`, `\1`–`\9`, `\\`, and a per-buffer `\#` count,
+  and zero-width matches make GNU-style forward progress. Read-only sets and
+  invalid regexps or replacement directives fail before mutation. GNU
+  Lisp-evaluated `\,`, per-match `\?` directives, recursive edit, and the diff
+  response remain gaps.
 - project-scoped LSP lifecycle: canonical-root isolation, in-flight startup
   deduplication and timeout, explicit buffer ownership with save-as migration,
   project-wide restart, bounded shutdown/disposal, graceful exit when responsive,

@@ -1165,17 +1165,19 @@ through the ncurses editor.
   source window, point, focus, filters, and marks intact. `y`/Space replaces,
   `n`/Backspace skips, `!` replaces the rest of the current buffer without
   leaking into the next, `q`/Return advances, and `.` replaces once before
-  advancing. Each affected target has one undo unit. Lowercase searches fold
-  case and transfer lower, all-caps, or initial-cap patterns; unescaped
-  uppercase searches are case-sensitive and retain exact replacement case.
-  Regexp replacement expands `\&`, `\1`–`\9`, `\\`, and a per-buffer `\#`
-  count. Read-only target sets, invalid regexps or replacement directives, and
-  regexps with empty matches fail before mutation.
+  advancing. `,` replaces without advancing; `^` backs up; `u`/`U` undo the
+  latest/all live replacements; and `e`/`E` edit the current replacement with
+  transferred/exact case. Each affected target has one undo unit, including
+  after in-loop undo. Lowercase searches fold case and transfer lower,
+  all-caps, or initial-cap patterns; unescaped uppercase searches are
+  case-sensitive and retain exact replacement case. Regexp replacement expands
+  `\&`, `\1`–`\9`, `\\`, and a per-buffer `\#` count. Zero-width matches make
+  GNU-style progress. Read-only target sets and invalid regexps or replacement
+  directives fail before mutation.
   Ibuffer's arbitrary Emacs-Lisp predicate filters, other-frame, view-and-eval,
   shell, eval, and print operations are not reproduced.
   Marked-buffer regexp query-replace omits GNU Lisp-evaluated `\,`, per-match
-  `\?` editing, zero-width matching, and the advanced `^`, `u/U`, `e/E`, and
-  recursive-edit response paths.
+  `\?` directives, recursive edit, and the diff response.
   CL-PPCRE regexp syntax can differ from Emacs regexp syntax. Content filters
   skip buffers above 16 million characters, and mode completion uses
   package-qualified labels.
@@ -3938,9 +3940,8 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   rollback, ordinary save, and stale-row refusal. Lem-yath also adds marked-buffer
   literal and regexp incremental isearch through the effective Evil Collection
   chords described in §4, plus the marked-buffer literal/regexp query-replace
-  coordinator described there. GNU's Lisp-evaluated and per-match-edited
-  replacement forms, zero-width matching, and advanced interactive response
-  map remain gaps.
+  coordinator described there. GNU's Lisp-evaluated and `\?` replacement
+  forms, recursive edit, and the diff response remain gaps.
 - **Multiple cursors**: core support. `src/cursors.lisp` + `src/commands/multiple-cursors.lisp`
   (`add-cursors-to-next-line`, bound `M-C`); isearch can add cursors at matches.
 - **Markdown preview**: yes, `preview` generic in markdown-mode (§8), plus literate
