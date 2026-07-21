@@ -209,7 +209,10 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   whose `s` command visits the defining form
 - completion candidates keep display, filtering, and insertion text separate;
   final insertion and post-accept callbacks are explicit, tracked replacement
-  ranges survive filtering, and stale asynchronous results are rejected
+  ranges survive filtering, and stale asynchronous results are rejected.
+  Corfu-style `M-h` documentation remains open for `C-M-v` forward scrolling
+  and `C-M-Shift-v` reverse scrolling; ncurses also exposes `M-PageUp` because
+  legacy terminals cannot distinguish a shifted control letter
 - an Embark-style, typed action dispatcher on `SPC e a` covers contiguous
   regions—including Evil Visual Blocks expanded exactly like the pinned
   Evil/Embark path—URLs, existing local files, identifiers, buffers, native mode

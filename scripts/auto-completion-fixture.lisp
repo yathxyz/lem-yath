@@ -183,7 +183,11 @@
       (lambda (context)
         (show-message
          (lem/markdown-buffer:markdown-buffer
-          "CORFU DOCUMENTATION SENTINEL")
+          (with-output-to-string (stream)
+            (format stream "CORFU DOCUMENTATION SENTINEL~%")
+            (dotimes (index 80)
+              (format stream "DOC-LINE-~2,'0d completion documentation~%"
+                      (1+ index)))))
          :style '(:gravity :vertically-adjacent-window
                   :offset-y -1 :offset-x 1)
          :source-window
@@ -1137,7 +1141,12 @@
       (dolist (binding '(("M-Tab" lem-yath-corfu-expand)
                          ("C-M-i" lem-yath-corfu-expand)
                          ("M-g" lem-yath-corfu-info-location)
-                         ("M-h" lem-yath-corfu-info-documentation)))
+                         ("M-h" lem-yath-corfu-info-documentation)
+                         ("C-M-v" lem-yath-corfu-info-scroll-forward)
+                         ("C-M-Shift-v"
+                          lem-yath-corfu-info-scroll-backward)
+                         ("M-PageUp"
+                          lem-yath-corfu-info-scroll-backward)))
         (check (eq (auto-test-key-command
                     lem/completion-mode::*completion-mode-keymap*
                     (first binding))

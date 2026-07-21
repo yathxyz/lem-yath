@@ -198,8 +198,10 @@ else
     'could not prepare the M-Tab preview scenario'
 fi
 
-# Explicit documentation uses the provider's exact rendered Markdown buffer,
-# then restores the completion layout before the following command.
+# Explicit documentation uses the provider's exact rendered Markdown buffer.
+# Like pinned Corfu, C-M-v and C-M-Shift-v scroll that other window without
+# dismissing it.  Legacy terminals collapse shifted control letters, so exercise
+# the terminal-safe M-PageUp alias for the reverse direction in this ncurses test.
 if setup_info_popup; then
   lem_keys "$session" F4
   if wait_report '^MESSAGE CLEARED$' 5 &&
@@ -207,16 +209,33 @@ if setup_info_popup; then
     lem_keys "$session" M-h
     sleep 0.3
     info_screen=$(lem_capture "$session")
+    info_top=$(grep -o 'DOC-LINE-[0-9][0-9]' <<<"$info_screen" | head -1 | cut -d- -f3)
+    lem_keys "$session" C-M-v
+    sleep 0.3
+    forward_screen=$(lem_capture "$session")
+    forward_top=$(grep -o 'DOC-LINE-[0-9][0-9]' <<<"$forward_screen" | head -1 | cut -d- -f3)
+    lem_keys "$session" M-PageUp
+    sleep 0.3
+    backward_screen=$(lem_capture "$session")
+    backward_top=$(grep -o 'DOC-LINE-[0-9][0-9]' <<<"$backward_screen" | head -1 | cut -d- -f3)
     info_state=$(report_corfu_state || true)
     restored_screen=$(lem_capture "$session")
     if grep -q 'CORFU DOCUMENTATION SENTINEL' <<<"$info_screen" &&
-       ! grep -q 'CORFU DOCUMENTATION SENTINEL' <<<"$restored_screen" &&
+       grep -q 'DOC-LINE-' <<<"$forward_screen" &&
+       grep -q 'DOC-LINE-' <<<"$backward_screen" &&
+       [[ "$info_top" =~ ^[0-9]+$ ]] &&
+       [[ "$forward_top" =~ ^[0-9]+$ ]] &&
+       [[ "$backward_top" =~ ^[0-9]+$ ]] &&
+       (( 10#$forward_top > 10#$info_top )) &&
+       (( 10#$backward_top < 10#$forward_top )) &&
+       ! grep -qE 'CORFU DOCUMENTATION SENTINEL|DOC-LINE-' \
+         <<<"$restored_screen" &&
        grep -q 'context=T buffer="doc".*selected="documentAlpha"' <<<"$info_state"; then
       pass corfu-documentation \
-        'M-h showed provider documentation and restored the live popup layout'
+        'M-h documentation scrolled both ways and restored the live popup layout'
     else
       fail corfu-documentation \
-        "M-h documentation or restoration diverged: $info_state"
+        "M-h documentation or restoration diverged: tops=$info_top/$forward_top/$backward_top; $info_state"
     fi
   else
     fail corfu-documentation \

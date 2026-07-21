@@ -836,6 +836,11 @@ completion range boundary, then retain ordinary source-line motion when
 already at that boundary. `C-v`/`PageDown` and `M-v`/`PageUp` move forward or
 backward by the configured ten-row Corfu page without wrapping; the shared
 prompt path uses Vertico's configured twenty-row page.
+`M-h` promotes the selected provider's rendered documentation into an ordinary
+split. `C-M-v` and `C-M-Shift-v` scroll that split by a windowful without
+dismissing it, and `M-PageUp` is the ncurses-safe reverse alias because legacy
+terminals collapse shifted control letters. A subsequent unrelated command
+closes the information split and restores the still-live completion popup.
 Typing, deletion, movement, ordinary Space, and electric/Paredit commands commit
 that semantic selection before the command runs.  `M-Space` instead clears the
 selection, inserts one separator, and refilters without accepting it.

@@ -77,6 +77,8 @@
     lem-yath-corfu-expand
     lem-yath-corfu-info-location
     lem-yath-corfu-info-documentation
+    lem-yath-corfu-info-scroll-forward
+    lem-yath-corfu-info-scroll-backward
     lem-yath-corfu-meta-next
     lem-yath-corfu-meta-previous
     lem-yath-corfu-reset
@@ -941,8 +943,36 @@ directory already exists."
 
 (defun auto-completion-info-pre-command ()
   "Restore the layout before the command following Corfu information."
-  (when *auto-completion-info-window*
+  (when (and *auto-completion-info-window*
+             (not
+              (member
+               (and (this-command) (command-name (this-command)))
+               '(lem-yath-corfu-info-scroll-forward
+                 lem-yath-corfu-info-scroll-backward))))
     (auto-completion-close-info)))
+
+(defun auto-completion-info-scroll (direction argument)
+  "Scroll the transient Corfu information window in DIRECTION.
+
+Without ARGUMENT, move by one windowful minus two context rows.  A numeric
+prefix scrolls that many rows; a negative prefix reverses DIRECTION."
+  (let ((window *auto-completion-info-window*))
+    (unless (and window (not (deleted-window-p window)))
+      (editor-error "No Corfu information window is visible"))
+    (let* ((page-size (max 1 (- (window-height window) 2)))
+           (amount (* direction (or argument page-size))))
+      (if (minusp amount)
+          (lem-core/commands/window:scroll-up (- amount) window)
+          (lem-core/commands/window:scroll-down amount window))
+      (redraw-display :force t))))
+
+(define-command lem-yath-corfu-info-scroll-forward (argument) (:universal-nil)
+  "Scroll Corfu documentation forward like Emacs `scroll-other-window'."
+  (auto-completion-info-scroll 1 argument))
+
+(define-command lem-yath-corfu-info-scroll-backward (argument) (:universal-nil)
+  "Scroll Corfu documentation backward like `scroll-other-window-down'."
+  (auto-completion-info-scroll -1 argument))
 
 (define-command lem-yath-corfu-expand () ()
   "Expand the common candidate prefix like Corfu's default M-Tab."
@@ -1369,6 +1399,12 @@ already active prompt boundary, LINE-COMMAND retains ordinary line motion."
   "M-g" 'lem-yath-corfu-info-location)
 (define-key lem/completion-mode::*completion-mode-keymap*
   "M-h" 'lem-yath-corfu-info-documentation)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "C-M-v" 'lem-yath-corfu-info-scroll-forward)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "C-M-Shift-v" 'lem-yath-corfu-info-scroll-backward)
+(define-key lem/completion-mode::*completion-mode-keymap*
+  "M-PageUp" 'lem-yath-corfu-info-scroll-backward)
 (define-key lem/completion-mode::*completion-mode-keymap*
   'move-to-end-of-buffer 'lem-yath-corfu-last)
 (define-key lem/completion-mode::*completion-mode-keymap*

@@ -433,6 +433,8 @@ ten-row page with `C-v`/`PageDown` and `M-v`/`PageUp`. `M-TAB` expands the
 common prefix unless the current candidate is explicitly previewed, in which
 case it completes that candidate. `M-h` requests the selected candidate's
 `company-doc-buffer`, which Eglot supplies from completion documentation, and
+keeps that information window for the default `C-M-v`/`C-M-Shift-v`
+`scroll-other-window` commands before restoring it on an unrelated command.
 `M-g` requests `company-location`. Of the configured providers, Cape file
 completion supplies locations, while Eglot and Cape Dabbrev do not.
 
