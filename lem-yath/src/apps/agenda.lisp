@@ -123,8 +123,18 @@ items remain immutable so projections can add reminder rows safely.")
   "Extracts optional start and end times from active timestamp contents.")
 
 (defvar *timestamp-repeater-scanner*
-  (ppcre:create-scanner "(?:^|\\s)([.+]*\\+[0-9]+[dDwWmMyY])(?:\\s|$)")
+  (ppcre:create-scanner "(?:^|\\s)([.+]*\\+[0-9]+[hHdDwWmMyY])(?:\\s|$)")
   "Extracts a supported Org repeater cookie.")
+
+(defvar *agenda-plain-time-scanner*
+  (ppcre:create-scanner
+   "(?i)((?:[012]?[0-9](?::[0-5][0-9](?:am|pm)?|am|pm))(?:--?(?:[012]?[0-9](?::[0-5][0-9](?:am|pm)?|am|pm)))?)")
+  "Matches Org's ordinary headline time or time range forms.")
+
+(defvar *agenda-plain-time-component-scanner*
+  (ppcre:create-scanner
+   "(?i)^([012]?[0-9])(?::([0-5][0-9]))?(am|pm)?$")
+  "Parses one component of an ordinary Org headline time.")
 
 (defun agenda-existing-directory (directory)
   (ignore-errors
@@ -170,16 +180,26 @@ items remain immutable so projections can add reminder rows safely.")
     (values (nreverse files) (nreverse failures))))
 
 (defun agenda-item-with-planning (item kind date suffix)
-  (make-agenda-item
-   :keyword (agenda-item-keyword item)
-   :text (agenda-item-text item)
-   :file (agenda-item-file item)
-   :line (agenda-item-line item)
-   :heading (agenda-item-heading item)
-   :date date
-   :kind kind
-   :event-p nil
-   :planning-suffix suffix))
+  (multiple-value-bind (timestamp-time timestamp-end-time)
+      (agenda-timestamp-times suffix)
+    (multiple-value-bind (heading-time heading-end-time start end)
+        (unless timestamp-time
+          (agenda-heading-time-spec (agenda-item-text item)))
+      (make-agenda-item
+       :keyword (agenda-item-keyword item)
+       :text (if start
+                 (agenda-remove-heading-time
+                  (agenda-item-text item) start end)
+                 (agenda-item-text item))
+       :file (agenda-item-file item)
+       :line (agenda-item-line item)
+       :heading (agenda-item-heading item)
+       :date date
+       :kind kind
+       :event-p nil
+       :time (or timestamp-time heading-time)
+       :end-time (or timestamp-end-time heading-end-time)
+       :planning-suffix suffix))))
 
 (defun agenda-timestamp-field (scanner contents)
   (multiple-value-bind (start end registers register-ends)
@@ -199,6 +219,97 @@ items remain immutable so projections can add reminder rows safely.")
        (and (aref registers 1)
             (subseq contents
                     (aref registers 1) (aref register-ends 1)))))))
+
+(defun agenda-heading-position-in-opaque-time-context-p (text position)
+  "Return true when POSITION is inside a timestamp or bracketed Org link."
+  (flet ((inside-p (open close)
+           (let ((opening (position open text :end position :from-end t))
+                 (closing (position close text :end position :from-end t)))
+             (and opening (or (null closing) (> opening closing))))))
+    (or (inside-p #\< #\>) (inside-p #\[ #\]))))
+
+(defun agenda-heading-time-boundary-p (text start end)
+  "Return true when START..END is not embedded in an Org word."
+  (flet ((word-character-p (character)
+           (or (alphanumericp character) (char= character #\_))))
+    (and (or (zerop start)
+             (not (word-character-p (char text (1- start)))))
+         (or (= end (length text))
+             (not (word-character-p (char text end)))))))
+
+(defun agenda-normalize-plain-time (time)
+  "Normalize one stock Org plain TIME to a 24-hour H:MM string."
+  (multiple-value-bind (start end registers register-ends)
+      (ppcre:scan *agenda-plain-time-component-scanner* time)
+    (declare (ignore end))
+    (unless start (error "Invalid Org headline time ~s" time))
+    (let* ((hour
+             (parse-integer time
+                            :start (aref registers 0)
+                            :end (aref register-ends 0)))
+           (minute
+             (if (aref registers 1)
+                 (parse-integer time
+                                :start (aref registers 1)
+                                :end (aref register-ends 1))
+                 0))
+           (suffix
+             (and (aref registers 2)
+                  (string-downcase
+                   (subseq time
+                           (aref registers 2)
+                           (aref register-ends 2)))))
+           (normalized-hour
+             (cond
+               ((null suffix) hour)
+               ((string= suffix "am") (if (= hour 12) 0 hour))
+               ((= hour 12) 12)
+               (t (+ hour 12)))))
+      (format nil "~d:~2,'0d" normalized-hour minute))))
+
+(defun agenda-heading-time-spec (text)
+  "Return normalized start/end, plus exact removable bounds, from TEXT."
+  (loop :with offset := 0
+        :while (< offset (length text))
+        :do (multiple-value-bind (start end registers register-ends)
+                (ppcre:scan *agenda-plain-time-scanner* text :start offset)
+              (declare (ignore start))
+              (unless (and registers (aref registers 0)) (return))
+              (let ((match-start (aref registers 0))
+                    (match-end (aref register-ends 0)))
+                (if (or (not (agenda-heading-time-boundary-p
+                              text match-start match-end))
+                        (agenda-heading-position-in-opaque-time-context-p
+                         text match-start))
+                    (setf offset end)
+                    (let* ((raw (subseq text match-start match-end))
+                           (separator (ppcre:scan "--?" raw))
+                           (first (if separator (subseq raw 0 separator) raw))
+                           (second
+                             (and separator
+                                  (subseq raw
+                                          (+ separator
+                                             (if (and (< (1+ separator)
+                                                         (length raw))
+                                                      (char= (char raw
+                                                                   (1+ separator))
+                                                             #\-))
+                                                 2 1))))))
+                      (loop :while (and (< match-end (length text))
+                                        (member (char text match-end)
+                                                '(#\Space #\Tab)))
+                            :do (incf match-end))
+                      (return
+                        (values (agenda-normalize-plain-time first)
+                                (and second
+                                     (agenda-normalize-plain-time second))
+                                match-start match-end))))))))
+
+(defun agenda-remove-heading-time (text start end)
+  (string-trim '(#\Space #\Tab)
+               (concatenate 'string
+                            (subseq text 0 start)
+                            (subseq text end))))
 
 (defun agenda-parse-active-timestamp (contents)
   "Return DATE, START-TIME, END-TIME, and REPEATER from CONTENTS."
@@ -242,29 +353,33 @@ items remain immutable so projections can add reminder rows safely.")
 
 (defun agenda-item-with-event
     (item spec source-line-number source-line &optional heading-line-p)
-  (make-agenda-item
-   :keyword (agenda-item-keyword item)
-   :text (if (and heading-line-p (null (getf spec :end-date)))
-             (string-trim
-              '(#\Space #\Tab)
-              (ppcre:regex-replace-all
-               (ppcre:quote-meta-chars (getf spec :raw))
-               (agenda-item-text item) ""))
-             (agenda-item-text item))
-   :file (agenda-item-file item)
-   :line (agenda-item-line item)
-   :heading (agenda-item-heading item)
-   :date (getf spec :date)
-   :kind "TIMESTAMP"
-   :event-p t
-   :end-date (getf spec :end-date)
-   :repeater (getf spec :repeater)
-   :time (getf spec :time)
-   :end-time (getf spec :end-time)
-   :timestamp-line source-line-number
-   :timestamp-source-line source-line
-   :timestamp-start (getf spec :start)
-   :timestamp-raw (getf spec :raw)))
+  (let ((text
+          (if (and heading-line-p (null (getf spec :end-date)))
+              (string-trim
+               '(#\Space #\Tab)
+               (ppcre:regex-replace-all
+                (ppcre:quote-meta-chars (getf spec :raw))
+                (agenda-item-text item) ""))
+              (agenda-item-text item))))
+    (multiple-value-bind (heading-time heading-end-time start end)
+        (unless (getf spec :time) (agenda-heading-time-spec text))
+      (make-agenda-item
+       :keyword (agenda-item-keyword item)
+       :text (if start (agenda-remove-heading-time text start end) text)
+       :file (agenda-item-file item)
+       :line (agenda-item-line item)
+       :heading (agenda-item-heading item)
+       :date (getf spec :date)
+       :kind "TIMESTAMP"
+       :event-p t
+       :end-date (getf spec :end-date)
+       :repeater (getf spec :repeater)
+       :time (or (getf spec :time) heading-time)
+       :end-time (or (getf spec :end-time) heading-end-time)
+       :timestamp-line source-line-number
+       :timestamp-source-line source-line
+       :timestamp-start (getf spec :start)
+       :timestamp-raw (getf spec :raw)))))
 
 (defun parse-org-stream (in path)
   "Return parsed agenda items and, as a second value, parser warnings.
@@ -608,7 +723,7 @@ Ordinary active timestamps belong to their containing visible heading."
 (defun agenda-repeater-parts (repeater)
   (when repeater
     (multiple-value-bind (start end registers register-ends)
-        (ppcre:scan "^[.+]*\\+([0-9]+)([dDwWmMyY])$" repeater)
+        (ppcre:scan "^[.+]*\\+([0-9]+)([hHdDwWmMyY])$" repeater)
       (declare (ignore end))
       (when start
         (values
@@ -656,6 +771,36 @@ Ordinary active timestamps belong to their containing visible heading."
           (agenda-item-occurrence-count occurrence) count)
     occurrence))
 
+(defun agenda-hour-repeater-occurrences (item today horizon amount)
+  "Expand ITEM's AMOUNT-hour repeater into one stock agenda row per date."
+  (alexandria:when-let ((time-value (agenda-item-time-value item)))
+    (multiple-value-bind (year month day)
+        (agenda-date-components (agenda-item-date item))
+      (multiple-value-bind (today-year today-month today-day)
+          (agenda-date-components today)
+        (let* ((hour (floor time-value 100))
+               (minute (mod time-value 100))
+               (base-time
+                 (encode-universal-time 0 minute hour day month year))
+               (range-start
+                 (encode-universal-time
+                  0 0 0 today-day today-month today-year))
+               (step (* amount 60 60))
+               (estimate
+                 (max 0 (1- (floor (- range-start base-time) step))))
+               (last-date nil)
+               (occurrences '()))
+          (loop :for index :from estimate
+                :for occurrence-time := (+ base-time (* index step))
+                :for date := (iso-date-for-time occurrence-time)
+                :while (string<= date horizon)
+                :when (and (not (string< date today))
+                           (not (equal date last-date)))
+                  :do (push (agenda-item-occurrence item date)
+                            occurrences)
+                      (setf last-date date))
+          (nreverse occurrences))))))
+
 (defun agenda-event-occurrences (item today horizon)
   "Expand ITEM into event rows intersecting TODAY through HORIZON."
   (let ((base (agenda-item-date item))
@@ -678,13 +823,16 @@ Ordinary active timestamps belong to their containing visible heading."
       (repeater
        (multiple-value-bind (amount unit) (agenda-repeater-parts repeater)
          (when (and amount (plusp amount))
-           (loop :with start :=
-                   (agenda-repeater-start-index base today amount unit)
-                 :for index :from start
-                 :for date :=
-                   (agenda-add-calendar base (* index amount) unit)
-                 :while (string<= date horizon)
-                 :collect (agenda-item-occurrence item date)))))
+           (if (char= unit #\h)
+               (agenda-hour-repeater-occurrences
+                item today horizon amount)
+               (loop :with start :=
+                       (agenda-repeater-start-index base today amount unit)
+                     :for index :from start
+                     :for date :=
+                       (agenda-add-calendar base (* index amount) unit)
+                     :while (string<= date horizon)
+                     :collect (agenda-item-occurrence item date))))))
       ((and (not (string< base today)) (string<= base horizon))
        (list (agenda-item-occurrence item base))))))
 
@@ -1400,17 +1548,36 @@ EXPECTED-HEADING prevents a stale agenda row from changing a different line."
   "Choose the best post-refresh row for a just-edited planning field."
   (let* ((preferred-date
            (org-planning-field-date heading preferred-kind))
+         (preferred-time
+           (and preferred-date
+                (multiple-value-bind (date suffix)
+                    (org-planning-field-components heading preferred-kind)
+                  (declare (ignore date))
+                  (or (nth-value 0 (agenda-timestamp-times suffix))
+                      (nth-value
+                       0 (agenda-heading-time-spec
+                          (line-string heading)))))))
          (other-kind (if (string= preferred-kind "DEADLINE")
                          "SCHEDULED"
                          "DEADLINE"))
          (other-date (and (null preferred-date)
-                          (org-planning-field-date heading other-kind))))
+                          (org-planning-field-date heading other-kind)))
+         (other-time
+           (and other-date
+                (multiple-value-bind (date suffix)
+                    (org-planning-field-components heading other-kind)
+                  (declare (ignore date))
+                  (or (nth-value 0 (agenda-timestamp-times suffix))
+                      (nth-value
+                       0 (agenda-heading-time-spec
+                          (line-string heading))))))))
     (let ((default-key
             (cond
               (preferred-date
-               (list file line preferred-kind preferred-date nil nil nil))
+               (list file line preferred-kind preferred-date
+                     preferred-time nil nil))
               (other-date
-               (list file line other-kind other-date nil nil nil))
+               (list file line other-kind other-date other-time nil nil))
               (t
                (list file line nil nil nil nil nil)))))
       (if *agenda-planning-restore-key-function*

@@ -289,7 +289,7 @@ printf '%s\n' \
   '** Delete child sentinel' \
   'Delete child body sentinel.' \
   '* TODO Delete one-line sentinel' \
-  '* TODO Date shift planning sentinel' \
+  '* TODO Date shift planning sentinel 9:30-10:15' \
   'SCHEDULED: <2026-07-10 Fri>' \
   '* Date shift event sentinel <2026-07-14 Tue>--<2026-07-15 Wed>' \
   '* Time shift event sentinel <2026-07-13 Mon 23:30-23:45>' \

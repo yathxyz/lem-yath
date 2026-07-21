@@ -50,7 +50,7 @@ printf '%s\n' \
   'DEADLINE: <2026-07-11 Sat>' \
   '* TODO Today deadline sentinel' \
   'DEADLINE: <2026-07-12 Sun>' \
-  '* TODO Tomorrow deadline sentinel' \
+  '* TODO Tomorrow deadline sentinel 6am' \
   'DEADLINE: <2026-07-13 Mon>' \
   '* TODO Boundary deadline sentinel' \
   'DEADLINE: <2026-07-26 Sun>' \
@@ -101,6 +101,8 @@ static_ok=1
 grep -qE '^ROW section=OVERDUE source=2026-07-11 display=2026-07-11 .*Past deadline sentinel.*\[DEADLINE 2026-07-11\]' "$LEM_YATH_AGENDA_REMINDER_REPORT" || static_ok=0
 grep -qE '^ROW section=TODAY source=2026-07-11 display=2026-07-12 .*reminder=DEADLINE-OVERDUE days=1 .*Past deadline sentinel.*\[ 1 d\. ago: 2026-07-11\]' "$LEM_YATH_AGENDA_REMINDER_REPORT" || static_ok=0
 grep -qE '^ROW section=TODAY source=2026-07-13 display=2026-07-12 .*reminder=DEADLINE-UPCOMING days=1 .*Tomorrow deadline sentinel.*\[In   1 d\.: 2026-07-13\]' "$LEM_YATH_AGENDA_REMINDER_REPORT" || static_ok=0
+grep -qE '^ROW section=TODAY source=2026-07-13 display=2026-07-12 .*reminder=DEADLINE-UPCOMING days=1 time=none end=none .*Tomorrow deadline sentinel' "$LEM_YATH_AGENDA_REMINDER_REPORT" || static_ok=0
+grep -qE '^ROW section=UPCOMING source=2026-07-13 display=2026-07-13 .*reminder=none days=none time=6:00 end=none .*Tomorrow deadline sentinel' "$LEM_YATH_AGENDA_REMINDER_REPORT" || static_ok=0
 grep -qE '^ROW section=TODAY source=2026-07-26 display=2026-07-12 .*reminder=DEADLINE-UPCOMING days=14 .*Boundary deadline sentinel.*\[In  14 d\.: 2026-07-26\]' "$LEM_YATH_AGENDA_REMINDER_REPORT" || static_ok=0
 grep -qE '^ROW section=TODAY source=2026-07-14 display=2026-07-12 .*reminder=DEADLINE-UPCOMING days=2 .*Explicit warning sentinel' "$LEM_YATH_AGENDA_REMINDER_REPORT" || static_ok=0
 grep -qE '^ROW section=TODAY source=2026-07-10 display=2026-07-12 .*reminder=SCHEDULED-PAST days=2 .*Scheduled past sentinel.*\[Sched\. 2x: 2026-07-10\]' "$LEM_YATH_AGENDA_REMINDER_REPORT" || static_ok=0

@@ -52,7 +52,17 @@
             (parse-integer time :start (1+ colon)))))
 
 (defun agenda-view-test-timeline ()
-  (let ((tokens '()))
+  (let ((tokens '())
+        (target-date nil))
+    (with-point ((point (buffer-start-point (current-buffer))))
+      (loop
+        (when (text-property-at point :agenda-grid-kind)
+          (setf target-date
+                (text-property-at point :agenda-display-date))
+          (return))
+        (unless (line-offset point 1) (return))))
+    (unless target-date
+      (setf target-date (agenda-view-date-at-point)))
     (with-point ((point (buffer-start-point (current-buffer))))
       (loop
         (let ((grid-kind (text-property-at point :agenda-grid-kind))
@@ -65,7 +75,11 @@
                            (if (eq grid-kind :line) "grid" "now")
                            grid-time)
                    tokens))
-            (time
+            ((and time
+                  (or (null target-date)
+                      (equal target-date
+                             (text-property-at point
+                                               :agenda-display-date))))
              (push (format nil "item-~a~@[-~a~]"
                            (agenda-view-test-time-token time)
                            (and end-time
@@ -73,6 +87,16 @@
                    tokens))))
         (unless (line-offset point 1) (return))))
     (nreverse tokens)))
+
+(defun agenda-view-test-matching-dates (needle)
+  (let ((dates '()))
+    (with-point ((point (buffer-start-point (current-buffer))))
+      (loop
+        (when (and (text-property-at point :agenda-file)
+                   (search needle (line-string point)))
+          (push (text-property-at point :agenda-display-date) dates))
+        (unless (line-offset point 1) (return))))
+    (nreverse dates)))
 
 (defun agenda-view-test-log-state (label)
   (let* ((state (agenda-view-state))
@@ -93,7 +117,10 @@
        (and clock (agenda-clock-report-end-date clock))
        (and clock (agenda-clock-report-minutes clock))))
     (agenda-view-test-log
-     "TIMELINE ~a ~{~a~^,~}" label (agenda-view-test-timeline))))
+     "TIMELINE ~a ~{~a~^,~}" label (agenda-view-test-timeline))
+    (agenda-view-test-log
+     "HOURLY ~a dates=~{~a~^,~}"
+     label (agenda-view-test-matching-dates "Hourly repeat sentinel"))))
 
 (defmacro define-agenda-view-test-log-command (name label)
   `(define-command ,name () () (agenda-view-test-log-state ,label)))
@@ -154,6 +181,9 @@
 (define-command lem-yath-test-view-point-second () ()
   (agenda-view-test-log-point "second"))
 
+(define-command lem-yath-test-view-point-third () ()
+  (agenda-view-test-log-point "third"))
+
 (let ((keymap *lem-yath-agenda-mode-keymap*))
   (define-key keymap "C-c z 0" 'lem-yath-test-view-initial)
   (define-key keymap "C-c z 1" 'lem-yath-test-view-week)
@@ -172,4 +202,5 @@
   (define-key keymap "C-c z e" 'lem-yath-test-view-emacs-keys)
   (define-key keymap "C-c z g" 'lem-yath-test-view-goto-grid)
   (define-key keymap "C-c z p" 'lem-yath-test-view-point-first)
-  (define-key keymap "C-c z P" 'lem-yath-test-view-point-second))
+  (define-key keymap "C-c z P" 'lem-yath-test-view-point-second)
+  (define-key keymap "C-c z q" 'lem-yath-test-view-point-third))

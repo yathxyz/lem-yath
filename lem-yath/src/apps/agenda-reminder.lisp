@@ -42,7 +42,9 @@
   (let ((reminder (copy-agenda-item item)))
     (setf (agenda-item-display-date reminder) today
           (agenda-item-reminder-kind reminder) kind
-          (agenda-item-reminder-days reminder) days)
+          (agenda-item-reminder-days reminder) days
+          (agenda-item-time reminder) nil
+          (agenda-item-end-time reminder) nil)
     reminder))
 
 (defun agenda-item-priority-value (item)

@@ -37,13 +37,15 @@
                    (concatenate
                     'string
                     "ROW section=~a source=~a display=~a kind=~a "
-                    "reminder=~a days=~a text=~s")
+                    "reminder=~a days=~a time=~a end=~a text=~s")
                    section
                    (or (text-property-at point :agenda-date) "none")
                    (or (text-property-at point :agenda-display-date) "none")
                    (or (text-property-at point :agenda-kind) "none")
                    (or (text-property-at point :agenda-reminder-kind) "none")
                    (or (text-property-at point :agenda-reminder-days) "none")
+                   (or (text-property-at point :agenda-time) "none")
+                   (or (text-property-at point :agenda-end-time) "none")
                    text)))
           :unless (line-offset point 1)
             :do (agenda-reminder-test-log "DONE rows=~d" count)

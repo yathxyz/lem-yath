@@ -67,6 +67,15 @@ printf '%s\n' \
   'SCHEDULED: <2026-07-17 Fri>' \
   '* Late grid sentinel <2026-07-17 Fri 10:00>' \
   '* Early grid range sentinel <2026-07-17 Fri 9:00-10:30>' \
+  '* Hourly repeat sentinel <2026-07-17 Fri 08:30 +36h>' \
+  '* TODO Headline morning sentinel 9:30-10:15' \
+  'SCHEDULED: <2026-07-17 Fri>' \
+  '* TODO Headline lunch sentinel 12pm--1:05pm' \
+  'DEADLINE: <2026-07-17 Fri>' \
+  '* TODO Planning stamp sentinel 7am' \
+  'SCHEDULED: <2026-07-17 Fri 11:20-11:50>' \
+  '* TODO Link time sentinel [[https://example.test/9:45][clock]]' \
+  'SCHEDULED: <2026-07-17 Fri>' \
   '* TODO Sunday view sentinel' \
   'DEADLINE: <2026-07-19 Sun>' \
   '* TODO Next Monday view sentinel' \
@@ -114,11 +123,15 @@ wait_report '^POINT first ' || true
 send_keys g j
 send_keys C-c z P
 wait_report '^POINT second ' || true
-if grep -q '^POINT first grid=NIL file=yes time=9:00 end=10:30 .*Early grid range sentinel' "$LEM_YATH_AGENDA_VIEW_REPORT" &&
-   grep -q '^POINT second grid=NIL file=yes time=10:00 end=NIL .*Late grid sentinel' "$LEM_YATH_AGENDA_VIEW_REPORT"; then
-  pass grid-motion 'gj skipped grid decorations and retained range metadata'
+send_keys g j
+send_keys C-c z q
+wait_report '^POINT third ' || true
+if grep -q '^POINT first grid=NIL file=yes time=08:30 end=NIL .*Hourly repeat sentinel' "$LEM_YATH_AGENDA_VIEW_REPORT" &&
+   grep -q '^POINT second grid=NIL file=yes time=9:00 end=10:30 .*Early grid range sentinel' "$LEM_YATH_AGENDA_VIEW_REPORT" &&
+   grep -q '^POINT third grid=NIL file=yes time=9:30 end=10:15 .*Headline morning sentinel' "$LEM_YATH_AGENDA_VIEW_REPORT"; then
+  pass grid-motion 'gj skipped decorations and retained event/headline time metadata'
 else
-  fail grid-motion 'grid rows captured motion or lost source-backed time metadata'
+  fail grid-motion 'grid rows captured motion or source-backed time metadata was lost'
 fi
 
 send_keys g D w
@@ -131,7 +144,12 @@ grep -q '^STATE week span=week start=2026-07-13 end=2026-07-19 .*point-date=2026
 grep -q '2026-07-13|.*Monday view sentinel' "$LEM_YATH_AGENDA_VIEW_REPORT" || week_ok=0
 grep -q '2026-07-19|.*Sunday view sentinel' "$LEM_YATH_AGENDA_VIEW_REPORT" || week_ok=0
 grep -q 'Early grid range sentinel.*\[EVENT 2026-07-17 9:00-10:30\]' "$LEM_YATH_AGENDA_VIEW_REPORT" || week_ok=0
-grep -q '^TIMELINE week grid-0800,item-0900-1030,grid-1000,item-1000,grid-1200,now-1300,grid-1400,grid-1600,grid-1800,grid-2000$' "$LEM_YATH_AGENDA_VIEW_REPORT" || week_ok=0
+grep -q 'Headline morning sentinel  \[SCHEDULED 2026-07-17 9:30-10:15\]' "$LEM_YATH_AGENDA_VIEW_REPORT" || week_ok=0
+grep -q 'Headline lunch sentinel  \[DEADLINE 2026-07-17 12:00-13:05\]' "$LEM_YATH_AGENDA_VIEW_REPORT" || week_ok=0
+grep -q 'Planning stamp sentinel 7am  \[SCHEDULED 2026-07-17 11:20-11:50\]' "$LEM_YATH_AGENDA_VIEW_REPORT" || week_ok=0
+grep -q 'Link time sentinel .*9:45.*\[SCHEDULED 2026-07-17\]' "$LEM_YATH_AGENDA_VIEW_REPORT" || week_ok=0
+grep -q '^TIMELINE week grid-0800,item-0830,item-0900-1030,item-0930-1015,grid-1000,item-1000,item-1120-1150,grid-1200,item-1200-1305,now-1300,grid-1400,grid-1600,grid-1800,grid-2000$' "$LEM_YATH_AGENDA_VIEW_REPORT" || week_ok=0
+grep -q '^HOURLY week dates=2026-07-17,2026-07-18$' "$LEM_YATH_AGENDA_VIEW_REPORT" || week_ok=0
 if [ "$week_ok" = 1 ]; then
   pass week-view 'gD w aligned to Monday and rendered all seven date sections'
 else
@@ -142,10 +160,12 @@ send_keys g D t
 lem_wait_for "$session" 'Fortnight 2026-07-13..2026-07-26' 30 >/dev/null || true
 send_keys C-c z f
 wait_report '^STATE fortnight ' || true
-if grep -q '^STATE fortnight span=fortnight start=2026-07-13 end=2026-07-26 .*point-date=2026-07-17 headers=14 ' "$LEM_YATH_AGENDA_VIEW_REPORT"; then
+wait_report '^HOURLY fortnight ' || true
+if grep -q '^STATE fortnight span=fortnight start=2026-07-13 end=2026-07-26 .*point-date=2026-07-17 headers=14 ' "$LEM_YATH_AGENDA_VIEW_REPORT" &&
+   grep -q '^HOURLY fortnight dates=2026-07-17,2026-07-18,2026-07-20,2026-07-21,2026-07-23,2026-07-24,2026-07-26$' "$LEM_YATH_AGENDA_VIEW_REPORT"; then
   pass fortnight-view 'gD t rendered the Monday-aligned fourteen-day span'
 else
-  fail fortnight-view 'fortnight boundaries or selected date restoration differed'
+  fail fortnight-view 'fortnight boundaries, hour repeater dates, or point restoration differed'
 fi
 send_keys g D w
 lem_wait_for "$session" 'Week 2026-07-13..2026-07-19' 30 >/dev/null || true
@@ -189,7 +209,7 @@ send_keys C-c z 5
 wait_report '^STATE goto ' || true
 wait_report '^TIMELINE goto ' || true
 if grep -q '^STATE goto span=week start=2026-08-05 end=2026-08-11 .*point-date=2026-08-05 headers=7 .*2026-08-05|.*August view sentinel' "$LEM_YATH_AGENDA_VIEW_REPORT" &&
-   grep -q '^TIMELINE goto item-1530-1600$' "$LEM_YATH_AGENDA_VIEW_REPORT"; then
+   grep -q '^TIMELINE goto item-0830,item-1530-1600$' "$LEM_YATH_AGENDA_VIEW_REPORT"; then
   pass goto-date 'gd used Org date input and retained the current seven-day span'
 else
   fail goto-date 'gd did not rebuild from or select the requested date'
@@ -212,7 +232,7 @@ wait_report '^STATE day ' || true
 wait_report '^TIMELINE day ' || true
 day_ok=1
 grep -q '^STATE day span=day start=2026-08-05 end=2026-08-05 .*point-date=2026-08-05 headers=1 ' "$LEM_YATH_AGENDA_VIEW_REPORT" || day_ok=0
-grep -q '^TIMELINE day grid-0800,grid-1000,grid-1200,grid-1400,item-1530-1600,grid-1600,grid-1800,grid-2000$' "$LEM_YATH_AGENDA_VIEW_REPORT" || day_ok=0
+grep -q '^TIMELINE day grid-0800,item-0830,grid-1000,grid-1200,grid-1400,item-1530-1600,grid-1600,grid-1800,grid-2000$' "$LEM_YATH_AGENDA_VIEW_REPORT" || day_ok=0
 send_keys C-u ']' ']'
 lem_wait_for "$session" 'Day 2026-08-09' 30 >/dev/null || true
 send_keys C-c z 8
