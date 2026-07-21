@@ -649,9 +649,10 @@
   (let* ((component (lem/multi-column-list::current-multi-column-list))
          (source-window (buffer-list-source-window component)))
     (buffer-list-test-log
-     "QUERY source=~a alpha=~a beta=~a delete=~a readonly=~a expand=~a"
+     "QUERY source=~a windows=~d alpha=~a beta=~a delete=~a readonly=~a expand=~a"
      (completion-path-display-string
       (buffer-name (window-buffer source-window)))
+     (length (window-list))
      (buffer-list-test-query-buffer-state *buffer-list-test-query-alpha*)
      (buffer-list-test-query-buffer-state *buffer-list-test-query-beta*)
      (buffer-list-test-query-buffer-state *buffer-list-test-query-delete*)

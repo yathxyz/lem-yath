@@ -3209,6 +3209,17 @@ through later selected buffers without wrapping."
 
 (defvar *buffer-list-query-replace-before* nil)
 (defvar *buffer-list-query-replace-after* nil)
+(defvar *buffer-list-query-replace-source-window-cell* nil
+  "Mutable source-window cell owned by the active marked-buffer query.")
+(defvar *buffer-list-query-replace-recursive-buffer* nil
+  "Source whose nested editor must retain the outer query undo boundary.")
+
+(defmethod lem-vi-mode/core:buffer-state-disabled-hook :after
+    ((state lem-vi-mode/states:insert) buffer)
+  "Keep leaving Insert state inside a recursive query edit from sealing undo."
+  (declare (ignore state))
+  (when (eq buffer *buffer-list-query-replace-recursive-buffer*)
+    (buffer-disable-undo-boundary buffer)))
 
 (defparameter *buffer-list-query-replace-diff-buffer-name*
   "*Ibuffer Query Replace Diff*")
@@ -3216,6 +3227,9 @@ through later selected buffers without wrapping."
 (defparameter *buffer-list-query-replace-diff-output-limit* (* 16 1024 1024))
 
 (declaim (ftype function buffer-list-query-replace-show-diff
+                         capture-window-layout
+                         dispose-window-layout
+                         restore-window-layout
                          vundo-unified-diff))
 
 (defun buffer-list-query-replace-read-args (regexp-p)
@@ -3423,11 +3437,17 @@ through later selected buffers without wrapping."
   end
   original
   captures
+  capture-ranges
   replacement
-  replaced-p)
+  replaced-p
+  counted-p)
 
 (defun buffer-list-query-replace-delete-entry (entry)
   (when entry
+    (dolist (range (buffer-list-query-replace-entry-capture-ranges entry))
+      (when range
+        (ignore-errors (delete-point (car range)))
+        (ignore-errors (delete-point (cdr range)))))
     (ignore-errors
       (delete-point (buffer-list-query-replace-entry-start entry)))
     (ignore-errors
@@ -3437,12 +3457,40 @@ through later selected buffers without wrapping."
   (dolist (entry entries)
     (buffer-list-query-replace-delete-entry entry)))
 
-(defun buffer-list-query-replace-make-entry (start end captures)
+(defun buffer-list-query-replace-make-entry
+    (start end captures &optional capture-ranges)
   (make-buffer-list-query-replace-entry
    :start (copy-point start :right-inserting)
    :end (copy-point end :left-inserting)
    :original (points-to-string start end)
-   :captures captures))
+   :captures captures
+   :capture-ranges capture-ranges))
+
+(defun buffer-list-query-replace-make-capture-ranges
+    (line-point capture-starts capture-ends)
+  (when capture-starts
+    (map 'list
+         (lambda (capture-start capture-end)
+           (when capture-start
+             (with-point ((start line-point :temporary)
+                          (end line-point :temporary))
+               (line-start start)
+               (line-start end)
+               (character-offset start capture-start)
+               (character-offset end capture-end)
+               (cons (copy-point start :right-inserting)
+                     (copy-point end :right-inserting)))))
+         capture-starts capture-ends)))
+
+(defun buffer-list-query-replace-entry-live-captures (entry)
+  (let ((ranges (buffer-list-query-replace-entry-capture-ranges entry)))
+    (if ranges
+        (mapcar
+         (lambda (range)
+           (when range
+             (points-to-string (car range) (cdr range))))
+         ranges)
+        (buffer-list-query-replace-entry-captures entry))))
 
 (defun buffer-list-query-replace-next-regexp-entry (cursor scanner goal)
   "Move CURSOR to the next match end and return its stable edit entry.
@@ -3475,7 +3523,9 @@ same CL-PPCRE scan."
                       (lambda (capture-start capture-end)
                         (when capture-start
                           (subseq line capture-start capture-end)))
-                      capture-starts capture-ends))))))))
+                      capture-starts capture-ends))
+               (buffer-list-query-replace-make-capture-ranges
+                match-start capture-starts capture-ends)))))))
     (unless (line-offset cursor 1)
       (return nil))
     (line-start cursor)))
@@ -3500,25 +3550,32 @@ same CL-PPCRE scan."
     (unless (string= expected replacement)
       (let* ((buffer
                (point-buffer (buffer-list-query-replace-entry-start entry)))
-             (group (buffer-prepare-change-group buffer)))
-        (handler-case
-            (progn
-              (delete-between-points
-               (buffer-list-query-replace-entry-start entry)
-               (buffer-list-query-replace-entry-end entry))
-              (with-point
-                  ((insertion
-                     (buffer-list-query-replace-entry-start entry)
-                     :temporary))
-                (insert-string insertion replacement))
-              (buffer-accept-change-group group))
-          (error (condition)
-            (when (buffer-change-group-active-p group)
-              (ignore-errors (buffer-cancel-change-group group)))
-            (error condition)))))
+             (outer-group
+               (lem/buffer/internal::buffer-%active-change-group buffer)))
+        (flet ((mutate ()
+                 (delete-between-points
+                  (buffer-list-query-replace-entry-start entry)
+                  (buffer-list-query-replace-entry-end entry))
+                 (with-point
+                     ((insertion
+                        (buffer-list-query-replace-entry-start entry)
+                        :temporary))
+                   (insert-string insertion replacement))))
+          (if outer-group
+              (mutate)
+              (let ((group (buffer-prepare-change-group buffer)))
+                (handler-case
+                    (progn
+                      (mutate)
+                      (buffer-accept-change-group group))
+                  (error (condition)
+                    (when (buffer-change-group-active-p group)
+                      (ignore-errors (buffer-cancel-change-group group)))
+                    (error condition))))))))
     (setf (buffer-list-query-replace-entry-replacement entry)
           (and replaced-p replacement)
-          (buffer-list-query-replace-entry-replaced-p entry) replaced-p)
+          (buffer-list-query-replace-entry-replaced-p entry) replaced-p
+          (buffer-list-query-replace-entry-counted-p entry) replaced-p)
     entry))
 
 (defun buffer-list-query-replace-entry-replace (entry replacement)
@@ -3538,7 +3595,7 @@ same CL-PPCRE scan."
            (if replacement-program
                (buffer-list-query-replace-expand-replacement
                 replacement-program matched-text
-                (buffer-list-query-replace-entry-captures entry)
+                (buffer-list-query-replace-entry-live-captures entry)
                 replacement-count)
                raw-replacement)))
     (if exact-case-p
@@ -3562,12 +3619,67 @@ same CL-PPCRE scan."
      entry resolved-raw resolved-program replacement-count
      case-fold-p exact-case-p)))
 
+(defun buffer-list-query-replace-recursive-command-loop ()
+  "Run ordinary editor commands until GNU's `exit-recursive-edit' key."
+  (let ((exit-key (first (lem-core::parse-keyspec "C-M-c"))))
+    (lem-core::do-command-loop (:interactive t)
+      (incf lem-core::*command-loop-counter*)
+      (redraw-display)
+      (let ((key (read-key)))
+        (when (lem-core::keys-equal-p key exit-key)
+          (return))
+        (unread-key key)
+        (lem-core::command-loop-body)
+        (lem-core::fix-current-buffer-if-broken)))))
+
+(defun buffer-list-query-replace-refresh-after-recursive-edit (entry)
+  "Adopt live marker text after recursive editing of ENTRY."
+  (let ((text (buffer-list-query-replace-entry-current-text entry)))
+    (if (buffer-list-query-replace-entry-replaced-p entry)
+        (setf (buffer-list-query-replace-entry-replacement entry) text)
+        (setf (buffer-list-query-replace-entry-original entry) text)))
+  entry)
+
+(defun buffer-list-query-replace-recursive-edit (entry)
+  "Edit ENTRY in a nested command loop, then restore the query layout."
+  (let* ((buffer (point-buffer (buffer-list-query-replace-entry-start entry)))
+         (configuration (capture-window-layout))
+         (return-point (copy-point (current-point) :right-inserting))
+         (restored-p nil))
+    (unless configuration
+      (delete-point return-point)
+      (editor-error "Cannot record the query-replace window layout"))
+    (unwind-protect
+         (let ((*buffer-list-query-replace-recursive-buffer* buffer))
+           (move-point (current-point)
+                       (buffer-list-query-replace-entry-start entry))
+           (message "Recursive edit; type C-M-c to resume query replace")
+           (buffer-list-query-replace-recursive-command-loop))
+      (when (and (not (deleted-buffer-p buffer))
+                 (alive-point-p return-point))
+        (setf restored-p
+              (handler-case (restore-window-layout configuration)
+                (error () nil)))
+        (unless restored-p
+          (switch-to-buffer buffer))
+        (move-point (current-point) return-point)
+        (when *buffer-list-query-replace-source-window-cell*
+          (setf (car *buffer-list-query-replace-source-window-cell*)
+                (current-window))))
+      (dispose-window-layout configuration)
+      (delete-point return-point))
+    (when (deleted-buffer-p buffer)
+      (editor-error "Ibuffer query-replace source was killed during recursive edit"))
+    (unless restored-p
+      (message "Recursive edit ended; the prior window layout could not be restored"))
+    (buffer-list-query-replace-refresh-after-recursive-edit entry)))
+
 (defun buffer-list-query-replace-response
     (before displayed-replacement raw-replacement)
   (loop
     :for response :=
       (prompt-for-character
-       (format nil "Replace ~s with ~s [y/n/!/q/./,/^/u/U/e/E/d]"
+       (format nil "Replace ~s with ~s [y/n/!/q/./,/^/u/U/e/E/d/C-r/C-w]"
                before displayed-replacement))
     :do
        (cond
@@ -3597,6 +3709,10 @@ same CL-PPCRE scan."
           (return :undo-all))
          ((char= response #\d)
           (return :diff))
+         ((= (char-code response) 18)
+          (return :recursive-edit))
+         ((= (char-code response) 23)
+          (return :delete-and-edit))
          ((char= response #\e)
           (return
             (cons :edit
@@ -3609,7 +3725,7 @@ same CL-PPCRE scan."
                                      :initial-value raw-replacement))))
          ((char= response #\?)
           (message
-           "y/Space replace; n/Backspace skip; , replace and stay; ! rest; q/Return exit; . replace and exit; ^ back; u/U undo; e/E edit replacement; d diff"))
+           "y/Space replace; n/Backspace skip; , replace and stay; ! rest; q/Return exit; . replace and exit; ^ back; u/U undo; e/E edit replacement; d diff; C-r recursive edit; C-w delete and edit"))
          (t
           (message "Unsupported query-replace response: ~s" response)))))
 
@@ -3628,6 +3744,8 @@ same CL-PPCRE scan."
           (current-entry nil)
           (advance-before-search-p nil)
           (last-was-replace-and-show-p nil)
+          (query-change-group nil)
+          (completed-p nil)
           (undo-boundary-enabled-p
            (lem/buffer/internal::buffer-enable-undo-boundary-p buffer)))
       (buffer-undo-boundary buffer)
@@ -3639,8 +3757,12 @@ same CL-PPCRE scan."
         (buffer-disable-undo-boundary buffer))
       (unwind-protect
            (unwind-protect
-                (with-point ((cursor (buffer-start-point buffer) :left-inserting)
-                             (goal (buffer-end-point buffer) :right-inserting))
+                (prog1
+                    (unwind-protect
+                         (with-point ((cursor (buffer-start-point buffer)
+                                              :left-inserting)
+                                      (goal (buffer-end-point buffer)
+                                            :right-inserting))
                   (lem/isearch::highlight-region cursor goal before)
                   (loop
                    (unless current-entry
@@ -3739,11 +3861,36 @@ same CL-PPCRE scan."
                       (setf advance-before-search-p nil))
                      (t
                       (message "No previous match"))))
+                  ((member response '(:recursive-edit :delete-and-edit)
+                           :test #'eq)
+                   ;; Ordinary commands in the nested command loop must be
+                   ;; part of the same undo unit as replacements made before
+                   ;; and after the recursive edit.
+                   (unless query-change-group
+                     (setf query-change-group
+                           (buffer-prepare-change-group buffer)))
+                   (when (eq response :delete-and-edit)
+                     (buffer-list-query-replace-entry-set-text
+                      current-entry "" t)
+                     ;; GNU records this as an edited occurrence, but does not
+                     ;; add it to the replacement count.
+                     (setf (buffer-list-query-replace-entry-counted-p
+                            current-entry)
+                           nil))
+                   (buffer-list-query-replace-recursive-edit current-entry)
+                   (move-point
+                    cursor (buffer-list-query-replace-entry-end current-entry))
+                   (setf advance-before-search-p nil
+                         last-was-replace-and-show-p nil))
                   ((eq response :undo)
                    (cond
                      ((buffer-list-query-replace-entry-replaced-p current-entry)
-                      (buffer-list-query-replace-entry-undo current-entry)
-                      (decf replacement-count)
+                      (let ((counted-p
+                              (buffer-list-query-replace-entry-counted-p
+                               current-entry)))
+                        (buffer-list-query-replace-entry-undo current-entry)
+                        (when counted-p
+                          (decf replacement-count)))
                       (setf last-was-replace-and-show-p nil)
                       (move-point
                        cursor
@@ -3758,8 +3905,12 @@ same CL-PPCRE scan."
                                   (newer (subseq history 0 index)))
                              (buffer-list-query-replace-delete-entries newer)
                              (setf history (nthcdr (1+ index) history))
-                             (buffer-list-query-replace-entry-undo target)
-                             (decf replacement-count)
+                             (let ((counted-p
+                                     (buffer-list-query-replace-entry-counted-p
+                                      target)))
+                               (buffer-list-query-replace-entry-undo target)
+                               (when counted-p
+                                 (decf replacement-count)))
                         (buffer-list-query-replace-delete-entry current-entry)
                         (setf current-entry target
                               advance-before-search-p nil
@@ -3777,9 +3928,12 @@ same CL-PPCRE scan."
                                  entries)))
                           (if replaced
                               (let ((oldest (car (last replaced))))
+                                (decf replacement-count
+                                      (count-if
+                                       #'buffer-list-query-replace-entry-counted-p
+                                       replaced))
                                 (dolist (entry replaced)
                                   (buffer-list-query-replace-entry-undo entry))
-                                (decf replacement-count (length replaced))
                                 (dolist (entry entries)
                                   (unless (eq entry oldest)
                                     (buffer-list-query-replace-delete-entry entry)))
@@ -3845,9 +3999,16 @@ same CL-PPCRE scan."
                    (push current-entry history)
                    (setf current-entry nil
                          last-was-replace-and-show-p nil))))))
-             (lem/isearch::isearch-reset-overlays buffer)
-             (buffer-list-query-replace-delete-entry current-entry)
-             (buffer-list-query-replace-delete-entries history))
+                      (lem/isearch::isearch-reset-overlays buffer)
+                      (buffer-list-query-replace-delete-entry current-entry)
+                      (buffer-list-query-replace-delete-entries history))
+                  (setf completed-p t))
+             (when (and query-change-group
+                        (buffer-change-group-active-p query-change-group))
+               (if completed-p
+                   (buffer-accept-change-group query-change-group)
+                   (ignore-errors
+                     (buffer-cancel-change-group query-change-group)))))
         (when undo-boundary-enabled-p
           (buffer-enable-undo-boundary buffer))
         (buffer-undo-boundary buffer)))))
@@ -3960,7 +4121,9 @@ same CL-PPCRE scan."
     (buffer-list-query-replace-preflight buffers)
     (multiple-value-bind (before after)
         (buffer-list-query-replace-read-args regexp-p)
-      (let* ((case-fold-p
+      (let* ((*buffer-list-query-replace-source-window-cell*
+               (list source-window))
+             (case-fold-p
                (buffer-list-query-replace-no-upper-case-p before regexp-p))
              (scanner
                (and regexp-p
@@ -3978,7 +4141,8 @@ same CL-PPCRE scan."
             (dolist (buffer buffers)
               (unless (buffer-list-multi-isearch-live-buffer-p buffer)
                 (editor-error "Ibuffer query-replace source was killed"))
-              (with-current-window source-window
+              (with-current-window
+                  (car *buffer-list-query-replace-source-window-cell*)
                 (switch-to-buffer buffer)
                 (buffer-start (current-point))
                 (incf replacement-count
@@ -4000,7 +4164,8 @@ same CL-PPCRE scan."
                              case-fold-p regexp-p nil))))
                 (incf processed-count)))
           (buffer-list-query-replace-restore-picker
-           component source-window source-buffer source-point source-view-point
+           component (car *buffer-list-query-replace-source-window-cell*)
+           source-buffer source-point source-view-point
            focused-buffer focused-index))
         (message "Query replace finished; ~d replacement~:p in ~d buffer~:p"
                  replacement-count processed-count)))))

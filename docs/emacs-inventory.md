@@ -220,9 +220,13 @@ once before advancing. `,` replaces without advancing; `^` revisits the prior
 match; `u`/`U` undo the latest/all live replacements; and `e`/`E` edit the
 current replacement with transferred/exact case. `d` displays a bounded,
 read-only whole-buffer replacement diff without advancing the match or moving
-source focus. Each affected buffer receives one undo unit even after in-loop
-undo, and the entire target set is checked for read-only buffers before any
-prompt can mutate an earlier source. Matching
+source focus. `C-r` opens an ordinary recursive edit at the live match, while
+`C-w` deletes it before the same editing session; `C-M-c` resumes the query at
+that occurrence. Live markers keep regexp captures aligned with edits, `C-w`
+does not increment the replacement count, and the original window layout is
+restored. Each affected buffer receives one undo unit even after recursive or
+in-loop edits, and the entire target set is checked for read-only buffers before
+any prompt can mutate an earlier source. Matching
 uses the configured GNU smart-case rule: lowercase searches fold case and
 transfer lower, all-caps, or initial-cap patterns to replacements, while an
 unescaped uppercase search is case-sensitive and keeps exact replacement case.
@@ -231,8 +235,8 @@ count. An unescaped `\?` removes its marker and prompts for a per-match edit at
 that position before expansion and case transfer, while escaped `\\?` remains
 literal. Zero-width matches make GNU-style forward progress, including a final
 empty line. Invalid regexps and invalid or unsupported replacement directives
-are refused before mutation. GNU Lisp-evaluated `\,` replacements and
-recursive edit remain gaps.
+are refused before mutation. GNU Lisp-evaluated `\,` replacements remain a
+gap.
 Like GNU Ibuffer, ordinary bulk operations implicitly mark the current row when
 there are no ordinary marks and exclude `D` deletion marks. Revert failures are
 isolated per buffer so a missing file does not prevent later buffers from being

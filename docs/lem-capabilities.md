@@ -1168,8 +1168,12 @@ through the ncurses editor.
   advancing. `,` replaces without advancing; `^` backs up; `u`/`U` undo the
   latest/all live replacements; and `e`/`E` edit the current replacement with
   transferred/exact case. `d` displays a bounded, read-only whole-buffer
-  replacement diff without advancing or moving source focus. Each affected
-  target has one undo unit, including after in-loop undo. Lowercase searches
+  replacement diff without advancing or moving source focus. `C-r` enters an
+  ordinary recursive edit at the live occurrence; `C-w` deletes the occurrence
+  first for manual replacement, and `C-M-c` resumes the query at the same
+  occurrence. Live markers preserve edited regexp captures, `C-w` is uncounted,
+  and the prior window layout is restored. Each affected target has one undo
+  unit, including recursive and in-loop edits. Lowercase searches
   fold case and transfer lower,
   all-caps, or initial-cap patterns; unescaped uppercase searches are
   case-sensitive and retain exact replacement case. Regexp replacement expands
@@ -1181,7 +1185,7 @@ through the ncurses editor.
   Ibuffer's arbitrary Emacs-Lisp predicate filters, other-frame, view-and-eval,
   shell, eval, and print operations are not reproduced.
   Marked-buffer regexp query-replace omits GNU Lisp-evaluated `\,`
-  replacements and recursive edit.
+  replacements.
   CL-PPCRE regexp syntax can differ from Emacs regexp syntax. Content filters
   skip buffers above 16 million characters, and mode completion uses
   package-qualified labels.
@@ -3944,8 +3948,8 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   rollback, ordinary save, and stale-row refusal. Lem-yath also adds marked-buffer
   literal and regexp incremental isearch through the effective Evil Collection
   chords described in §4, plus the marked-buffer literal/regexp query-replace
-  coordinator described there. GNU's Lisp-evaluated replacement form and
-  recursive edit remain gaps.
+  coordinator described there. GNU's Lisp-evaluated replacement form remains a
+  gap.
 - **Multiple cursors**: core support. `src/cursors.lisp` + `src/commands/multiple-cursors.lisp`
   (`add-cursors-to-next-line`, bound `M-C`); isearch can add cursors at matches.
 - **Markdown preview**: yes, `preview` generic in markdown-mode (§8), plus literate

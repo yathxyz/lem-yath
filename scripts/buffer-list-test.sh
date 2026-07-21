@@ -2642,6 +2642,104 @@ else
   fail query-diff-close "the retained query-replace diff window did not close"
 fi
 
+# C-r enters a real nested command loop at the current match.  Its live match
+# and capture markers follow edits, C-M-c returns to the same occurrence, and
+# the saved ordinary-window layout replaces any temporary recursive-edit split.
+lem_keys "$session" F11 C-x C-b U o a
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'buffer-list-query-beta'
+lem_keys "$session" Enter I
+if lem_wait_for "$session" 'Query replace regexp' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l '(bar) ([0-9]+)'
+  lem_keys "$session" Enter
+  tmux_cmd send-keys -t "$session" -l '\2-\1'
+  lem_keys "$session" Enter
+fi
+if lem_wait_for "$session" 'with "42-bar"' 10 >/dev/null; then
+  lem_keys "$session" C-r
+fi
+if lem_wait_for "$session" 'Recursive edit; type C-M-c' 10 >/dev/null; then
+  lem_keys "$session" C-x 2 i
+  tmux_cmd send-keys -t "$session" -l 'X'
+  lem_keys "$session" Escape
+  sleep 0.2
+  lem_keys "$session" C-M-c
+fi
+if lem_wait_for "$session" 'with "42-Xbar"' 10 >/dev/null; then
+  lem_keys "$session" y
+  if lem_wait_for "$session" 'BAR 99' 10 >/dev/null; then
+    lem_keys "$session" q
+  fi
+fi
+if lem_wait_for "$session" 'Query replace finished; 1 replacement in 1 buffer' 10 >/dev/null; then
+  recursive_edit=$(report_query_state || true)
+  if [[ "$recursive_edit" == *'windows=1'*'beta=modified:writable:foo beta one\n42-Xbar\nBAR 99\n'* ]]; then
+    pass query-recursive-edit "C-r retained live regexp captures and restored the pre-edit window layout"
+  else
+    fail query-recursive-edit "recursive edit lost capture or layout state: $recursive_edit"
+  fi
+else
+  fail query-recursive-edit "C-r did not return to and finish the live query occurrence"
+fi
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'buffer-list-query-beta'
+lem_keys "$session" Enter Enter u
+recursive_edit_undo=$(report_current || true)
+if [[ "$recursive_edit_undo" == *'text=foo beta one\nbar 42\nBAR 99\n'* ]]; then
+  pass query-recursive-edit-undo "one undo restored both recursive editing and replacement"
+else
+  fail query-recursive-edit-undo "recursive edits escaped the query undo unit: $recursive_edit_undo"
+fi
+
+# C-w removes the match before the nested edit, keeps text typed in its place,
+# re-prompts the same occurrence, and—like GNU—does not count that manual edit
+# as an automatic replacement.
+lem_keys "$session" C-x C-b U o a
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'buffer-list-query-alpha'
+lem_keys "$session" Enter Q
+if lem_wait_for "$session" 'Query replace' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l 'foo'
+  lem_keys "$session" Enter
+  tmux_cmd send-keys -t "$session" -l 'zap'
+  lem_keys "$session" Enter
+fi
+if lem_wait_for "$session" 'Replace "foo" with "zap"' 10 >/dev/null; then
+  lem_keys "$session" C-w
+fi
+if lem_wait_for "$session" 'Recursive edit; type C-M-c' 10 >/dev/null; then
+  lem_keys "$session" i
+  tmux_cmd send-keys -t "$session" -l 'manual'
+  lem_keys "$session" Escape
+  sleep 0.2
+  lem_keys "$session" C-M-c
+fi
+if lem_wait_for "$session" 'Replace "foo" with "zap"' 10 >/dev/null; then
+  lem_keys "$session" y
+  if lem_wait_for "$session" 'FOO alpha two' 10 >/dev/null; then
+    lem_keys "$session" q
+  fi
+fi
+if lem_wait_for "$session" 'Query replace finished; 0 replacements in 1 buffer' 10 >/dev/null; then
+  delete_edit=$(report_query_state || true)
+  if [[ "$delete_edit" == *'alpha=modified:writable:manual alpha one\nFOO alpha two\nfoo alpha three\n'* ]]; then
+    pass query-delete-and-edit "C-w retained manual text and GNU's uncounted replacement status"
+  else
+    fail query-delete-and-edit "delete-and-edit produced unexpected source text: $delete_edit"
+  fi
+else
+  fail query-delete-and-edit "C-w did not resume and finish with GNU's zero count"
+fi
+lem_keys "$session" s n
+tmux_cmd send-keys -t "$session" -l 'buffer-list-query-alpha'
+lem_keys "$session" Enter Enter u
+delete_edit_undo=$(report_current || true)
+if [[ "$delete_edit_undo" == *'text=foo alpha one\nFOO alpha two\nfoo alpha three\n'* ]]; then
+  pass query-delete-and-edit-undo "one undo restored the deleted match and recursive text"
+else
+  fail query-delete-and-edit-undo "delete-and-edit escaped the query undo unit: $delete_edit_undo"
+fi
+
 # GNU regexp replacement expands the whole match, groups, the per-command
 # replacement count, and a quoted backslash.  Lisp evaluation remains
 # deliberately rejected before the picker is hidden.

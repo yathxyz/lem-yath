@@ -419,9 +419,13 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   advancing, `^` backs up, `u`/`U` undo the latest/all live replacements, and
   `e`/`E` edit the current replacement with transferred/exact case. `d` opens
   a bounded, read-only whole-buffer replacement diff while retaining the live
-  match and source focus. The chooser, focus, marks, source window, and point
-  return afterward, and each affected buffer is one undo unit, including after
-  in-loop undo. Lowercase
+  match and source focus. `C-r` enters an ordinary recursive edit at the live
+  occurrence and `C-w` first deletes it for manual replacement; `C-M-c`
+  resumes the query at that same occurrence. Regexp captures follow edits,
+  `C-w` remains uncounted like GNU, and the prior window layout is restored.
+  The chooser, focus, marks, source window, and point return afterward, and
+  each affected buffer is one undo unit, including recursive and in-loop edits.
+  Lowercase
   searches transfer lower, all-caps, or initial-cap case patterns; uppercase
   searches are case-sensitive and keep exact replacement case. Regexp
   replacement expands `\&`, `\1`–`\9`, `\\`, and a per-buffer `\#` count.
@@ -429,8 +433,7 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   prompt at that position before expansion and case transfer; escaped `\\?`
   remains literal. Zero-width matches make GNU-style forward progress.
   Read-only sets and invalid regexps or replacement directives fail before
-  mutation. GNU Lisp-evaluated `\,` replacements and recursive edit remain
-  gaps.
+  mutation. GNU Lisp-evaluated `\,` replacements remain a gap.
 - project-scoped LSP lifecycle: canonical-root isolation, in-flight startup
   deduplication and timeout, explicit buffer ownership with save-as migration,
   project-wide restart, bounded shutdown/disposal, graceful exit when responsive,
