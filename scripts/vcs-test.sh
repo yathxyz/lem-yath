@@ -3301,7 +3301,51 @@ else
     "$porcelain_session"
 fi
 
-send_keys "$porcelain_session" q l r
+send_keys "$porcelain_session" c a
+if lem_wait_for "$porcelain_session" 'Please enter the commit message' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" C-c C-k
+fi
+if lem_wait_for "$porcelain_session" 'Abort amend?' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+log_action_before=$(report_count '^LOG-ACTION ')
+send_keys "$porcelain_session" C-c L
+if wait_report_count '^LOG-ACTION ' "$((log_action_before + 1))" &&
+   [[ $(latest_report '^LOG-ACTION ') == \
+      LOG-ACTION\ log=yes\ status=no\ state=yes\ hash=yes\ line=*porcelain-initial*\ offset=0 ]]; then
+  pass legit-log-amend-abort \
+    'log c a abort returned to the configured log and retained its commit anchor'
+else
+  fail legit-log-amend-abort \
+    'log c a abort dropped to status or lost its configured log anchor' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" q c a
+if lem_wait_for "$porcelain_session" 'Please enter the commit message' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" C-c C-k
+fi
+if lem_wait_for "$porcelain_session" 'Abort amend?' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" y
+fi
+log_action_before=$(report_count '^LOG-ACTION ')
+send_keys "$porcelain_session" C-c L
+if wait_report_count '^LOG-ACTION ' "$((log_action_before + 1))" &&
+   [[ $(latest_report '^LOG-ACTION ') == \
+      LOG-ACTION\ log=no\ status=yes\ state=no\ hash=*\ offset=-1 ]]; then
+  pass legit-log-message-origin-isolated \
+    'a later status c a stayed in status instead of inheriting a stale log origin'
+else
+  fail legit-log-message-origin-isolated \
+    'the aborted log editor leaked its origin into an unrelated status amend' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" l r
 if lem_wait_for "$porcelain_session" 'Reflog main' "$WAIT_TIMEOUT" \
      >/dev/null &&
    lem_wait_for "$porcelain_session" 'porcelain-initial' "$WAIT_TIMEOUT" \
@@ -3492,7 +3536,11 @@ else
     "$porcelain_session"
 fi
 
-lem_keys "$porcelain_session" c c
+send_keys "$porcelain_session" l l
+if lem_wait_for "$porcelain_session" 'porcelain-initial' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  lem_keys "$porcelain_session" c c
+fi
 if lem_wait_for "$porcelain_session" 'Please enter the commit message' \
      "$WAIT_TIMEOUT" >/dev/null; then
   lem_keys "$porcelain_session" i
@@ -3501,7 +3549,8 @@ if lem_wait_for "$porcelain_session" 'Please enter the commit message' \
   send_keys "$porcelain_session" Escape C-c C-c
   if wait_until "$WAIT_TIMEOUT" porcelain_subject_is \
        'porcelain commit from Lem'; then
-    pass legit-commit 'c c and C-c C-c created the staged commit from Vi state'
+    pass legit-commit \
+      'log c c and C-c C-c created the staged commit from Vi state'
   else
     fail legit-commit 'the commit buffer did not create the expected commit' \
       "$porcelain_session"
@@ -3511,6 +3560,20 @@ else
     "$porcelain_session"
 fi
 
+log_action_before=$(report_count '^LOG-ACTION ')
+send_keys "$porcelain_session" C-c L
+if wait_report_count '^LOG-ACTION ' "$((log_action_before + 1))" &&
+   [[ $(latest_report '^LOG-ACTION ') == \
+      LOG-ACTION\ log=yes\ status=no\ state=yes\ hash=yes\ line=*porcelain-initial*\ offset=0 ]]; then
+  pass legit-commit-log-refresh \
+    'confirming log c c refreshed the log and retained its original commit anchor'
+else
+  fail legit-commit-log-refresh \
+    'confirming log c c dropped to status or lost its original commit anchor' \
+    "$porcelain_session"
+fi
+
+send_keys "$porcelain_session" q
 send_keys "$porcelain_session" p p
 if lem_wait_for "$porcelain_session" 'Set push remote and push main there:' \
      "$WAIT_TIMEOUT" >/dev/null; then
@@ -4543,6 +4606,7 @@ else
 fi
 
 cherry_region_prompted=0
+cherry_region_editors=0
 send_keys "$porcelain_session" l o
 if lem_wait_for "$porcelain_session" 'Log revision\(s\):' \
      "$WAIT_TIMEOUT" >/dev/null; then
@@ -4553,20 +4617,39 @@ if lem_wait_for "$porcelain_session" 'cherry-region-two' \
      "$WAIT_TIMEOUT" >/dev/null; then
   # Select from the older row back toward the newer row.  This proves that
   # commit collection is independent of Visual selection direction.
-  send_keys "$porcelain_session" j V k A A
+  send_keys "$porcelain_session" j V k A
+fi
+if lem_wait_for "$porcelain_session" '\[Apply\]' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$porcelain_session" - e
+  send_keys "$porcelain_session" A
 fi
 if lem_wait_for "$porcelain_session" 'Cherry-pick:' 2 >/dev/null 2>&1; then
   cherry_region_prompted=1
   enter_cherry_revision "$porcelain_session" \
     "$cherry_region_one_hash,$cherry_region_two_hash"
 fi
-if ((cherry_region_prompted == 0)) &&
+if lem_wait_for "$porcelain_session" 'cherry-region-one' \
+     "$WAIT_TIMEOUT" >/dev/null &&
+   lem_wait_for "$porcelain_session" 'Please enter the commit message' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  cherry_region_editors=$((cherry_region_editors + 1))
+  send_keys "$porcelain_session" C-c C-c
+fi
+if lem_wait_for "$porcelain_session" 'cherry-region-two' \
+     "$WAIT_TIMEOUT" >/dev/null &&
+   lem_wait_for "$porcelain_session" 'Please enter the commit message' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  cherry_region_editors=$((cherry_region_editors + 1))
+  send_keys "$porcelain_session" C-c C-c
+fi
+if ((cherry_region_prompted == 0 && cherry_region_editors == 2)) &&
    wait_until "$WAIT_TIMEOUT" porcelain_cherry_region_picked; then
   pass legit-cherry-visual-region \
-    'reversed Visual A A picked dependent commits oldest-first without prompting'
+    'reversed Visual A -e A edited dependent commits oldest-first without prompting'
 else
   fail legit-cherry-visual-region \
-    'Visual A A prompted, lost selection direction, or replayed commits out of order' \
+    'Visual A -e A prompted, lost selection order, or failed editor handoff' \
     "$porcelain_session"
 fi
 
@@ -5567,7 +5650,7 @@ else
     "$porcelain_session"
 fi
 
-send_keys "$porcelain_session" g m
+send_keys "$porcelain_session" g l l m
 if lem_wait_for "$porcelain_session" '\[Merge\]' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" e
@@ -5587,12 +5670,25 @@ fi
 if wait_until "$WAIT_TIMEOUT" porcelain_merge_subject_is \
      'merge message edited in Lem'; then
   pass legit-merge-edit \
-    'm e opened the prefilled Legit message buffer and committed its edit'
+    'log m e opened the prefilled Legit message buffer and committed its edit'
 else
   fail legit-merge-edit \
     'merge edit did not create the user-edited merge commit' \
     "$porcelain_session"
 fi
+log_action_before=$(report_count '^LOG-ACTION ')
+send_keys "$porcelain_session" C-c L
+if wait_report_count '^LOG-ACTION ' "$((log_action_before + 1))" &&
+   [[ $(latest_report '^LOG-ACTION ') == \
+      LOG-ACTION\ log=yes\ status=no\ state=yes\ hash=yes\ line=*merge-main*\ offset=0 ]]; then
+  pass legit-merge-edit-log-refresh \
+    'confirming the merge message returned to the originating log and commit'
+else
+  fail legit-merge-edit-log-refresh \
+    'confirming the merge message dropped to status or lost its log anchor' \
+    "$porcelain_session"
+fi
+send_keys "$porcelain_session" q
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard \
   "$merge_main_hash"
 send_keys "$porcelain_session" g

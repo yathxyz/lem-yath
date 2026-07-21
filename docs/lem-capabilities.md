@@ -2187,7 +2187,12 @@ Magit-inspired. `M-x legit-status` bound **`C-x g`** (`legit/legit.lisp:65`).
   Same-repository synchronous actions that end in ordinary status refresh the
   originating log and retain its selected commit, with a prior-line fallback
   if the action moved that commit away; message, preview, list, and worktree
-  root transitions remain focused.
+  root transitions remain focused. Log `c c`/`c a` and inherited actions that
+  open a native commit-message buffer retain a buffer-local, one-shot origin:
+  confirm or abort refreshes the same log and anchor, while a later unrelated
+  status editor cannot inherit it. Multi-commit cherry edits transfer that
+  origin between consecutive message buffers and restore only after the final
+  editor closes.
 - **Stash dispatch**: the configured Evil Collection default keeps Magit's
   lowercase `z` for the complete normally visible stash map in status and
   diff. `- u`/`- a` select untracked/all files;
@@ -2367,12 +2372,15 @@ The local commit dispatch deliberately replaces Legit's direct `c` command
 with Magit's configured `c c`/`c a` muscle memory in status and diff panes.
 The matching `A` prefix supplies Magit's complete normally visible cherry-pick
 surface in both panes. `- m`, `= s`, `- F`, `- x`, `- e`, `- S`, and `+ s`
-retain mainline, strategy, fast-forward, source-reference, native message
-editing, GPG-signing, and signoff arguments. Actions pick, apply without a
-commit, harvest, squash, donate, spin out, and spin off; an active sequence
-changes to continue, abort, and skip. Exact prepared messages open in Legit's
-commit mode and a multi-commit edit advances through Git's real sequencer one
-message at a time. A conflict is treated as a normal stopped state, and the
+  retain mainline, strategy, fast-forward, source-reference, native message
+  editing, GPG-signing, and signoff arguments. Actions pick, apply without a
+  commit, harvest, squash, donate, spin out, and spin off; an active sequence
+  changes to continue, abort, and skip. Exact prepared messages open in Legit's
+  commit mode and a multi-commit edit advances through Git's real sequencer one
+  message at a time. Edit mode and fast-forward are mutually exclusive in the
+  popup and at argv validation; continuation reads Git's bounded on-disk
+  sequencer option rather than retaining leak-prone global editor state. A
+  conflict is treated as a normal stopped state, and the
 pinned Legit parser renders every Git unmerged status once in the unstaged
 section so its resolved file can be staged before continuing.
 

@@ -274,10 +274,24 @@
                    (vcs-test-key-command
                     lem/legit::*legit-commits-log-keymap* (car binding)))
                (format nil "magit-log-action-~a" (car binding))))
-      (check (eq *legit-commit-dispatch-keymap*
+      (check (eq *legit-log-commit-dispatch-keymap*
                  (vcs-test-key-command
                   lem/legit::*legit-commits-log-keymap* "c"))
              "magit-log-action-c")
+      (dolist (binding '(("c" lem-yath-legit-log-commit)
+                         ("a" lem-yath-legit-log-amend)))
+        (check (eq (second binding)
+                   (vcs-test-key-command
+                    *legit-log-commit-dispatch-keymap* (first binding)))
+               (format nil "magit-log-commit-~a" (first binding))))
+      (dolist (binding '(("C-c C-c" lem-yath-legit-log-message-continue)
+                         ("C-Return" lem-yath-legit-log-message-continue)
+                         ("C-c C-k" lem-yath-legit-log-message-abort)
+                         ("M-q" lem-yath-legit-log-message-abort)))
+        (check (eq (second binding)
+                   (vcs-test-key-command
+                    lem/legit::*legit-commit-mode-keymap* (first binding)))
+               (format nil "magit-log-message-~a" (first binding))))
       (check
        (and
         (equal '("--author=A U Thor" "--grep=message;safe"
@@ -1174,9 +1188,18 @@
                  (eq (vcs-test-key-command active-map key) 'nop-command))
                '("A" "a" "s" "q")))
        (vcs-test-yes-no
-        (equal option-vector
-               '("--strategy=ort" "-x" "--edit" "--gpg-sign"
-                 "--signoff")))
+        (and
+         (equal option-vector
+                '("--strategy=ort" "-x" "--edit" "--gpg-sign"
+                  "--signoff"))
+         (handler-case
+             (progn
+               (legit-cherry-option-arguments
+                (make-legit-cherry-options
+                 :fast-forward-p t :edit-p t)
+                (list (cdr known)))
+               nil)
+           (error () t))))
        (vcs-test-yes-no
         (and candidates
              (every (lambda (subject)
@@ -1383,11 +1406,11 @@
          (vcs-test-yes-no
           (eq (vcs-test-key-command lem/legit::*legit-commit-mode-keymap*
                                     "C-c C-c")
-              'lem-yath-legit-commit-continue))
+              'lem-yath-legit-log-message-continue))
          (vcs-test-yes-no
           (eq (vcs-test-key-command lem/legit::*legit-commit-mode-keymap*
                                     "C-c C-k")
-              'lem-yath-legit-commit-abort))
+              'lem-yath-legit-log-message-abort))
          (vcs-test-yes-no
           (eq (vcs-test-key-command lem/legit::*peek-legit-keymap* "c c")
               'lem/legit::legit-commit))
@@ -1425,11 +1448,11 @@
          (vcs-test-yes-no
           (eq (vcs-test-key-command lem/legit::*legit-commit-mode-keymap*
                                     "C-c C-c")
-              'lem-yath-legit-commit-continue))
+              'lem-yath-legit-log-message-continue))
          (vcs-test-yes-no
           (eq (vcs-test-key-command lem/legit::*legit-commit-mode-keymap*
                                     "C-c C-k")
-              'lem-yath-legit-commit-abort))))))
+              'lem-yath-legit-log-message-abort))))))
 
 (defun vcs-test-restore-source-point ()
   (let ((point (buffer-point *vcs-test-source-buffer*)))
@@ -1697,6 +1720,14 @@
    :remote (vcs-test-key-command lem/legit::*peek-legit-keymap* "M")
    :submodule (vcs-test-key-command lem/legit::*peek-legit-keymap* "'")
    :subtree (vcs-test-key-command lem/legit::*peek-legit-keymap* "\"")
+   :log-commit (vcs-test-key-command
+                *legit-log-commit-dispatch-keymap* "c")
+   :log-amend (vcs-test-key-command
+               *legit-log-commit-dispatch-keymap* "a")
+   :message-continue (vcs-test-key-command
+                      lem/legit::*legit-commit-mode-keymap* "C-c C-c")
+   :message-abort (vcs-test-key-command
+                   lem/legit::*legit-commit-mode-keymap* "C-c C-k")
    :smart (leader-binding-command lem-vi-mode:*normal-keymap* "g g")
    :git (leader-binding-command lem-vi-mode:*normal-keymap* "g G")
    :jj (leader-binding-command lem-vi-mode:*normal-keymap* "g J")

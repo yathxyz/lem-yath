@@ -54,6 +54,27 @@
   (or (legit-git-metadata-path-exists-p "CHERRY_PICK_HEAD")
       (legit-git-metadata-path-exists-p "sequencer/todo")))
 
+(defun legit-cherry-sequencer-edit-p ()
+  "Return whether Git's live cherry-pick sequencer retains edit mode."
+  (multiple-value-bind (output error-output status)
+      (legit-cherry-run-program
+       '("rev-parse" "--git-path" "sequencer/opts"))
+    (declare (ignore error-output))
+    (when (and (integerp status) (zerop status)
+               (str:non-blank-string-p output))
+      (let* ((path (str:trim output))
+             (absolute
+               (merge-pathnames path (uiop:getcwd))))
+        (when (uiop:file-exists-p absolute)
+          (multiple-value-bind (value config-error config-status)
+              (legit-cherry-run-program
+               (list "config" "--file" path "--bool" "--get"
+                     "options.edit"))
+            (declare (ignore config-error))
+            (and (integerp config-status)
+                 (zerop config-status)
+                 (string-equal "true" (str:trim value)))))))))
+
 (defun legit-cherry-require-git (vcs)
   (unless (typep vcs 'lem/porcelain/git::vcs-git)
     (editor-error "Cherry-pick is available only in a Git repository.")))
@@ -222,6 +243,9 @@
          number)))))
 
 (defun legit-cherry-option-arguments (options commits &key no-commit-p)
+  (when (and (legit-cherry-options-fast-forward-p options)
+             (legit-cherry-options-edit-p options))
+    (editor-error "Cherry-pick cannot combine fast-forward and message editing."))
   (let ((mainline
           (legit-cherry-effective-mainline
            commits (legit-cherry-options-mainline options))))
@@ -452,7 +476,8 @@
          (options (and move (legit-cherry-move-options move))))
     (run-legit-cherry-pick
      '("--continue") "Cherry-pick continued."
-     :edit-p (and options (legit-cherry-options-edit-p options))
+     :edit-p (or (and options (legit-cherry-options-edit-p options))
+                 (legit-cherry-sequencer-edit-p))
      :gpg-sign (and options (legit-cherry-options-gpg-sign options)))))
 
 (defun legit-cherry-active-abort ()
@@ -469,7 +494,8 @@
          (options (and move (legit-cherry-move-options move))))
     (run-legit-cherry-pick
      '("--skip") "Skipped cherry-pick commit."
-     :edit-p (and options (legit-cherry-options-edit-p options))
+     :edit-p (or (and options (legit-cherry-options-edit-p options))
+                 (legit-cherry-sequencer-edit-p))
      :gpg-sign (and options (legit-cherry-options-gpg-sign options)))))
 
 (defun legit-cherry-message-continue ()
@@ -805,7 +831,8 @@
                    (setf (legit-cherry-options-fast-forward-p options)
                          (not (legit-cherry-options-fast-forward-p options)))
                    (when (legit-cherry-options-fast-forward-p options)
-                     (setf (legit-cherry-options-reference-p options) nil)))
+                     (setf (legit-cherry-options-reference-p options) nil
+                           (legit-cherry-options-edit-p options) nil)))
                   ((string= name "- x")
                    (setf (legit-cherry-options-reference-p options)
                          (not (legit-cherry-options-reference-p options)))
@@ -813,7 +840,9 @@
                      (setf (legit-cherry-options-fast-forward-p options) nil)))
                   ((string= name "- e")
                    (setf (legit-cherry-options-edit-p options)
-                         (not (legit-cherry-options-edit-p options))))
+                         (not (legit-cherry-options-edit-p options)))
+                   (when (legit-cherry-options-edit-p options)
+                     (setf (legit-cherry-options-fast-forward-p options) nil)))
                   ((string= name "- S")
                    (setf (legit-cherry-options-gpg-sign options)
                          (if (legit-cherry-options-gpg-sign options)
