@@ -2992,10 +2992,52 @@ else
     "$git_session"
 fi
 
+send_keys "$git_session" C-c P B
+if lem_wait_for "$git_session" 'Refname:' "$WAIT_TIMEOUT" >/dev/null; then
+  tmux_cmd send-keys -t "$git_session" -l -- --missing-ref
+  send_keys "$git_session" Enter
+  if lem_wait_for "$git_session" 'Not a commit ref: --missing-ref' \
+       "$WAIT_TIMEOUT" >/dev/null; then
+    send_keys "$git_session" C-c T
+    if wait_report_count '^TODO-SECTIONS ' "$((todo_sections_before + 7))" &&
+       [[ $(latest_report '^TODO-SECTIONS ') == *\
+'policy=branch base=main' ]]; then
+      pass legit-todo-branch-base-invalid \
+        'B rejected an option-shaped invalid ref without changing the baseline'
+    else
+      fail legit-todo-branch-base-invalid \
+        'an invalid B ref changed the retained TODO baseline' "$git_session"
+    fi
+  else
+    fail legit-todo-branch-base-invalid \
+      'B did not reject an option-shaped invalid ref' "$git_session"
+  fi
+else
+  fail legit-todo-branch-base-invalid \
+    'B did not reopen the TODO ref prompt' "$git_session"
+fi
+
+send_keys "$git_session" C-c P B
+if lem_wait_for "$git_session" 'Refname:' "$WAIT_TIMEOUT" >/dev/null; then
+  send_keys "$git_session" C-g C-c T
+  if wait_report_count '^TODO-SECTIONS ' "$((todo_sections_before + 8))" &&
+     [[ $(latest_report '^TODO-SECTIONS ') == *\
+'policy=branch base=main' ]]; then
+    pass legit-todo-branch-base-cancel \
+      'cancelling B retained the previous TODO comparison ref'
+  else
+    fail legit-todo-branch-base-cancel \
+      'cancelling B changed the retained TODO baseline' "$git_session"
+  fi
+else
+  fail legit-todo-branch-base-cancel \
+    'B did not open the TODO ref prompt for cancellation' "$git_session"
+fi
+
 send_keys "$git_session" C-c P b
 wait_legit "$git_session" git || true
 send_keys "$git_session" C-c T
-if wait_report_count '^TODO-SECTIONS ' "$((todo_sections_before + 7))" &&
+if wait_report_count '^TODO-SECTIONS ' "$((todo_sections_before + 9))" &&
    [[ $(latest_report '^TODO-SECTIONS ') == *\
 'branch=no branch-hidden=no branch-row=yes branch-row-hidden=no policy=nil base=main' ]]; then
   pass legit-todo-branch-toggle-off 'b hid branch TODOs from a TODO section'
@@ -3007,7 +3049,7 @@ fi
 send_keys "$git_session" C-c P b
 wait_legit "$git_session" git || true
 send_keys "$git_session" C-c T
-if wait_report_count '^TODO-SECTIONS ' "$((todo_sections_before + 8))" &&
+if wait_report_count '^TODO-SECTIONS ' "$((todo_sections_before + 10))" &&
    [[ $(latest_report '^TODO-SECTIONS ') == *\
 'branch=yes branch-hidden=no branch-row=yes branch-row-hidden=no policy=t base=main' ]]; then
   pass legit-todo-branch-toggle-on 'a second b forced branch TODOs back on'
@@ -3018,6 +3060,48 @@ fi
 "$git_bin" -C "$LEM_YATH_VCS_GIT_ROOT" restore -- nested/docs/keywords.txt
 send_keys "$git_session" g
 wait_legit "$git_session" git || true
+
+status_position_before=$(report_count '^STATUS-CONTEXT ')
+send_keys "$git_session" C-c O
+wait_report_count '^STATUS-CONTEXT ' "$((status_position_before + 1))" || true
+status_position_count=$((status_position_before + 1))
+if [[ $(latest_report '^STATUS-CONTEXT ') == \
+      'STATUS-CONTEXT focus=no todo=no' ]]; then
+  send_keys "$git_session" C-x o C-c O
+  status_position_count=$((status_position_count + 1))
+  wait_report_count '^STATUS-CONTEXT ' "$status_position_count" || true
+fi
+send_keys "$git_session" g g C-c O
+status_position_count=$((status_position_count + 1))
+if wait_report_count '^STATUS-CONTEXT ' "$status_position_count" &&
+   [[ $(latest_report '^STATUS-CONTEXT ') == \
+      'STATUS-CONTEXT focus=yes todo=no' ]]; then
+  send_keys "$git_session" b
+fi
+if lem_wait_for "$git_session" '\[Branch\]' "$WAIT_TIMEOUT" >/dev/null; then
+  pass legit-todo-branch-delegation \
+    'b retained the ordinary branch dispatch outside TODO sections'
+  send_keys "$git_session" q
+else
+  fail legit-todo-branch-delegation \
+    'b did not delegate to branch dispatch outside TODO sections' "$git_session"
+fi
+
+send_keys "$git_session" C-c O
+status_position_count=$((status_position_count + 1))
+if wait_report_count '^STATUS-CONTEXT ' "$status_position_count" &&
+   [[ $(latest_report '^STATUS-CONTEXT ') == \
+      'STATUS-CONTEXT focus=yes todo=no' ]]; then
+  send_keys "$git_session" B
+fi
+if lem_wait_for "$git_session" '\[Bisect\]' "$WAIT_TIMEOUT" >/dev/null; then
+  pass legit-todo-bisect-delegation \
+    'B retained the ordinary bisect dispatch outside TODO sections'
+  send_keys "$git_session" q
+else
+  fail legit-todo-bisect-delegation \
+    'B did not delegate to bisect dispatch outside TODO sections' "$git_session"
+fi
 send_keys "$git_session" q F6
 
 if [[ ${LEM_YATH_VCS_SMOKE_ONLY:-0} == 1 ]]; then

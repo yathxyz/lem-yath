@@ -1131,6 +1131,17 @@
       (move-point (buffer-point buffer)
                   (legit-todo-section-heading section)))))
 
+(define-command lem-yath-test-vcs-status-context () ()
+  "Report whether physical focus is outside a TODO section in Legit status."
+  (let ((status-p
+          (and (lem/legit::legit-status-active-p)
+               (eq (current-window) lem/legit::*peek-window*))))
+    (vcs-test-log
+     "STATUS-CONTEXT focus=~a todo=~a"
+     (vcs-test-yes-no status-p)
+     (vcs-test-yes-no
+      (and status-p (legit-todo-context-root (current-point)))))))
+
 (defun vcs-test-position-legit-file (filename &key focus-diff section)
   "Position Legit's status row for FILENAME, optionally focusing its diff."
   (let* ((active (lem/legit::legit-status-active-p))
@@ -2007,6 +2018,7 @@
 (define-key *global-keymap* "C-c t" 'lem-yath-test-vcs-todo-preview)
 (define-key *global-keymap* "C-c T" 'lem-yath-test-vcs-todo-sections)
 (define-key *global-keymap* "C-c P" 'lem-yath-test-vcs-position-todo-heading)
+(define-key *global-keymap* "C-c O" 'lem-yath-test-vcs-status-context)
 (define-key *global-keymap* "C-c d" 'lem-yath-test-vcs-porcelain-diff)
 (define-key *global-keymap* "C-c e" 'lem-yath-test-vcs-porcelain-staged-diff)
 (define-key *global-keymap* "C-c f" 'lem-yath-test-vcs-focus-legit)
@@ -2025,6 +2037,8 @@
   "C-c T" 'lem-yath-test-vcs-todo-sections)
 (define-key lem/legit::*peek-legit-keymap*
   "C-c P" 'lem-yath-test-vcs-position-todo-heading)
+(define-key lem/legit::*peek-legit-keymap*
+  "C-c O" 'lem-yath-test-vcs-status-context)
 (define-key lem/legit::*peek-legit-keymap*
   "C-c d" 'lem-yath-test-vcs-porcelain-diff)
 (define-key lem/legit::*peek-legit-keymap*
