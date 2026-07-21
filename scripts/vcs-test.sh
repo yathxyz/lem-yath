@@ -2909,6 +2909,16 @@ else
 fi
 send_keys "$git_session" q F6
 
+if [[ ${LEM_YATH_VCS_SMOKE_ONLY:-0} == 1 ]]; then
+  printf '\n'
+  if ((failed)); then
+    printf 'VCS SMOKE TEST FAILED\n'
+    exit 1
+  fi
+  printf 'VCS SMOKE TEST PASSED\n'
+  exit 0
+fi
+
 if press_report "$git_session" F2 '^GUTTER ' &&
    grep -q '^GUTTER code-programming=yes code-mode=yes added=yes modified=yes deleted=yes initial=yes timer=yes transition-off=yes transition-clean=yes restored=yes markdown-programming=no markdown-mode=no markdown=none markdown-composed=none markdown-state=no utility-programming=no utility-mode=no utility=none utility-composed=none utility-state=no debounce-line=4 debounce-clean=yes markers=' \
      "$LEM_YATH_VCS_REPORT"; then

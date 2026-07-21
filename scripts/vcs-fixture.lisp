@@ -86,10 +86,11 @@
 
 (define-command lem-yath-test-vcs-static () ()
   (let ((failures 0))
-    (flet ((check (condition label)
-             (vcs-test-log "~a STATIC ~a"
-                           (if condition "PASS" "FAIL") label)
-             (unless condition (incf failures))))
+    (uiop:with-current-directory ((buffer-directory *vcs-test-source-buffer*))
+      (flet ((check (condition label)
+               (vcs-test-log "~a STATIC ~a"
+                             (if condition "PASS" "FAIL") label)
+               (unless condition (incf failures))))
       (check (vcs-test-command-version-p "git") "wrapper-git-runs")
       (check (vcs-test-command-version-p "jj") "wrapper-jj-runs")
       (check (vcs-test-store-program-p "git") "wrapper-git-is-pinned")
@@ -650,7 +651,7 @@
        (vcs-test-yes-no (vcs-test-store-program-p "git"))
        (vcs-test-yes-no (vcs-test-store-program-p "jj")))
       (vcs-test-log "SUMMARY STATIC ~a failures=~d"
-                    (if (zerop failures) "PASS" "FAIL") failures))))
+                    (if (zerop failures) "PASS" "FAIL") failures)))))
 
 (defun vcs-test-gutter-content (buffer line-number)
   (when (lem-yath-git-gutter-mode-active-p buffer)
