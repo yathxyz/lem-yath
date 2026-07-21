@@ -1027,5 +1027,12 @@
     (legit-branch-require-git vcs)
     (dispatch-legit-branch)))
 
-(define-key lem/legit::*peek-legit-keymap* "b" 'lem-yath-legit-branch)
+(define-command lem-yath-legit-branch-or-todo-toggle () ()
+  "Toggle branch TODOs at a TODO section; otherwise open branch dispatch."
+  (if (legit-todo-context-root (current-point))
+      (lem-yath-legit-todo-branch-list-toggle)
+      (lem-yath-legit-branch)))
+
+(define-key lem/legit::*peek-legit-keymap*
+  "b" 'lem-yath-legit-branch-or-todo-toggle)
 (define-key lem/legit::*legit-diff-mode-keymap* "b" 'lem-yath-legit-branch)

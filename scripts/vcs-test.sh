@@ -2966,10 +2966,53 @@ wait_legit "$git_session" git || true
 send_keys "$git_session" C-c T
 if wait_report_count '^TODO-SECTIONS ' "$((todo_sections_before + 5))" &&
    [[ $(latest_report '^TODO-SECTIONS ') == *\
-'branch=yes branch-hidden=no branch-row=yes branch-row-hidden=no' ]]; then
+'branch=yes branch-hidden=no branch-row=yes branch-row-hidden=no policy=branch base=automatic' ]]; then
   pass legit-todo-branch-diff 'the non-main branch list showed only added-line TODOs against main'
 else
   fail legit-todo-branch-diff 'the branch-diff TODO section was absent or folded incorrectly' \
+    "$git_session"
+fi
+
+send_keys "$git_session" C-c P B
+if lem_wait_for "$git_session" 'Refname:' "$WAIT_TIMEOUT" >/dev/null; then
+  tmux_cmd send-keys -t "$git_session" -l -- main
+  send_keys "$git_session" Enter
+  wait_legit "$git_session" git || true
+  send_keys "$git_session" C-c T
+  if wait_report_count '^TODO-SECTIONS ' "$((todo_sections_before + 6))" &&
+     [[ $(latest_report '^TODO-SECTIONS ') == *\
+'branch=yes branch-hidden=no branch-row=yes branch-row-hidden=no policy=branch base=main' ]]; then
+    pass legit-todo-branch-base 'B selected and retained a validated branch comparison ref'
+  else
+    fail legit-todo-branch-base 'B did not apply the selected TODO comparison ref' \
+      "$git_session"
+  fi
+else
+  fail legit-todo-branch-base 'B did not open the TODO ref prompt' \
+    "$git_session"
+fi
+
+send_keys "$git_session" C-c P b
+wait_legit "$git_session" git || true
+send_keys "$git_session" C-c T
+if wait_report_count '^TODO-SECTIONS ' "$((todo_sections_before + 7))" &&
+   [[ $(latest_report '^TODO-SECTIONS ') == *\
+'branch=no branch-hidden=no branch-row=yes branch-row-hidden=no policy=nil base=main' ]]; then
+  pass legit-todo-branch-toggle-off 'b hid branch TODOs from a TODO section'
+else
+  fail legit-todo-branch-toggle-off 'b did not disable branch TODO presentation' \
+    "$git_session"
+fi
+
+send_keys "$git_session" C-c P b
+wait_legit "$git_session" git || true
+send_keys "$git_session" C-c T
+if wait_report_count '^TODO-SECTIONS ' "$((todo_sections_before + 8))" &&
+   [[ $(latest_report '^TODO-SECTIONS ') == *\
+'branch=yes branch-hidden=no branch-row=yes branch-row-hidden=no policy=t base=main' ]]; then
+  pass legit-todo-branch-toggle-on 'a second b forced branch TODOs back on'
+else
+  fail legit-todo-branch-toggle-on 'b did not re-enable branch TODO presentation' \
     "$git_session"
 fi
 "$git_bin" -C "$LEM_YATH_VCS_GIT_ROOT" restore -- nested/docs/keywords.txt

@@ -2687,9 +2687,14 @@ navigation, and explicit visibility survives refresh. On a non-main local
 branch, a second section shows TODOs only from added diff lines since the merge
 base; main-branch inference follows the installed Magit order
 (`init.defaultBranch`, then `main`, `master`, `trunk`, `development`). Empty
-automatic sections are omitted. Custom scanners, grouping variables, manual
-update mode, alternate branch baselines, submodule scanning, and asynchronous
-process presentation remain outside this bounded approximation. A small
+automatic sections are omitted. Within either TODO section, `b` follows
+Magit-Todos' buffer-local `branch` -> disabled -> forced-on cycle and `B`
+selects a validated commit ref from a bounded all-ref completion list. Those
+per-repository in-memory choices and section visibility survive status refresh;
+outside a TODO section the same keys retain Legit's ordinary branch and bisect
+dispatches. Custom scanners, grouping variables, manual update mode, submodule
+scanning, and asynchronous process presentation remain outside this bounded
+approximation. A small
 pinned-upstream patch exposes the status-section hook used by the integration.
 
 ### GitHub Forge workflow — `lem-yath/src/forge.lisp`

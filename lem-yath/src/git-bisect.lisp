@@ -450,5 +450,12 @@
 (add-hook lem/legit::*status-section-functions*
           'insert-legit-bisect-section)
 
-(define-key lem/legit::*peek-legit-keymap* "B" 'lem-yath-legit-bisect)
+(define-command lem-yath-legit-bisect-or-todo-base () ()
+  "Set the TODO baseline at a TODO section; otherwise open bisect dispatch."
+  (if (legit-todo-context-root (current-point))
+      (lem-yath-legit-todo-branch-list-set-ref)
+      (lem-yath-legit-bisect)))
+
+(define-key lem/legit::*peek-legit-keymap*
+  "B" 'lem-yath-legit-bisect-or-todo-base)
 (define-key lem/legit::*legit-diff-mode-keymap* "B" 'lem-yath-legit-bisect)

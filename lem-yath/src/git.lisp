@@ -401,6 +401,7 @@
 (defparameter *legit-todo-timeout* 5)
 (defparameter *legit-todo-auto-group-items* 20)
 (defparameter *legit-todo-max-items* 10)
+(defparameter *legit-todo-ref-limit* 5000)
 (defparameter *legit-todo-keywords*
   '("HOLD" "TODO" "NEXT" "THEM" "PROG" "OKAY" "DONT" "FAIL"
     "MAYBE" "KLUDGE" "HACK" "TEMP" "WIP" "FIXME" "DEBUG" "XXXX*"))
@@ -419,6 +420,9 @@
   hidden-p)
 
 (defvar *legit-todo-visibility-cache* nil)
+(defvar *legit-todo-branch-policy-cache* nil)
+(defvar *legit-todo-merge-base-ref-cache* nil)
+(defvar *legit-todo-ref-history* nil)
 
 (defun legit-todo-buffer-sections (&optional (buffer (current-buffer)))
   (buffer-value buffer 'lem-yath-legit-todo-sections))
@@ -487,6 +491,49 @@
   (find-if (lambda (section)
              (same-line-p point (legit-todo-section-heading section)))
            (legit-todo-buffer-sections (point-buffer point))))
+
+(defun legit-todo-top-section-p (section)
+  (let ((key (legit-todo-section-key section)))
+    (or (and (= 2 (length key)) (eq :worktree (second key)))
+        (and (= 3 (length key)) (eq :branch (second key))))))
+
+(defun legit-todo-point-in-section-p (point section)
+  (or (same-line-p point (legit-todo-section-heading section))
+      (and (point<= (legit-todo-section-content-start section) point)
+           (point< point (legit-todo-section-end section)))))
+
+(defun legit-todo-context-root (point)
+  "Return the repository root when POINT is in a top-level TODO section."
+  (alexandria:when-let
+      ((section
+         (find-if (lambda (candidate)
+                    (and (legit-todo-top-section-p candidate)
+                         (legit-todo-point-in-section-p point candidate)))
+                  (legit-todo-buffer-sections (point-buffer point)))))
+    (first (legit-todo-section-key section))))
+
+(defun legit-todo-root-setting (cache root default)
+  (let ((entry (assoc root cache :test #'string=)))
+    (if entry (cdr entry) default)))
+
+(defun legit-todo-set-root-setting (cache root value)
+  (acons root value (remove root cache :key #'car :test #'string=)))
+
+(defun legit-todo-branch-policy (root)
+  (legit-todo-root-setting *legit-todo-branch-policy-cache* root :branch))
+
+(defun (setf legit-todo-branch-policy) (policy root)
+  (setf *legit-todo-branch-policy-cache*
+        (legit-todo-set-root-setting
+         *legit-todo-branch-policy-cache* root policy)))
+
+(defun legit-todo-merge-base-ref (root)
+  (legit-todo-root-setting *legit-todo-merge-base-ref-cache* root nil))
+
+(defun (setf legit-todo-merge-base-ref) (ref root)
+  (setf *legit-todo-merge-base-ref-cache*
+        (legit-todo-set-root-setting
+         *legit-todo-merge-base-ref-cache* root ref)))
 
 (defun legit-todo-section-threshold (depth)
   (if (zerop depth)
@@ -648,12 +695,23 @@
     (declare (ignore status))
     (first (legit-todo-output-lines output))))
 
-(defun legit-todo-merge-base (root main-branch)
+(defun legit-todo-commit-object (root ref)
   (multiple-value-bind (output status)
-      (run-legit-todo-git root (list "merge-base" "HEAD" main-branch)
-                          :allowed-statuses '(0 1))
+      (run-legit-todo-git
+       root
+       (list "rev-parse" "--verify" "--end-of-options"
+             (format nil "~a^{commit}" ref))
+       :allowed-statuses '(0 1 128))
     (and (zerop status)
          (first (legit-todo-output-lines output)))))
+
+(defun legit-todo-merge-base (root ref)
+  (alexandria:when-let ((commit (legit-todo-commit-object root ref)))
+    (multiple-value-bind (output status)
+        (run-legit-todo-git root (list "merge-base" "HEAD" commit)
+                            :allowed-statuses '(0 1))
+      (and (zerop status)
+           (first (legit-todo-output-lines output))))))
 
 (defun legit-todo-string-prefix-p (prefix string)
   (and (<= (length prefix) (length string))
@@ -701,12 +759,19 @@
     (sort-legit-todos (nreverse results))))
 
 (defun collect-legit-branch-todos (root)
-  "Return added-line TODOs relative to Magit's inferred main branch."
-  (let ((main-branch (legit-todo-main-branch root)))
-    (when (and main-branch
-               (not (equal main-branch (legit-todo-current-branch root))))
+  "Return added-line TODOs relative to the effective branch baseline."
+  (let* ((policy (legit-todo-branch-policy
+                  (uiop:native-namestring root)))
+         (base-ref (or (legit-todo-merge-base-ref
+                        (uiop:native-namestring root))
+                       (legit-todo-main-branch root)))
+         (current (legit-todo-current-branch root)))
+    (when (and base-ref
+               (or (eq policy t)
+                   (and (eq policy :branch)
+                        (not (equal base-ref current)))))
       (alexandria:when-let ((merge-base
-                             (legit-todo-merge-base root main-branch)))
+                             (legit-todo-merge-base root base-ref)))
         (multiple-value-bind (output status)
             (run-legit-todo-git
              root
@@ -714,7 +779,7 @@
                    "-U0" merge-base)
              :allowed-statuses '(0))
           (declare (ignore status))
-          (values (parse-legit-todo-diff output) main-branch))))))
+          (values (parse-legit-todo-diff output) base-ref))))))
 
 (defun make-legit-todo-move-function (root todo)
   (let ((pathname (merge-pathnames (legit-todo-path todo) root))
@@ -834,6 +899,48 @@
       (cache-legit-todo-section-visibility (current-buffer) section)
       (redraw-display))
     (next-window)))
+
+(defun legit-todo-refnames (root)
+  (multiple-value-bind (output status)
+      (run-legit-todo-git
+       root '("for-each-ref" "--format=%(refname:short)" "refs")
+       :allowed-statuses '(0))
+    (declare (ignore status))
+    (let ((refs (legit-todo-output-lines output)))
+      (when (> (length refs) *legit-todo-ref-limit*)
+        (editor-error "Git returned more than ~d ref names."
+                      *legit-todo-ref-limit*))
+      refs)))
+
+(defun legit-todo-valid-commit-ref-p (root ref)
+  (not (null (legit-todo-commit-object root ref))))
+
+(define-command lem-yath-legit-todo-branch-list-toggle () ()
+  "Toggle branch-diff TODOs for the current repository and refresh status."
+  (alexandria:if-let ((root (legit-todo-context-root (current-point))))
+    (let ((new-policy (not (legit-todo-branch-policy root))))
+      (setf (legit-todo-branch-policy root) new-policy)
+      (lem/legit::show-legit-status)
+      (message "Branch TODOs ~:[disabled~;enabled~]." new-policy))
+    (editor-error "Point is not in a TODO section.")))
+
+(define-command lem-yath-legit-todo-branch-list-set-ref () ()
+  "Set the comparison ref for branch-diff TODOs and refresh status."
+  (alexandria:if-let ((root (legit-todo-context-root (current-point))))
+    (let* ((refs (legit-todo-refnames root))
+           (ref
+             (prompt-for-string
+              "Refname: "
+              :history-symbol '*legit-todo-ref-history*
+              :completion-function
+              (lambda (query) (completion-strings query refs)))))
+      (when ref
+        (unless (legit-todo-valid-commit-ref-p root ref)
+          (editor-error "Not a commit ref: ~a" ref))
+        (setf (legit-todo-merge-base-ref root) ref)
+        (lem/legit::show-legit-status)
+        (message "Branch TODO baseline: ~a" ref)))
+    (editor-error "Point is not in a TODO section.")))
 
 (defun move-to-visible-legit-marker (point mover)
   (loop

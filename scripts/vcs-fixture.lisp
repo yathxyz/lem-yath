@@ -175,7 +175,7 @@
       (check (eq 'lem-yath-git-blame-commit-quit
                  (vcs-test-key-command *git-blame-commit-mode-keymap* "q"))
              "magit-blame-commit-q")
-      (check (eq 'lem-yath-legit-bisect
+      (check (eq 'lem-yath-legit-bisect-or-todo-base
                  (vcs-test-key-command lem/legit::*peek-legit-keymap* "B"))
              "magit-bisect-status-dispatch")
       (dolist (binding '(("Tab" lem-yath-legit-toggle-todo-section)
@@ -431,7 +431,7 @@
                      (vcs-test-key-command
                      (legit-revert-popup-keymap options t) key))
                  (format nil "magit-revert-active-~a" key))))
-      (check (eq 'lem-yath-legit-branch
+      (check (eq 'lem-yath-legit-branch-or-todo-toggle
                  (vcs-test-key-command lem/legit::*peek-legit-keymap* "b"))
              "magit-branch-status-dispatch")
       (check (eq 'lem-yath-legit-branch
@@ -1091,13 +1091,17 @@
                  buffer "TODO tracked implementation task")))
          (branch-row
            (and buffer
-                (vcs-test-todo-row-point buffer "TODO: branch-only"))))
+                (vcs-test-todo-row-point buffer "TODO: branch-only")))
+         (root (and top (first (legit-todo-section-key top))))
+         (policy (and root (legit-todo-branch-policy root)))
+         (base-ref (and root (legit-todo-merge-base-ref root))))
     (vcs-test-log
      (concatenate
       'string
       "TODO-SECTIONS total=~d top=~a top-hidden=~a grouped=~a "
       "keyword-hidden=~a path-hidden=~a row-hidden=~a branch=~a "
-      "branch-hidden=~a branch-row=~a branch-row-hidden=~a")
+      "branch-hidden=~a branch-row=~a branch-row-hidden=~a "
+      "policy=~a base=~a")
      (length sections)
      (vcs-test-yes-no top)
      (vcs-test-yes-no (and top (legit-todo-section-hidden-p top)))
@@ -1112,7 +1116,11 @@
       (and branch (legit-todo-section-hidden-p branch)))
      (vcs-test-yes-no branch-row)
      (vcs-test-yes-no
-      (and branch-row (legit-todo-line-hidden-p branch-row))))))
+      (and branch-row (legit-todo-line-hidden-p branch-row)))
+     (cond ((eq policy :branch) "branch")
+           ((eq policy t) "t")
+           (t "nil"))
+     (or base-ref "automatic"))))
 
 (define-command lem-yath-test-vcs-position-todo-heading () ()
   (let* ((buffer (and (lem/legit::legit-status-active-p)
@@ -1395,7 +1403,7 @@
         "first-bad=~a hook=~d")
        (vcs-test-yes-no active)
        (vcs-test-yes-no
-        (eq 'lem-yath-legit-bisect
+        (eq 'lem-yath-legit-bisect-or-todo-base
             (vcs-test-key-command lem/legit::*peek-legit-keymap* "B")))
        (vcs-test-yes-no
         (eq 'lem-yath-legit-bisect
@@ -1910,7 +1918,8 @@
            (getf after :todo-hook)
            (getf after :bisect-hook)
            (vcs-test-yes-no
-            (eq (getf after :bisect) 'lem-yath-legit-bisect))
+            (eq (getf after :bisect)
+                'lem-yath-legit-bisect-or-todo-base))
            (vcs-test-yes-no
             (eq (getf after :fetch) 'lem-yath-legit-fetch))
            (vcs-test-yes-no
@@ -1924,7 +1933,8 @@
            (vcs-test-yes-no
             (eq (getf after :revert) 'lem-yath-legit-revert))
            (vcs-test-yes-no
-            (eq (getf after :branch) 'lem-yath-legit-branch))
+            (eq (getf after :branch)
+                'lem-yath-legit-branch-or-todo-toggle))
            (vcs-test-yes-no
             (eq (getf after :worktree) 'lem-yath-legit-worktree))
            (vcs-test-yes-no
