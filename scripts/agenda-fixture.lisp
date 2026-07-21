@@ -16,6 +16,7 @@
 (defvar *agenda-test-inactive-report-serial* 0)
 (defvar *agenda-test-inactive-last-generation* nil)
 (defvar *agenda-test-lifecycle-report-serial* 0)
+(defvar *agenda-test-timer-report-serial* 0)
 (defvar *agenda-test-original-top-level-org-files* nil)
 (defvar *agenda-test-stale-source* nil)
 
@@ -52,6 +53,14 @@
     (if (symbolp command)
         (symbol-name command)
         (princ-to-string command))))
+
+(defun agenda-test-map-command-name (map keys)
+  (alexandria:when-let
+      ((prefix (lem-core::keymap-find map (lem-core::parse-keyspec keys))))
+    (let ((command (lem-core::prefix-suffix prefix)))
+      (if (symbolp command)
+          (symbol-name command)
+          (princ-to-string command)))))
 
 (defun agenda-test-hook-count (function hooks)
   (count function hooks :key #'car :test #'eq))
@@ -179,6 +188,15 @@
      (agenda-test-command-name "q")
      (agenda-test-command-name "Z Z")
      (agenda-test-command-name "Z Q"))
+    (agenda-test-log
+     "TIMER-BINDINGS serial=~d cT=~a base=~a org=~a parser=~d,~d,~d"
+     serial
+     (agenda-test-command-name "c T")
+     (agenda-test-map-command-name *lem-yath-agenda-mode-keymap* ";")
+     (agenda-test-map-command-name *org-mode-keymap* "C-c C-x ;")
+     (org-countdown-input-seconds "5")
+     (org-countdown-input-seconds "1:30")
+     (org-countdown-input-seconds "1:02:03"))
     (loop :for directory :in directories
           :for index :from 1
           :do (agenda-test-log "ROOT serial=~d index=~d path=~a"
@@ -257,9 +275,24 @@
   (move-point (current-point)
               (agenda-test-find-line "Effort action sentinel")))
 
+(define-command lem-yath-test-agenda-goto-timer-effort () ()
+  (move-point (current-point)
+              (agenda-test-find-line "Timer effort sentinel")))
+
+(define-command lem-yath-test-agenda-timer-report () ()
+  (let ((remaining (org-countdown-remaining-seconds)))
+    (agenda-test-log
+     "TIMER serial=~d active=~a remaining=~a title=~s modeline=~s"
+     (incf *agenda-test-timer-report-serial*)
+     (if (org-countdown-active-p) "yes" "no")
+     (or remaining "nil")
+     *org-countdown-title*
+     (org-countdown-modeline (current-window)))))
+
 (define-command lem-yath-test-agenda-goto-note () ()
   (move-point (current-point)
-              (agenda-test-find-line "Note action sentinel")))
+              (agenda-test-find-line "Note action sentinel"))
+  (agenda-test-log "NOTE-READY current=yes"))
 
 (define-command lem-yath-test-agenda-goto-capture () ()
   (move-point (current-point)
@@ -740,6 +773,10 @@
   'lem-yath-test-agenda-goto-diary-guard)
 (define-key *lem-yath-agenda-vi-keymap* "C-c e"
   'lem-yath-test-agenda-goto-effort)
+(define-key *lem-yath-agenda-vi-keymap* "C-c T"
+  'lem-yath-test-agenda-goto-timer-effort)
+(define-key *lem-yath-agenda-vi-keymap* "C-c w"
+  'lem-yath-test-agenda-timer-report)
 (define-key *lem-yath-agenda-vi-keymap* "C-c 1"
   'lem-yath-test-agenda-goto-note)
 (define-key *lem-yath-agenda-vi-keymap* "C-c 4"

@@ -24,6 +24,7 @@ work_file="$WORKDIR/same.org"
 public_file="$PUBLIC_ORG_DIR/same.org"
 mcp_file="$PUBLIC_ORG_DIR/mcp/mcp.org"
 timestamp_file="$WORKDIR/timestamp-edit.org"
+timer_file="$WORKDIR/timer.org"
 archive_file="${work_file}_archive"
 session="lem-agenda-$id"
 FAILED=0
@@ -255,6 +256,7 @@ else
   grep -q '^INSPECT-BINDINGS serial=1 tags=LEM-YATH-AGENDA-SHOW-TAGS$' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   grep -q '^QUERY-BINDINGS serial=1 add=LEM-YATH-AGENDA-INCLUDE-INACTIVE-TIMESTAMPS subtract=LEM-YATH-AGENDA-INCLUDE-INACTIVE-TIMESTAMPS$' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   grep -q '^LIFECYCLE-BINDINGS serial=1 q=LEM-YATH-AGENDA-QUIT ZZ=LEM-YATH-AGENDA-QUIT ZQ=LEM-YATH-AGENDA-EXIT$' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
+  grep -q '^TIMER-BINDINGS serial=1 cT=LEM-YATH-ORG-SET-TIMER base=LEM-YATH-ORG-SET-TIMER org=LEM-YATH-ORG-SET-TIMER parser=300,90,3723$' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   grep -q '^TAG-COMPLETION serial=1 known=alpha,ARCHIVE,localtag,movetag,parenttag,shared,targettag items=:alpha:,:localtag:$' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   [ "$(grep -c '^ENTRY serial=1 ' "$LEM_YATH_AGENDA_REPORT")" = 39 ] || static_ok=0
   grep -qE '^ENTRY serial=1 section=OVERDUE .*Overdue work sentinel' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
@@ -506,6 +508,12 @@ printf '%s\n' \
   '* Date shift event sentinel <2026-07-14 Tue>--<2026-07-15 Wed>' \
   '* Time shift event sentinel <2026-07-13 Mon 23:30-23:45>' \
   >>"$work_file"
+printf '%s\n' \
+  '* TODO Timer effort sentinel' \
+  ':PROPERTIES:' \
+  ':Effort:   0:01' \
+  ':END:' \
+  >"$timer_file"
 tmux_cmd send-keys -t "$session" g r
 for _ in $(seq 1 120); do
   tmux_cmd send-keys -t "$session" C-c m
@@ -513,12 +521,72 @@ for _ in $(seq 1 120); do
   sleep 0.1
 done
 
+# Evil-Org cT takes the selected row's Effort without prompting and exposes a
+# global one-second countdown in the modeline.  A prompted replacement keeps
+# the old timer on refusal, then atomically replaces it on confirmation and
+# removes its modeline contribution at completion.  Emacs-state semicolon is
+# audited above as the pinned GNU agenda alias.
+tmux_cmd send-keys -t "$session" C-c T c T
+sleep 0.3
+tmux_cmd send-keys -t "$session" C-c w
+if wait_report '^TIMER serial=1 active=yes remaining=(59|60) title="Timer effort sentinel" modeline=" <0:(00:59|01:00)>"$' &&
+   lem_capture "$session" | grep -qE '<0:(00:59|01:00)>'; then
+  pass agenda-timer-effort 'cT used row Effort and rendered the global countdown'
+else
+  fail agenda-timer-effort 'cT prompted despite Effort or omitted its modeline countdown'
+fi
+
+tmux_cmd send-keys -t "$session" F12 c T
+if lem_wait_for "$session" 'How much time left' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l '0:00:02'
+  tmux_cmd send-keys -t "$session" Enter
+  if lem_wait_for "$session" 'Replace current timer' 10 >/dev/null; then
+    tmux_cmd send-keys -t "$session" n
+    sleep 0.2
+    tmux_cmd send-keys -t "$session" C-c w
+    if wait_report '^TIMER serial=2 active=yes remaining=[0-9]+ title="Timer effort sentinel" modeline=" <[0-9]+:[0-9][0-9]:[0-9][0-9]>"$'; then
+      pass agenda-timer-decline 'declining replacement retained the running timer'
+    else
+      fail agenda-timer-decline 'replacement refusal cancelled or retitled the timer'
+    fi
+  else
+    fail agenda-timer-replace-prompt 'cT did not confirm replacement of a running timer'
+  fi
+else
+  fail agenda-timer-prompt 'cT without Effort did not prompt for a duration'
+fi
+
+tmux_cmd send-keys -t "$session" c T
+if lem_wait_for "$session" 'How much time left' 10 >/dev/null; then
+  tmux_cmd send-keys -t "$session" -l '0:00:01'
+  tmux_cmd send-keys -t "$session" Enter
+  if lem_wait_for "$session" 'Replace current timer' 10 >/dev/null; then
+    tmux_cmd send-keys -t "$session" y
+    if lem_wait_for "$session" 'Work unscheduled sentinel: time out' 10 >/dev/null; then
+      tmux_cmd send-keys -t "$session" C-c w
+      if wait_report '^TIMER serial=3 active=no remaining=nil title=NIL modeline=""$'; then
+        pass agenda-timer-complete 'confirmed replacement completed and cleaned global state'
+      else
+        fail agenda-timer-complete 'completion left timer or modeline ownership behind'
+      fi
+    else
+      fail agenda-timer-complete 'the one-second replacement did not notify with its row title'
+    fi
+  else
+    fail agenda-timer-replace-prompt 'the second replacement did not request confirmation'
+  fi
+else
+  fail agenda-timer-prompt 'the replacement timer did not read a duration'
+fi
+
 # Evil-Org `a` opens a real editable Org note buffer.  Finalization follows
 # the configured default log syntax after planning and properties, returns to
 # the same agenda row, and deliberately leaves both disk and agenda remote
 # undo untouched because this command is absent from the save advice and from
 # Org's `org-with-remote-undo` paths.
-tmux_cmd send-keys -t "$session" C-c 1 a
+tmux_cmd send-keys -t "$session" C-c 1
+wait_report '^NOTE-READY current=yes$' || true
+tmux_cmd send-keys -t "$session" a
 if lem_wait_for "$session" 'Insert note for this entry' 10 >/dev/null; then
   type_slow 'Agenda note first line'
   tmux_cmd send-keys -t "$session" Enter

@@ -128,6 +128,7 @@
                              (:file "agenda-bulk")
                              (:file "agenda-undo-command")
                              (:file "agenda-filter")
+                             (:file "agenda-timer")
                              (:file "agenda-restriction")
                              (:file "agenda-query")
                              (:file "agenda-stuck")

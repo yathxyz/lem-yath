@@ -945,6 +945,12 @@ the trailing text-ready space. The profile binds no other org-journal command
   created solely by Emacs's agenda scan. Lem's immutable scanner creates no
   source buffers, so `ZQ` intentionally converges with `q`/`ZZ` after that
   vacuous release step.
+- Evil-Org `cT` and GNU agenda `;` run the pinned Org countdown timer. Lem uses
+  the selected row's Effort when present, otherwise reads minutes, `m:ss`, or
+  `h:mm:ss`; a running timer requires replacement confirmation. The global
+  modeline counts down once per second and completion reports the normalized
+  Org heading before removing both timer and modeline ownership. The ordinary
+  Org `C-c C-x ;` alias shares that lifecycle.
 - **org-super-agenda** (`org-super-agenda-mode 1`) — grouped agenda views (no custom groups defined in elisp; defaults).
 - **evil-org-agenda** keys set.
 - Evil-Org `Tab`, Shift-Return, and `g TAB` run `org-agenda-goto`, opening the
