@@ -1,7 +1,7 @@
 # Structural editing parity
 
 The reference is the active Emacs configuration in
-`home/config/emacs/lisp/init-prog.el`:
+`portable/dot_config/emacs/lisp/init-prog.el`:
 
 ```elisp
 (setq lispyville-key-theme

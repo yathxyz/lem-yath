@@ -1,7 +1,8 @@
 # lem-yath: emacs → lem
 
 A faithful port of my Nix-managed Emacs configuration
-(`~/proj/nix/computer/home/config/emacs`, ~9,100 lines of elisp, ~100 packages)
+(`~/proj/nix/computer/portable/dot_config/emacs`, ~9,100 lines of elisp,
+~100 packages)
 to [Lem](https://github.com/lem-project/lem), the Common Lisp editor —
 terminal (ncurses) frontend, multi-threaded SBCL image.
 
@@ -174,6 +175,9 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   from every one of the 24 packaged tree-sitter modes, including balanced list
   interiors inside ordinary and block strings; arbitrary Visual selections use
   their active endpoint and retain contained generated tiers for contraction.
+  Unmatched lists retain pinned Expreg's unusual partial inside/outside tiers,
+  including the final-character-short inside selection, before the parser error
+  node.
   The configured unbound
   `M-x expreg-contract` walks backward through the generated selection sequence
   and expansion can then move forward again

@@ -65,6 +65,10 @@
   (expreg-test-open "LEM_YATH_EXPREG_PYTHON_MALFORMED"
                     "python-malformed" "beta"))
 
+(define-command lem-yath-test-expreg-open-python-malformed-nested () ()
+  (expreg-test-open "LEM_YATH_EXPREG_PYTHON_MALFORMED_NESTED"
+                    "python-malformed-nested" "beta"))
+
 (define-command lem-yath-test-expreg-open-json () ()
   (expreg-test-open "LEM_YATH_EXPREG_JSON" "json" "café"))
 

@@ -1536,6 +1536,7 @@ keymaps and therefore execute the non-jumping repeat motions directly."
   seed-end
   ranges
   string-ranges
+  malformed-list-ranges
   inner-range)
 
 (defstruct expand-region-session
@@ -1588,7 +1589,22 @@ keymaps and therefore execute the non-jumping repeat motions directly."
   (expand-region-character-range-at-point
    point #'expand-region-basic-word-character-p))
 
+(defun expand-region-symbol-range-p (start end)
+  "Return true when START..END consists entirely of symbol characters."
+  (with-point ((scan start))
+    (loop :while (point< scan end)
+          :always (prog1
+                      (expand-region-symbol-character-p (character-at scan))
+                    (character-offset scan 1)))))
+
 (defun expand-region-symbol-candidate (start end)
+  ;; Parser-backed modes obtain call expressions from their syntax tree, so
+  ;; only the initial word/symbol tier belongs here.  Parserless fallback uses
+  ;; this same extension to attach a function name to a balanced list.
+  (unless (or (expand-region-symbol-range-p start end)
+              (null (expand-region-tree-sitter-language
+                     (point-buffer start))))
+    (return-from expand-region-symbol-candidate nil))
   (with-point ((candidate-start start)
                (candidate-end end))
     (loop :while (expand-region-symbol-character-p
@@ -1666,9 +1682,36 @@ keymaps and therefore execute the non-jumping repeat motions directly."
               (list (copy-point start :temporary)
                     (copy-point end :temporary)))))))))
 
+(defun expand-region-free-ts-node (node)
+  (when node
+    (cffi:foreign-free (tree-sitter/types:ts-node-buffer node))))
+
+(defun expand-region-smallest-named-child-at-byte (node byte-offset)
+  "Return NODE's smallest named child containing BYTE-OFFSET.
+
+Malformed trees can contain overlapping recovery siblings.  Choosing one
+smallest child reproduces `treesit-node-at' ancestry instead of mixing those
+siblings into a synthetic expansion sequence."
+  (let ((best nil)
+        (best-size nil))
+    (dotimes (index (tree-sitter:node-named-child-count node))
+      (alexandria:when-let
+          ((child (tree-sitter:node-named-child node index)))
+        (let ((start (tree-sitter:node-start-byte child))
+              (end (tree-sitter:node-end-byte child)))
+          (if (and (<= start byte-offset)
+                   (< byte-offset end)
+                   (or (null best-size) (< (- end start) best-size)))
+              (progn
+                (expand-region-free-ts-node best)
+                (setf best child
+                      best-size (- end start)))
+              (expand-region-free-ts-node child)))))
+    best))
+
 (defun expand-region-ts-node-ranges
-    (node selection-start selection-end &optional root-p)
-  "Collect syntax and string-content ranges containing the selection."
+    (node selection-start selection-end anchor-byte &optional root-p)
+  "Collect syntax and string-content ranges on ANCHOR-BYTE's parent chain."
   (unwind-protect
        (let ((start (tree-sitter:node-start-byte node))
              (end (tree-sitter:node-end-byte node))
@@ -1686,20 +1729,18 @@ keymaps and therefore execute the non-jumping repeat motions directly."
                                "string_content")
                       (< start end))
              (push (cons start end) string-ranges))
-           ;; Named children contain every useful grammar node while avoiding
-           ;; one-character punctuation leaves which Expreg also filters.
-           (dotimes (index (tree-sitter:node-named-child-count node))
-             (alexandria:when-let
-                 ((child (tree-sitter:node-named-child node index)))
-               (multiple-value-bind (child-ranges child-string-ranges)
-                   (expand-region-ts-node-ranges
-                    child selection-start selection-end)
-                 (setf ranges (nconc child-ranges ranges)
-                       string-ranges
-                       (nconc child-string-ranges string-ranges))))))
+           (alexandria:when-let
+               ((child
+                  (expand-region-smallest-named-child-at-byte
+                   node anchor-byte)))
+             (multiple-value-bind (child-ranges child-string-ranges)
+                 (expand-region-ts-node-ranges
+                  child selection-start selection-end anchor-byte)
+               (setf ranges (nconc child-ranges ranges)
+                     string-ranges
+                     (nconc child-string-ranges string-ranges)))))
          (values ranges string-ranges))
-    ;; tree-sitter-cl allocates node structs outside the Lisp heap.
-    (cffi:foreign-free (tree-sitter/types:ts-node-buffer node))))
+    (expand-region-free-ts-node node)))
 
 (defun expand-region-delete-tree (tree)
   (trivial-garbage:cancel-finalization tree)
@@ -1726,7 +1767,7 @@ keymaps and therefore execute the non-jumping repeat motions directly."
                    (let ((root (tree-sitter:tree-root-node tree)))
                      (multiple-value-bind (ranges string-ranges)
                          (expand-region-ts-node-ranges
-                          root selection-start selection-end
+                          root selection-start selection-end selection-start
                           (not (string= language "json")))
                        (values ranges string-ranges t)))
                 (expand-region-delete-tree tree))))))
@@ -1737,6 +1778,105 @@ keymaps and therefore execute the non-jumping repeat motions directly."
   (and (<= (car range) selection-start)
        (<= selection-end (cdr range))))
 
+(defun expand-region-matching-opener (character)
+  (cond ((eql character #\)) #\()
+        ((eql character #\]) #\[)
+        ((eql character #\}) #\{)))
+
+(defun expand-region-matching-closer (character)
+  (cond ((eql character #\() #\))
+        ((eql character #\[) #\])
+        ((eql character #\{) #\})))
+
+(defun expand-region-active-delimiter-stack (buffer byte-offset)
+  "Return bracket openers active immediately before BYTE-OFFSET.
+
+The nearest opener comes first.  Syntax-table strings, comments, and escaped
+characters are excluded, matching Expreg's ordinary list scanner."
+  (let ((limit (expand-region-byte-to-point buffer byte-offset))
+        (stack nil))
+    (unwind-protect
+         (with-point ((scan (buffer-start-point buffer)))
+           (loop :while (point< scan limit)
+                 :for character := (character-at scan)
+                 :unless (or (in-string-or-comment-p scan)
+                             (syntax-escape-point-p scan 0))
+                   :do (cond
+                         ((member character '(#\( #\[ #\{))
+                          (push (cons character (point-bytes scan)) stack))
+                         ((member character '(#\) #\] #\}))
+                          (let ((expected
+                                  (expand-region-matching-opener character)))
+                            (when (and stack (eql (caar stack) expected))
+                              (pop stack)))))
+                 :do (character-offset scan 1)))
+      (delete-point limit))
+    stack))
+
+(defun expand-region-balanced-byte-range-at-opener-p
+    (buffer byte-ranges opener-byte opener-character)
+  "Return true when BYTE-RANGES contains OPENER's complete bracketed node."
+  (let ((closer (expand-region-matching-closer opener-character)))
+    (and closer
+         (some
+          (lambda (range)
+            (when (and (= opener-byte (car range))
+                       (< (car range) (cdr range)))
+              (let ((end (expand-region-byte-to-point buffer (cdr range))))
+                (unwind-protect
+                     (progn
+                       (character-offset end -1)
+                       (eql closer (character-at end)))
+                  (delete-point end)))))
+          byte-ranges))))
+
+(defun expand-region-malformed-list-byte-ranges
+    (buffer byte-ranges anchor-byte)
+  "Return Expreg-compatible partial tiers for lists open at ANCHOR-BYTE.
+
+Emacs 31's syntax scanner does not simply reject an unmatched opener.  It ends
+the outside-list tier at the largest complete syntax node around point and,
+for the innermost such list, ends the inside-list tier one character earlier.
+Those ranges need only contain Expreg's original point; they are deliberately
+not required to contain the preceding selected region."
+  (let* ((stack
+           (expand-region-active-delimiter-stack buffer anchor-byte))
+         (nearest (first stack))
+         (result nil))
+    (dolist (opener stack)
+      (let* ((character (car opener))
+             (opener-byte (cdr opener))
+             (balanced-p
+               (expand-region-balanced-byte-range-at-opener-p
+                buffer byte-ranges opener-byte character))
+             (child
+               (unless balanced-p
+                 (first
+                  (sort
+                   (remove-if-not
+                    (lambda (range) (> (car range) opener-byte))
+                    (copy-list byte-ranges))
+                   #'> :key (lambda (range) (- (cdr range) (car range))))))))
+        (when child
+          (let ((outside (cons opener-byte (cdr child))))
+            (when (and (< (car outside) (cdr outside))
+                       (<= (car outside) anchor-byte)
+                       (<= anchor-byte (cdr outside)))
+              (pushnew outside result :test #'equal)))
+          (when (eq opener nearest)
+            (let ((end (expand-region-byte-to-point buffer (cdr child))))
+              (unwind-protect
+                   (progn
+                     (character-offset end -1)
+                     (let ((inside
+                             (cons (1+ opener-byte) (point-bytes end))))
+                       (when (and (< (car inside) (cdr inside))
+                                  (<= (car inside) anchor-byte)
+                                  (<= anchor-byte (cdr inside)))
+                         (pushnew inside result :test #'equal))))
+                (delete-point end)))))))
+    result))
+
 (defun expand-region-parser-cache-valid-p
     (cache buffer language selection-start selection-end)
   (and cache
@@ -1744,8 +1884,7 @@ keymaps and therefore execute the non-jumping repeat motions directly."
           (buffer-modified-tick buffer))
        (string= language (expand-region-parser-cache-language cache))
        (<= selection-start
-           (expand-region-parser-cache-seed-start cache))
-       (<= (expand-region-parser-cache-seed-end cache)
+           (expand-region-parser-cache-seed-start cache)
            selection-end)
        (some (lambda (range)
                (expand-region-byte-range-contains-p
@@ -1875,32 +2014,39 @@ through strings or malformed syntax in a parsed buffer."
         (multiple-value-bind (byte-ranges string-ranges parsed-p)
             (expand-region-tree-sitter-byte-ranges
              buffer language selection-start selection-end)
-          (setf cache
-                (when parsed-p
-                  (make-expand-region-parser-cache
-                   :tick (buffer-modified-tick buffer)
-                   :language language
-                   :seed-start selection-start
-                   :seed-end selection-end
-                   :ranges byte-ranges
-                   :string-ranges string-ranges
-                   :inner-range
-                   (expand-region-smallest-inner-byte-range
-                    buffer byte-ranges start end)))
-                (buffer-value buffer 'lem-yath-expand-region-parser-cache)
-                cache)))
+          (let ((malformed-ranges
+                  (when parsed-p
+                    (expand-region-malformed-list-byte-ranges
+                     buffer byte-ranges selection-start))))
+            (setf cache
+                  (when parsed-p
+                    (make-expand-region-parser-cache
+                     :tick (buffer-modified-tick buffer)
+                     :language language
+                     :seed-start selection-start
+                     :seed-end selection-end
+                     :ranges byte-ranges
+                     :string-ranges string-ranges
+                     :malformed-list-ranges malformed-ranges
+                     :inner-range
+                     (expand-region-smallest-inner-byte-range
+                      buffer byte-ranges start end)))
+                  (buffer-value buffer 'lem-yath-expand-region-parser-cache)
+                  cache))))
       (unless cache
         (return-from expand-region-tree-sitter-candidate (values nil nil)))
       (let ((byte-ranges (expand-region-parser-cache-ranges cache))
             (string-ranges
               (expand-region-parser-cache-string-ranges cache))
+            (malformed-list-ranges
+              (expand-region-parser-cache-malformed-list-ranges cache))
             (inner-range (expand-region-parser-cache-inner-range cache))
             (parsed-p t))
       (let ((best nil))
         (labels ((consider (candidate)
                    (cond
-                     ((not (expand-region-strictly-contains-p
-                            candidate start end))
+                     ((<= (expand-region-range-size candidate)
+                          (expand-region-range-size (list start end)))
                       (expand-region-delete-point-range candidate))
                      ((or (null best)
                           (< (expand-region-range-size candidate)
@@ -1922,8 +2068,11 @@ through strings or malformed syntax in a parsed buffer."
                        (expand-region-paired-inner-range outside))))
               (consider outside)
               (when inside
-                (consider inside)))))
-        (values best parsed-p))))))
+                (consider inside))))
+          (dolist (byte-range malformed-list-ranges)
+            (consider
+             (expand-region-byte-range-to-points buffer byte-range)))
+        (values best parsed-p)))))))
 
 (defun enclosing-region-candidate (start end)
   "Return the smallest delimiter interior or pair containing START..END."

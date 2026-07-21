@@ -135,6 +135,7 @@ export LEM_YATH_EXPREG_REPORT="$report"
 export LEM_YATH_EXPREG_PYTHON_EXPRESSION="$root/expression.py"
 export LEM_YATH_EXPREG_PYTHON_DECOY="$root/decoy.py"
 export LEM_YATH_EXPREG_PYTHON_MALFORMED="$root/malformed.py"
+export LEM_YATH_EXPREG_PYTHON_MALFORMED_NESTED="$root/malformed-nested.py"
 export LEM_YATH_EXPREG_JSON="$root/data.json"
 export LEM_YATH_EXPREG_JSON_STRING="$root/string.json"
 export LEM_YATH_EXPREG_RUST="$root/expression.rs"
@@ -150,6 +151,8 @@ printf '%s\n%s\n%s\n' \
   >"$LEM_YATH_EXPREG_PYTHON_DECOY"
 printf '%s\n%s\n' 'result = fn(' '    alpha + beta' \
   >"$LEM_YATH_EXPREG_PYTHON_MALFORMED"
+printf '%s\n' 'result = fn(inner(alpha + beta), gamma + delta' \
+  >"$LEM_YATH_EXPREG_PYTHON_MALFORMED_NESTED"
 printf '%s\n' \
   '{"outer": {"items": ["(", {"café": 42}, true]}, "tail": 0}' \
   >"$LEM_YATH_EXPREG_JSON"
@@ -423,13 +426,61 @@ if open_case lem-yath-test-expreg-open-python-malformed python-malformed; then
   expand_once
   assert_selection malformed-clean-subtree python-malformed 'alpha + beta'
   expand_once
-  assert_selection malformed-assignment python-malformed \
-    $'result = fn(\n    alpha + beta'
+  assert_selection malformed-inner-partial python-malformed \
+    $'\n    alpha + bet'
   expand_once
-  assert_selection malformed-exhaustion python-malformed \
+  assert_selection malformed-outer-partial python-malformed \
+    $'(\n    alpha + beta'
+  expand_once
+  assert_selection malformed-error python-malformed \
     $'result = fn(\n    alpha + beta'
+  contract_once
+  assert_selection malformed-contract-outer python-malformed \
+    $'(\n    alpha + beta'
+  contract_once
+  assert_selection malformed-contract-inner python-malformed \
+    $'\n    alpha + bet'
+  contract_once
+  assert_selection malformed-contract-binary python-malformed 'alpha + beta'
+  expand_once
+  assert_selection malformed-reexpand-inner python-malformed \
+    $'\n    alpha + bet'
 else
   fail malformed-open 'malformed Python fixture did not open'
+fi
+
+if open_case lem-yath-test-expreg-open-python-malformed-nested \
+             python-malformed-nested; then
+  expand_once
+  expand_once
+  assert_selection malformed-nested-binary python-malformed-nested \
+    'alpha + beta'
+  expand_once
+  assert_selection malformed-nested-inner-list python-malformed-nested \
+    '(alpha + beta)'
+  expand_once
+  assert_selection malformed-nested-inner-call python-malformed-nested \
+    'inner(alpha + beta)'
+  expand_once
+  assert_selection malformed-nested-outer-partial python-malformed-nested \
+    '(inner(alpha + beta)'
+  expand_once
+  assert_selection malformed-nested-error python-malformed-nested \
+    'result = fn(inner(alpha + beta), gamma + delta'
+  contract_once
+  assert_selection malformed-nested-contract-outer python-malformed-nested \
+    '(inner(alpha + beta)'
+  contract_once
+  assert_selection malformed-nested-contract-call python-malformed-nested \
+    'inner(alpha + beta)'
+  contract_once
+  assert_selection malformed-nested-contract-list python-malformed-nested \
+    '(alpha + beta)'
+  expand_once
+  assert_selection malformed-nested-reexpand-call python-malformed-nested \
+    'inner(alpha + beta)'
+else
+  fail malformed-nested-open 'nested malformed Python fixture did not open'
 fi
 
 if open_case lem-yath-test-expreg-open-fallback fallback; then
