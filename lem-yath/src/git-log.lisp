@@ -1034,13 +1034,13 @@
 (define-key lem/legit::*peek-legit-keymap* "l" 'lem-yath-legit-log)
 (define-key lem/legit::*legit-diff-mode-keymap* "l" 'lem-yath-legit-log)
 (define-key lem/legit::*legit-commits-log-keymap* "l" 'lem-yath-legit-log)
-(define-key lem/legit::*legit-commits-log-keymap* "f"
+(define-key lem/legit::*legit-commits-log-keymap* "g f"
             'lem-yath-legit-log-next-page)
-(define-key lem/legit::*legit-commits-log-keymap* "b"
+(define-key lem/legit::*legit-commits-log-keymap* "g b"
             'lem-yath-legit-log-previous-page)
-(define-key lem/legit::*legit-commits-log-keymap* "F"
+(define-key lem/legit::*legit-commits-log-keymap* "g F"
             'lem-yath-legit-log-last-page)
-(define-key lem/legit::*legit-commits-log-keymap* "B"
+(define-key lem/legit::*legit-commits-log-keymap* "g B"
             'lem-yath-legit-log-first-page)
 (define-key lem/legit::*legit-commits-log-keymap* "g r"
             'lem-yath-legit-log-refresh)

@@ -512,7 +512,11 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   the configured filters, path/follow, ordering, graph, decoration,
   signature/header, patch, and stat controls across current/selected/related,
   branch/all-ref, reflog, and shortlog views while preserving Legit's two-pane
-  commit preview and bounded pagination. Evil Collection's lowercase `p`
+  commit preview and bounded pagination. Log buffers now retain the implemented
+  Evil Collection action surface on `A/B/f/F/b/c/m/-/_/O/p/Z/z/M/'/"`; the
+  commit-aware actions default to the commit at point. Bounded page loading
+  lives on `g f`/`g b`/`g F`/`g B`, so it no longer shadows fetch, pull,
+  branch, or bisect. Evil Collection's lowercase `p`
   opens the matching Magit push dispatch in both panes. Its
   force-with-lease/force, no-verify, dry-run, set-upstream, all-tags, and
   follow-tags arguments apply to current-branch push-remote or upstream

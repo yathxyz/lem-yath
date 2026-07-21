@@ -3168,6 +3168,36 @@ else
     "$porcelain_session"
 fi
 
+log_actions_visible=1
+send_keys "$porcelain_session" A
+lem_wait_for "$porcelain_session" '\[Apply\]' \
+  "$WAIT_TIMEOUT" >/dev/null || log_actions_visible=0
+send_keys "$porcelain_session" q
+send_keys "$porcelain_session" b
+lem_wait_for "$porcelain_session" '\[Branch\]' \
+  "$WAIT_TIMEOUT" >/dev/null || log_actions_visible=0
+send_keys "$porcelain_session" q
+send_keys "$porcelain_session" f
+lem_wait_for "$porcelain_session" '\[Fetch\]' \
+  "$WAIT_TIMEOUT" >/dev/null || log_actions_visible=0
+send_keys "$porcelain_session" q
+send_keys "$porcelain_session" F
+lem_wait_for "$porcelain_session" '\[Pull\]' \
+  "$WAIT_TIMEOUT" >/dev/null || log_actions_visible=0
+send_keys "$porcelain_session" q
+send_keys "$porcelain_session" B
+lem_wait_for "$porcelain_session" '\[Bisect\]' \
+  "$WAIT_TIMEOUT" >/dev/null || log_actions_visible=0
+send_keys "$porcelain_session" q
+if ((log_actions_visible)); then
+  pass legit-log-actions \
+    'log A/b/f/F/B opened the inherited Magit actions instead of pagination'
+else
+  fail legit-log-actions \
+    'a log action key was still shadowed by custom pagination' \
+    "$porcelain_session"
+fi
+
 send_keys "$porcelain_session" q l r
 if lem_wait_for "$porcelain_session" 'Reflog main' "$WAIT_TIMEOUT" \
      >/dev/null &&

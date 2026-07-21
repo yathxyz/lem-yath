@@ -258,10 +258,10 @@
                      (vcs-test-key-command
                       (legit-shortlog-popup-keymap options) key))
                  (format nil "magit-shortlog-~a" key))))
-      (dolist (binding '(("f" lem-yath-legit-log-next-page)
-                         ("b" lem-yath-legit-log-previous-page)
-                         ("F" lem-yath-legit-log-last-page)
-                         ("B" lem-yath-legit-log-first-page)
+      (dolist (binding '(("g f" lem-yath-legit-log-next-page)
+                         ("g b" lem-yath-legit-log-previous-page)
+                         ("g F" lem-yath-legit-log-last-page)
+                         ("g B" lem-yath-legit-log-first-page)
                          ("g r" lem-yath-legit-log-refresh)
                          ("=" lem-yath-legit-log-toggle-limit)
                          ("q" lem-yath-legit-log-back-to-status)))
@@ -269,6 +269,15 @@
                    (vcs-test-key-command
                     lem/legit::*legit-commits-log-keymap* (first binding)))
                (format nil "magit-log-view-~a" (first binding))))
+      (dolist (binding *legit-log-action-bindings*)
+        (check (eq (cdr binding)
+                   (vcs-test-key-command
+                    lem/legit::*legit-commits-log-keymap* (car binding)))
+               (format nil "magit-log-action-~a" (car binding))))
+      (check (eq *legit-commit-dispatch-keymap*
+                 (vcs-test-key-command
+                  lem/legit::*legit-commits-log-keymap* "c"))
+             "magit-log-action-c")
       (check
        (and
         (equal '("--author=A U Thor" "--grep=message;safe"

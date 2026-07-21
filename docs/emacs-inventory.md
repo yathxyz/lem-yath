@@ -584,6 +584,13 @@ a bounded commit view, and `q` to exact nested/source restoration. Removal,
 reverse, style, recursive-reblame, and inline diff-preview are outside this
 focused addition-blame port.
 
+The bounded Legit log keeps Magit's implemented inherited action dispatches:
+`A/B/f/F/b/c/m/-/_/O/p/Z/z/M/'/"` continue to open cherry-pick, bisect,
+fetch, pull, branch, commit, merge, revert, reset, push, worktree, stash,
+remote, submodule, and subtree workflows. Commit-aware readers use the hash at
+point as their default. Extra bounded pagination is namespaced under
+`g f`/`g b`/`g F`/`g B` instead of displacing those effective bindings.
+
 Status and diff panes expose the complete normally visible Magit `A`
 cherry-pick dispatch. `- m`, `= s`, `- F`, `- x`, `- e`, `- S`, and `+ s`
 retain mainline, strategy, fast-forward, source-reference, native message
