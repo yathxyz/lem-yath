@@ -130,6 +130,7 @@
                              (:file "agenda-filter")
                              (:file "agenda-restriction")
                              (:file "agenda-query")
+                             (:file "agenda-stuck")
                              (:file "agenda-view")
                              (:file "agenda-time-grid")
                              (:file "citar")

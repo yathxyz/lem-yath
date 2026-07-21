@@ -734,7 +734,10 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   restrictions, `>` removes the pending restriction, and Org's direct `1`/`0`
   aliases select buffer or subtree/region scope. The selected boundary applies
   to agenda rows, query text/properties, multi-occur, refreshes, and clock
-  totals without leaking another file or out-of-region body line. It also has
+  totals without leaking another file or out-of-region body line. Stock `?`
+  lists `FLAGGED` headings, and `#` applies the default level-two stuck-project
+  definition including raw `NEXTACTION` headings outside the configured TODO
+  vocabulary. It also has
   modal Return/`gr`/q navigation, Evil-Org `Tab`/`g Tab`/Shift-Return source
   visits in another window, decoration-skipping `gj`/`gk` and `C-j`/`C-k`
   item motion, and Evil-Org-style `t` fast TODO selection plus

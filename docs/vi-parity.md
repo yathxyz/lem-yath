@@ -48,7 +48,9 @@ The agenda dispatcher now includes Org's temporary `<` restriction cycle
 the direct `1`/`0` aliases. Agenda rows, `m`/`M`/`s`/`S`, source-backed `/`,
 refreshes, and clock reports use the same exact file/line boundary; the TUI
 gate includes partial-entry region ends so body text beyond the region cannot
-influence a restricted search.
+influence a restricted search. The same dispatcher exposes stock `?` flagged
+entries and `#` stuck projects; the latter matches Org's default level-two
+project rule and raw `TODO`/`NEXT`/`NEXTACTION` subtree tokens.
 
 ## Remaining capability gaps
 

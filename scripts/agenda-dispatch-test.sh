@@ -57,7 +57,7 @@ wait_screen_absent() {
 send_keys() { tmux_cmd send-keys -t "$session" "$@"; }
 
 printf '%s\n' \
-  '* TODO Past dispatch sentinel' \
+  '* TODO Past dispatch sentinel                                      :FLAGGED:' \
   'DEADLINE: <2026-07-10 Fri>' \
   '* TODO Monday dispatch sentinel' \
   'SCHEDULED: <2026-07-13 Mon>' \
@@ -68,6 +68,11 @@ printf '%s\n' \
   '* TODO Unscheduled dispatch sentinel' \
   '* DONE Completed dispatch sentinel' \
   '* Plain dispatch event <2026-07-17 Fri 10:00>' \
+  '* Portfolio dispatch sentinel' \
+  '** Stuck project dispatch sentinel' \
+  '*** Plain project note sentinel' \
+  '** Active project dispatch sentinel' \
+  '*** NEXTACTION Active project action sentinel' \
   >"$work_file"
 cp "$work_file" "$original_file"
 : >"$LEM_YATH_AGENDA_DISPATCH_REPORT"
@@ -85,7 +90,8 @@ if lem_wait_for "$session" 'Agenda for current week or day' 20 >/dev/null &&
    lem_capture "$session" | grep -q 'Agenda and all TODOs' &&
    lem_capture "$session" | grep -q 'Match a TAGS/PROP/TODO query' &&
    lem_capture "$session" | grep -q 'Search for keywords in TODO entries' &&
-   lem_capture "$session" | grep -q 'Multi-occur in all agenda files'; then
+   lem_capture "$session" | grep -q 'Multi-occur in all agenda files' &&
+   lem_capture "$session" | grep -q '? flagged, # stuck'; then
   pass menu 'SPC m a exposed the implemented stock Org dispatcher commands'
 else
   fail menu 'the physical dispatcher labels or supported boundary differed'
@@ -150,6 +156,36 @@ if grep -q '^STATE command=TODO span=SUMMARY keyword=NIL rows=5 ' "$LEM_YATH_AGE
   pass todo 't rendered every open heading exactly once without planning metadata'
 else
   fail todo 't duplicated planned headings, retained dates, or included DONE'
+fi
+
+send_keys q
+lem_wait_for "$session" 'Past dispatch sentinel' 10 >/dev/null || true
+send_keys Space m a
+lem_wait_for "$session" '\? flagged, # stuck' 10 >/dev/null || true
+send_keys '?'
+lem_wait_for "$session" 'Headlines with TAGS match: \+FLAGGED' 30 >/dev/null || true
+send_keys C-c z d
+wait_report '^STATE command=TAGS .*rows=1 ' || true
+if grep -q '^STATE command=TAGS .*rows=1 .*Past dispatch sentinel' "$LEM_YATH_AGENDA_DISPATCH_REPORT" &&
+   ! grep -q '^STATE command=TAGS .*Active project' "$LEM_YATH_AGENDA_DISPATCH_REPORT"; then
+  pass flagged '? reused the exact +FLAGGED tag matcher'
+else
+  fail flagged '? did not isolate the flagged heading'
+fi
+
+send_keys q
+lem_wait_for "$session" 'Past dispatch sentinel' 10 >/dev/null || true
+send_keys Space m a
+lem_wait_for "$session" '\? flagged, # stuck' 10 >/dev/null || true
+send_keys '#'
+lem_wait_for "$session" 'List of stuck projects:' 30 >/dev/null || true
+send_keys C-c z d
+wait_report '^STATE command=STUCK .*rows=1 ' || true
+if grep -q '^STATE command=STUCK .*rows=1 .*Stuck project dispatch sentinel' "$LEM_YATH_AGENDA_DISPATCH_REPORT" &&
+   ! grep -q '^STATE command=STUCK .*Active project dispatch sentinel' "$LEM_YATH_AGENDA_DISPATCH_REPORT"; then
+  pass stuck '# recognized stock raw NEXTACTION outside the configured TODO set'
+else
+  fail stuck '# misclassified a project subtree'
 fi
 
 send_keys q

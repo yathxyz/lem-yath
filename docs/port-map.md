@@ -197,7 +197,11 @@ Status legend:
   `>` removal, and direct `1`/`0` aliases. Its file/line boundary is shared by
   parsed rows, partial-entry query text and properties, source-backed
   multi-occur, refreshes, and clock rollups; the physical dispatcher and clock
-  gates cover subtree, region, removal, and exclusive-end edge cases.
+  gates cover subtree, region, removal, and exclusive-end edge cases. Stock
+  `?` reuses the exact `+FLAGGED` matcher, while `#` applies Org 9.8.5's
+  unchanged level-two stuck-project definition and recognizes literal
+  `NEXTACTION` children even though that word is outside the configured TODO
+  vocabulary.
 - **Completion previews**: the grouped project picker and directory-local
   Elisp outline provide reversible Consult-style preview. Generic command,
   file, buffer, and LSP-symbol prompts still do not preview their targets.

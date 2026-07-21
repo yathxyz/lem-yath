@@ -99,6 +99,7 @@
         ((eq command :search)
          (format nil "SEARCH ~a"
                  (agenda-search-query-raw (agenda-view-state-query state))))
+        ((eq command :stuck) "List of stuck projects")
         (t
          (ecase span
            (:summary start)
@@ -216,6 +217,13 @@
       (agenda-query-matching-items
        items query :todo-any-p (eq command :tags-todo))))))
 
+(defun agenda-view-stuck-sections (items)
+  (list
+   (make-agenda-section
+    :key :stuck
+    :title "List of stuck projects:"
+    :items (agenda-stuck-project-items items))))
+
 (defun agenda-view-sections (buffer items now)
   (let ((state (agenda-view-state buffer)))
     (cond
@@ -223,6 +231,8 @@
        (agenda-view-todo-sections state items))
       ((member (agenda-view-state-command state) '(:tags :tags-todo :search))
        (agenda-view-query-sections state items))
+      ((eq (agenda-view-state-command state) :stuck)
+       (agenda-view-stuck-sections items))
       ((eq (agenda-view-state-span state) :summary)
        (multiple-value-bind (start end) (agenda-view-range buffer now)
          (agenda-default-sections items now start end)))
@@ -305,7 +315,8 @@
   (let ((keymap
           (make-keymap
            :description
-           (format nil "Agenda Commands (~a; < restrict, > clear)"
+           (format nil
+                   "Agenda Commands (~a; < restrict, > clear; ? flagged, # stuck)"
                    (agenda-restriction-label restriction)))))
     (setf (lem/transient::keymap-show-p keymap) t
           (lem/transient::keymap-display-style keymap) :row)
@@ -404,6 +415,13 @@
                      (agenda-open-command :search query restriction))))
                  ((string= key "/")
                   (return (agenda-query-multi-occur restriction)))
+                 ((string= key "?")
+                  (return
+                   (agenda-open-command
+                    :tags (agenda-compile-tags-query "+FLAGGED")
+                    restriction)))
+                 ((string= key "#")
+                  (return (agenda-open-command :stuck nil restriction)))
                  ((string= key "n")
                   (return (agenda-open-command :summary nil restriction)))
                  ((member key '("q" "Escape" "C-g") :test #'string=)
