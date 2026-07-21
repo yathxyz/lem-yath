@@ -1379,6 +1379,8 @@ API, so their intermediate transactions remain in history.
   editable stage and highlights changed rows without mutating their sources.
   `C-c C-d` marks the current result for complete source-line deletion, and
   Normal `u` can undo only changes made after the current stage began.
+  Visual `C-c C-r` unmarks intersecting staged rows, while `C-c C-u` unmarks
+  every staged row; both retain the edited result text without applying it.
   `ZZ`, Evil-Collection `:w`, `C-c C-c`/`C-c C-e`, or `C-x C-s` applies
   non-stale rows to source buffers without saving; `ZQ`/`C-c C-k` aborts, while
   `C-x C-q` and normal-state Escape
@@ -1388,13 +1390,14 @@ API, so their intermediate transactions remain in history.
   gates verify the global command and directory prompts, smart case, ignores,
   no-match and invalid-regexp recovery, Normal-state entry, navigation,
   cancellation, stage isolation, atomic multiline refusal, bounded staged undo,
+  regional and whole-buffer unmarking with stable later-session baselines,
   first/middle/unterminated-final line deletion, single-Escape return to Normal,
   apply, abort, save, and stale-source refusal.
   `patches/lem-grep-writeback.patch` still supplies the
   point-preserving replacement primitive, and
   `patches/lem-peek-source-timer.patch` owns and invalidates preview timers.
-  Editable headers/newlines, region unmarking, multiline replacement, auto-save,
-  and per-row error echo remain outside this bounded port.
+  Editable headers/newlines, multiline replacement, auto-save, and per-row error
+  echo remain outside this bounded port.
 
 ### Project-aware finding — `src/commands/project.lisp`
 `project-find-file` (`C-x p f`), `project-switch` (`C-x p p`), `project-root-directory`
@@ -4127,8 +4130,8 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   Upstream has no dedicated `occur` command. Lem-yath adds the bounded,
   persistent marked-buffer Occur described in §4; configured project grep now
   covers read-only results plus wgrep-style staged editing, source-buffer apply,
-  whole-row deletion, bounded staged undo, rollback, ordinary save, and stale-row
-  refusal. Lem-yath also adds marked-buffer
+  whole-row deletion, regional/all unmarking, bounded staged undo, rollback,
+  ordinary save, and stale-row refusal. Lem-yath also adds marked-buffer
   literal and regexp incremental isearch through the effective Evil Collection
   chords described in §4, plus the marked-buffer literal/regexp query-replace
   coordinator described there. GNU's Lisp-evaluated replacement form remains a

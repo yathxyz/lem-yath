@@ -725,7 +725,7 @@ if lem_wait_for "$verify_session" 'Project regexp:' "$WAIT_TIMEOUT" \
     before=$(report_count '^GREP ')
     lem_keys "$verify_session" F8
     if wait_report_count '^GREP ' "$((before + 1))" &&
-       grep -q '^GREP alpha=yes tracked-build=yes sibling=no ignored=no matches=2 readonly=yes active=no enter=yes finish=yes delete=yes abort=yes exit=yes ex=yes ex-count=1$' \
+       grep -q '^GREP alpha=yes tracked-build=yes sibling=no ignored=no matches=2 readonly=yes active=no enter=yes finish=yes delete=yes unmark=yes unmark-all=yes abort=yes exit=yes ex=yes ex-count=1$' \
          "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
       pass spc-p-g-buffer \
         'project grep opens read-only with the pinned staged-edit bindings'
@@ -958,7 +958,7 @@ if lem_wait_for "$verify_session" 'Project regexp:' "$WAIT_TIMEOUT" \
     before=$(report_count '^GREP-DELETE ')
     lem_keys "$verify_session" F1
     if wait_report_count '^GREP-DELETE ' "$((before + 1))" &&
-       grep -q '^GREP-DELETE records=3 marked=0 blank=0 active=yes readonly=no source=original disk=original modified=no$' \
+       grep -q '^GREP-DELETE records=3 marked=0 ignored=0 pending=0 blank=0 active=yes readonly=no source=original disk=original modified=no$' \
          "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
       pass spc-p-g-delete-undo \
         'undo restored a whole-row deletion mark and its separate intent'
@@ -972,7 +972,7 @@ if lem_wait_for "$verify_session" 'Project regexp:' "$WAIT_TIMEOUT" \
     before=$(report_count '^GREP-DELETE ')
     lem_keys "$verify_session" F1
     if wait_report_count '^GREP-DELETE ' "$((before + 1))" &&
-       grep -q '^GREP-DELETE records=3 marked=0 blank=0 active=no readonly=yes source=original disk=original modified=no$' \
+       grep -q '^GREP-DELETE records=3 marked=0 ignored=0 pending=0 blank=0 active=no readonly=yes source=original disk=original modified=no$' \
          "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
       pass spc-p-g-delete-abort \
         'abort restored a marked deletion without touching its source'
@@ -990,7 +990,7 @@ if lem_wait_for "$verify_session" 'Project regexp:' "$WAIT_TIMEOUT" \
     before=$(report_count '^GREP-DELETE ')
     lem_keys "$verify_session" F1
     if wait_report_count '^GREP-DELETE ' "$((before + 1))" &&
-       grep -q '^GREP-DELETE records=3 marked=3 blank=3 active=yes readonly=no source=original disk=original modified=no$' \
+       grep -q '^GREP-DELETE records=3 marked=3 ignored=0 pending=3 blank=3 active=yes readonly=no source=original disk=original modified=no$' \
          "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
       pass spc-p-g-delete-stage \
         'C-c C-d marked first, middle, and unterminated final rows in isolation'
@@ -999,11 +999,76 @@ if lem_wait_for "$verify_session" 'Project regexp:' "$WAIT_TIMEOUT" \
         'whole-row deletion did not retain three isolated marks' "$verify_session"
     fi
 
+    send_chord "$verify_session" k k
+    send_chord "$verify_session" V j
+    send_chord "$verify_session" C-c C-r
+    before=$(report_count '^GREP-DELETE ')
+    lem_keys "$verify_session" F1
+    if wait_report_count '^GREP-DELETE ' "$((before + 1))" &&
+       grep -q '^GREP-DELETE records=3 marked=1 ignored=2 pending=1 blank=3 active=yes readonly=no source=original disk=original modified=no$' \
+         "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
+      pass spc-p-g-delete-unmark-region \
+        'C-c C-r unmarked only changed rows intersecting the Visual region'
+    else
+      fail spc-p-g-delete-unmark-region \
+        'regional unmarking changed text, source state, or the wrong intents' \
+        "$verify_session"
+    fi
+
+    send_chord "$verify_session" C-c C-u
+    before=$(report_count '^GREP-DELETE ')
+    lem_keys "$verify_session" F1
+    if wait_report_count '^GREP-DELETE ' "$((before + 1))" &&
+       grep -q '^GREP-DELETE records=3 marked=0 ignored=3 pending=0 blank=3 active=yes readonly=no source=original disk=original modified=no$' \
+         "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
+      pass spc-p-g-delete-unmark-all \
+        'C-c C-u removed every remaining apply intent without restoring text'
+    else
+      fail spc-p-g-delete-unmark-all \
+        'whole-buffer unmarking restored text or retained apply intent' \
+        "$verify_session"
+    fi
+
     send_chord "$verify_session" C-c C-e
     before=$(report_count '^GREP-DELETE ')
     lem_keys "$verify_session" F1
     if wait_report_count '^GREP-DELETE ' "$((before + 1))" &&
-       grep -q '^GREP-DELETE records=3 marked=0 blank=3 active=no readonly=yes source=remaining disk=original modified=yes$' \
+       grep -q '^GREP-DELETE records=3 marked=0 ignored=0 pending=0 blank=3 active=no readonly=yes source=original disk=original modified=no$' \
+         "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
+      pass spc-p-g-delete-unmark-accept \
+        'applying only unmarked rows retained display text as the next baseline'
+    else
+      fail spc-p-g-delete-unmark-accept \
+        'accepting unmarked rows rearmed them or changed their source' \
+        "$verify_session"
+    fi
+
+    send_chord "$verify_session" i
+    before=$(report_count '^GREP-DELETE ')
+    lem_keys "$verify_session" F1
+    if wait_report_count '^GREP-DELETE ' "$((before + 1))" &&
+       grep -q '^GREP-DELETE records=3 marked=0 ignored=0 pending=0 blank=3 active=yes readonly=no source=original disk=original modified=no$' \
+         "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
+      pass spc-p-g-delete-unmark-reenter \
+        'a later stage kept accepted display-only rows inactive'
+    else
+      fail spc-p-g-delete-unmark-reenter \
+        'a later stage confused the result baseline with the source snapshot' \
+        "$verify_session"
+    fi
+
+    send_chord "$verify_session" k
+    send_chord "$verify_session" C-c C-d
+    send_chord "$verify_session" j
+    send_chord "$verify_session" C-c C-d
+    send_chord "$verify_session" j
+    send_chord "$verify_session" C-c C-d
+
+    send_chord "$verify_session" C-c C-e
+    before=$(report_count '^GREP-DELETE ')
+    lem_keys "$verify_session" F1
+    if wait_report_count '^GREP-DELETE ' "$((before + 1))" &&
+       grep -q '^GREP-DELETE records=3 marked=0 ignored=0 pending=0 blank=3 active=no readonly=yes source=remaining disk=original modified=yes$' \
          "$LEM_YATH_PROJECT_NAVIGATION_REPORT"; then
       pass spc-p-g-delete-apply \
         'apply removed complete source lines bottom-up without saving the file'

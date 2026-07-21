@@ -60,9 +60,11 @@
   root
   relative
   line-number
-  original
+  source-original
+  result-baseline
   overlay
   deletion-p
+  ignored-p
   status
   error)
 
@@ -976,9 +978,10 @@ an escaped (), {}, or | becomes special and an unescaped one becomes literal."
     (points-to-string start end)))
 
 (defun project-grep-record-changed-p (record)
-  (or (project-grep-edit-record-deletion-p record)
-      (not (string= (project-grep-edit-record-original record)
-                    (project-grep-record-current-text record)))))
+  (and (not (project-grep-edit-record-ignored-p record))
+       (or (project-grep-edit-record-deletion-p record)
+           (not (string= (project-grep-edit-record-result-baseline record)
+                         (project-grep-record-current-text record))))))
 
 (defun project-grep-set-record-status (record status &optional error)
   "Set RECORD's staged result STATUS and replace its display overlay."
@@ -1025,7 +1028,8 @@ an escaped (), {}, or | becomes special and an unescaped one becomes literal."
 (defun project-grep-stage-after-change (start end old-length)
   (declare (ignore end old-length))
   (alexandria:when-let ((record (project-grep-record-at-point start)))
-    (setf (project-grep-edit-record-deletion-p record) nil)
+    (setf (project-grep-edit-record-deletion-p record) nil
+          (project-grep-edit-record-ignored-p record) nil)
     (project-grep-set-record-status
      record
      (and (project-grep-record-changed-p record) :changed))))
@@ -1035,8 +1039,61 @@ an escaped (), {}, or | becomes special and an unescaped one becomes literal."
   (multiple-value-bind (start end)
       (project-grep-record-content-bounds record)
     (delete-between-points start end))
-  (setf (project-grep-edit-record-deletion-p record) t)
+  (setf (project-grep-edit-record-deletion-p record) t
+        (project-grep-edit-record-ignored-p record) nil)
   (project-grep-set-record-status record :delete))
+
+(defun project-grep-unmark-record (record)
+  "Ignore RECORD's current staged text without restoring its result row."
+  (setf (project-grep-edit-record-deletion-p record) nil
+        (project-grep-edit-record-ignored-p record) t)
+  (project-grep-set-record-status record nil))
+
+(defun project-grep-record-intersects-range-p (record start end)
+  "Return non-NIL when RECORD's complete result row intersects START..END."
+  (with-point ((row-start (project-grep-edit-record-point record))
+               (row-end (project-grep-edit-record-point record)))
+    (line-start row-start)
+    (line-start row-end)
+    (unless (line-offset row-end 1)
+      (move-point row-end (buffer-end-point (point-buffer row-start))))
+    (and (point< row-start end)
+         (point< start row-end))))
+
+(defun project-grep-active-region-bounds ()
+  "Return the active contiguous region, rejecting absent or block selections."
+  (let ((buffer (current-buffer)))
+    (cond
+      ((and (typep (current-global-mode) 'lem-vi-mode:vi-mode)
+            (lem-vi-mode/visual:visual-p buffer))
+       (when (lem-vi-mode/visual:visual-block-p buffer)
+         (editor-error "A block selection cannot unmark grep changes"))
+       (destructuring-bind (first second)
+           (lem-vi-mode/visual:visual-range buffer)
+         (values (point-min first second) (point-max first second))))
+      ((buffer-mark-p buffer)
+       (values (region-beginning buffer) (region-end buffer)))
+      (t
+       (editor-error "No active region in the project grep results")))))
+
+(defun project-grep-unmark-region (start end)
+  "Ignore staged grep records whose result rows intersect START..END."
+  (let ((count 0))
+    (dolist (record (project-grep-edit-records))
+      (when (and (project-grep-record-changed-p record)
+                 (project-grep-record-intersects-range-p record start end))
+        (project-grep-unmark-record record)
+        (incf count)))
+    count))
+
+(defun project-grep-unmark-all ()
+  "Ignore every currently staged grep record without restoring result text."
+  (let ((count 0))
+    (dolist (record (project-grep-edit-records))
+      (when (project-grep-record-changed-p record)
+        (project-grep-unmark-record record)
+        (incf count)))
+    count))
 
 (defun project-grep-delete-source-line (point)
   "Delete POINT's complete line, including its following newline when present."
@@ -1104,7 +1161,7 @@ an escaped (), {}, or | becomes special and an unescaped one becomes literal."
           ((buffer-read-only-p buffer)
            (values nil "Source buffer is read-only"))
           ((not (string=
-                 (project-grep-edit-record-original record)
+                 (project-grep-edit-record-source-original record)
                  (project-grep-source-line-text
                   buffer (project-grep-edit-record-line-number record))))
            (values nil "Source changed after grep"))
@@ -1125,7 +1182,7 @@ an escaped (), {}, or | becomes special and an unescaped one becomes literal."
             (let ((line-number (project-grep-edit-record-line-number record))
                   (replacement (project-grep-record-current-text record)))
               (unless (string=
-                       (project-grep-edit-record-original record)
+                       (project-grep-edit-record-source-original record)
                        (project-grep-source-line-text buffer line-number))
                 (error "Source changed while applying staged grep edits"))
               (with-point ((point (buffer-point buffer)))
@@ -1136,8 +1193,10 @@ an escaped (), {}, or | becomes special and an unescaped one becomes literal."
           (buffer-accept-change-group group)
           (dolist (record records)
             (let ((replacement (project-grep-record-current-text record)))
-              (setf (project-grep-edit-record-original record) replacement
-                    (project-grep-edit-record-deletion-p record) nil)
+              (setf (project-grep-edit-record-source-original record) replacement
+                    (project-grep-edit-record-result-baseline record) replacement
+                    (project-grep-edit-record-deletion-p record) nil
+                    (project-grep-edit-record-ignored-p record) nil)
               (project-grep-set-record-status record :done)))
           (values (length records) nil))
       (error (condition)
@@ -1192,6 +1251,12 @@ an escaped (), {}, or | becomes special and an unescaped one becomes literal."
         (incf applied done)
         (incf rejected (or failed 0))))
     (project-grep-close-edit-session buffer :accept)
+    (dolist (record records)
+      (when (project-grep-edit-record-ignored-p record)
+        (setf (project-grep-edit-record-result-baseline record)
+              (project-grep-record-current-text record)
+              (project-grep-edit-record-ignored-p record) nil)
+        (project-grep-set-record-status record nil)))
     (cond
       ((plusp rejected)
        (message "Applied ~d grep edit~:p; rejected ~d stale or unsafe edit~:p"
@@ -1209,7 +1274,8 @@ an escaped (), {}, or | becomes special and an unescaped one becomes literal."
       (editor-error "Project grep is not in staged edit mode"))
     (project-grep-close-edit-session buffer :cancel)
     (dolist (record (project-grep-edit-records buffer))
-      (setf (project-grep-edit-record-deletion-p record) nil)
+      (setf (project-grep-edit-record-deletion-p record) nil
+            (project-grep-edit-record-ignored-p record) nil)
       (project-grep-set-record-status
        record
        (and (project-grep-record-changed-p record) :changed)))
@@ -1243,7 +1309,8 @@ an escaped (), {}, or | becomes special and an unescaped one becomes literal."
                              :root root
                              :relative file
                              :line-number line-number
-                             :original content)))
+                             :source-original content
+                             :result-baseline content)))
                      (push record records)
                      (insert-string
                       point (project-display-string file)
@@ -1317,6 +1384,24 @@ an escaped (), {}, or | becomes special and an unescaped one becomes literal."
       (project-grep-mark-record-deletion record)
       (message "Grep result marked for deletion"))
     (editor-error "Point is not on a project grep result")))
+
+(define-command lem-yath-project-grep-unmark-region () ()
+  "Ignore staged grep changes intersecting the active region."
+  (unless (project-grep-edit-active-p)
+    (editor-error "Project grep is not in staged edit mode"))
+  (multiple-value-bind (start end)
+      (project-grep-active-region-bounds)
+    (let ((count (project-grep-unmark-region start end)))
+      (when (lem-vi-mode/visual:visual-p)
+        (lem-vi-mode/visual:vi-visual-end))
+      (message "Unmarked ~d staged grep change~:p" count))))
+
+(define-command lem-yath-project-grep-unmark-all () ()
+  "Ignore every staged grep change without restoring result text."
+  (unless (project-grep-edit-active-p)
+    (editor-error "Project grep is not in staged edit mode"))
+  (message "Unmarked ~d staged grep change~:p"
+           (project-grep-unmark-all)))
 
 (define-command lem-yath-project-grep-abort-edit () ()
   (if (project-grep-edit-active-p)
@@ -1600,6 +1685,10 @@ an escaped (), {}, or | becomes special and an unescaped one becomes literal."
   "C-c C-e" 'lem-yath-project-grep-finish-edit)
 (define-key lem/grep::*peek-grep-mode-keymap*
   "C-c C-d" 'lem-yath-project-grep-mark-deletion)
+(define-key lem/grep::*peek-grep-mode-keymap*
+  "C-c C-r" 'lem-yath-project-grep-unmark-region)
+(define-key lem/grep::*peek-grep-mode-keymap*
+  "C-c C-u" 'lem-yath-project-grep-unmark-all)
 (define-key lem/grep::*peek-grep-mode-keymap*
   "C-x C-s" 'lem-yath-project-grep-finish-edit)
 (define-key lem/grep::*peek-grep-mode-keymap*

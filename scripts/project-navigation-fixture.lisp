@@ -1133,7 +1133,8 @@
      (concatenate
       'string
       "GREP alpha=~a tracked-build=~a sibling=~a ignored=~a matches=~d "
-      "readonly=~a active=~a enter=~a finish=~a delete=~a abort=~a exit=~a "
+      "readonly=~a active=~a enter=~a finish=~a delete=~a unmark=~a "
+      "unmark-all=~a abort=~a exit=~a "
       "ex=~a ex-count=~d")
      (project-navigation-test-yes-no alpha)
      (project-navigation-test-yes-no tracked-build)
@@ -1155,6 +1156,12 @@
      (project-navigation-test-yes-no
       (project-navigation-test-key-bound-p
        lem/grep::*peek-grep-mode-keymap* "C-c C-d"))
+     (project-navigation-test-yes-no
+      (project-navigation-test-key-bound-p
+       lem/grep::*peek-grep-mode-keymap* "C-c C-r"))
+     (project-navigation-test-yes-no
+      (project-navigation-test-key-bound-p
+       lem/grep::*peek-grep-mode-keymap* "C-c C-u"))
      (project-navigation-test-yes-no
       (project-navigation-test-key-bound-p
        lem/grep::*peek-grep-mode-keymap* "C-c C-k"))
@@ -1316,9 +1323,11 @@
                    "DELETE_GREP FIRST~%KEEP ONE~%DELETE_GREP MIDDLE~%KEEP TWO~%DELETE_GREP FINAL"))
          (remaining (format nil "KEEP ONE~%KEEP TWO~%")))
     (project-navigation-test-log
-     "GREP-DELETE records=~d marked=~d blank=~d active=~a readonly=~a source=~a disk=~a modified=~a"
+     "GREP-DELETE records=~d marked=~d ignored=~d pending=~d blank=~d active=~a readonly=~a source=~a disk=~a modified=~a"
      (length records)
      (count-if #'project-grep-edit-record-deletion-p records)
+     (count-if #'project-grep-edit-record-ignored-p records)
+     (count-if #'project-grep-record-changed-p records)
      (count-if (lambda (record)
                  (zerop (length (project-grep-record-current-text record))))
                records)
