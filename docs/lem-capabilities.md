@@ -1167,8 +1167,10 @@ through the ncurses editor.
   leaking into the next, `q`/Return advances, and `.` replaces once before
   advancing. `,` replaces without advancing; `^` backs up; `u`/`U` undo the
   latest/all live replacements; and `e`/`E` edit the current replacement with
-  transferred/exact case. Each affected target has one undo unit, including
-  after in-loop undo. Lowercase searches fold case and transfer lower,
+  transferred/exact case. `d` displays a bounded, read-only whole-buffer
+  replacement diff without advancing or moving source focus. Each affected
+  target has one undo unit, including after in-loop undo. Lowercase searches
+  fold case and transfer lower,
   all-caps, or initial-cap patterns; unescaped uppercase searches are
   case-sensitive and retain exact replacement case. Regexp replacement expands
   `\&`, `\1`–`\9`, `\\`, and a per-buffer `\#` count. Zero-width matches make
@@ -1177,7 +1179,7 @@ through the ncurses editor.
   Ibuffer's arbitrary Emacs-Lisp predicate filters, other-frame, view-and-eval,
   shell, eval, and print operations are not reproduced.
   Marked-buffer regexp query-replace omits GNU Lisp-evaluated `\,`, per-match
-  `\?` directives, recursive edit, and the diff response.
+  `\?` directives, and recursive edit.
   CL-PPCRE regexp syntax can differ from Emacs regexp syntax. Content filters
   skip buffers above 16 million characters, and mode completion uses
   package-qualified labels.
@@ -3941,7 +3943,7 @@ does not enable `hl-line-mode` or `global-hl-line-mode`.
   literal and regexp incremental isearch through the effective Evil Collection
   chords described in §4, plus the marked-buffer literal/regexp query-replace
   coordinator described there. GNU's Lisp-evaluated and `\?` replacement
-  forms, recursive edit, and the diff response remain gaps.
+  forms and recursive edit remain gaps.
 - **Multiple cursors**: core support. `src/cursors.lisp` + `src/commands/multiple-cursors.lisp`
   (`add-cursors-to-next-line`, bound `M-C`); isearch can add cursors at matches.
 - **Markdown preview**: yes, `preview` generic in markdown-mode (§8), plus literate

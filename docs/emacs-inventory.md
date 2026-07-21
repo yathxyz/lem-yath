@@ -218,9 +218,11 @@ intact. `y`/Space replaces, `n`/Backspace skips, `!` replaces the rest of the
 current buffer only, `q`/Return advances to the next buffer, and `.` replaces
 once before advancing. `,` replaces without advancing; `^` revisits the prior
 match; `u`/`U` undo the latest/all live replacements; and `e`/`E` edit the
-current replacement with transferred/exact case. Each affected buffer receives
-one undo unit even after in-loop undo, and the entire target set is checked for
-read-only buffers before any prompt can mutate an earlier source. Matching
+current replacement with transferred/exact case. `d` displays a bounded,
+read-only whole-buffer replacement diff without advancing the match or moving
+source focus. Each affected buffer receives one undo unit even after in-loop
+undo, and the entire target set is checked for read-only buffers before any
+prompt can mutate an earlier source. Matching
 uses the configured GNU smart-case rule: lowercase searches fold case and
 transfer lower, all-caps, or initial-cap patterns to replacements, while an
 unescaped uppercase search is case-sensitive and keeps exact replacement case.
@@ -228,7 +230,7 @@ Regexp replacement expands `\&`, `\1`–`\9`, `\\`, and the per-buffer `\#`
 count, while zero-width matches make GNU-style forward progress, including a
 final empty line. Invalid regexps and invalid or unsupported replacement
 directives are refused before mutation. GNU Lisp-evaluated `\,`, per-match
-`\?` directives, recursive edit, and the diff response remain gaps.
+`\?` directives, and recursive edit remain gaps.
 Like GNU Ibuffer, ordinary bulk operations implicitly mark the current row when
 there are no ordinary marks and exclude `D` deletion marks. Revert failures are
 isolated per buffer so a missing file does not prevent later buffers from being

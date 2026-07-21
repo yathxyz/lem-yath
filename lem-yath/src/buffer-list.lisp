@@ -3210,6 +3210,14 @@ through later selected buffers without wrapping."
 (defvar *buffer-list-query-replace-before* nil)
 (defvar *buffer-list-query-replace-after* nil)
 
+(defparameter *buffer-list-query-replace-diff-buffer-name*
+  "*Ibuffer Query Replace Diff*")
+(defparameter *buffer-list-query-replace-diff-input-limit* (* 4 1024 1024))
+(defparameter *buffer-list-query-replace-diff-output-limit* (* 16 1024 1024))
+
+(declaim (ftype function buffer-list-query-replace-show-diff
+                         vundo-unified-diff))
+
 (defun buffer-list-query-replace-read-args (regexp-p)
   (let* ((label (if regexp-p "Query replace regexp" "Query replace"))
          (before
@@ -3503,7 +3511,7 @@ same CL-PPCRE scan."
   (loop
     :for response :=
       (prompt-for-character
-       (format nil "Replace ~s with ~s [y/n/!/q/./^/u/U/e/E]"
+       (format nil "Replace ~s with ~s [y/n/!/q/./,/^/u/U/e/E/d]"
                before displayed-replacement))
     :do
        (cond
@@ -3531,6 +3539,8 @@ same CL-PPCRE scan."
           (return :undo))
          ((char= response #\U)
           (return :undo-all))
+         ((char= response #\d)
+          (return :diff))
          ((char= response #\e)
           (return
             (cons :edit
@@ -3543,17 +3553,18 @@ same CL-PPCRE scan."
                                      :initial-value raw-replacement))))
          ((char= response #\?)
           (message
-           "y/Space replace; n/Backspace skip; , replace and stay; ! rest; q/Return exit; . replace and exit; ^ back; u/U undo; e/E edit replacement"))
+           "y/Space replace; n/Backspace skip; , replace and stay; ! rest; q/Return exit; . replace and exit; ^ back; u/U undo; e/E edit replacement; d diff"))
          (t
           (message "Unsupported query-replace response: ~s" response)))))
 
 (defun buffer-list-query-replace-buffer
     (buffer before after forward-function backward-function case-fold-p
-     regexp-p replacement-program &optional regexp-scanner)
+     regexp-p replacement-program &optional regexp-scanner automatic-p
+                                           output-character-limit)
   (with-current-buffer buffer
     (let ((lem/isearch::*isearch-search-forward-function* forward-function)
           (lem/isearch::*isearch-search-backward-function* backward-function)
-          (replace-rest-p nil)
+          (replace-rest-p automatic-p)
           (replacement-count 0)
           (raw-replacement after)
           (current-program replacement-program)
@@ -3724,6 +3735,10 @@ same CL-PPCRE scan."
                             cursor
                             (buffer-list-query-replace-entry-end current-entry)))
                               (message "Nothing to undo"))))
+                       ((eq response :diff)
+                        (buffer-list-query-replace-show-diff
+                         buffer before raw-replacement case-fold-p regexp-p
+                         current-program regexp-scanner))
                        ((eq response :replace-and-show)
                         (unless (buffer-list-query-replace-entry-replaced-p
                                  current-entry)
@@ -3740,6 +3755,20 @@ same CL-PPCRE scan."
                           (setf replace-rest-p t))
                         (unless (buffer-list-query-replace-entry-replaced-p
                                  current-entry)
+                          (when output-character-limit
+                            (let ((projected-length
+                                    (+ (- (position-at-point
+                                           (buffer-end-point buffer))
+                                          (position-at-point
+                                           (buffer-start-point buffer)))
+                                       (- (length replacement)
+                                          (length
+                                           (buffer-list-query-replace-entry-original
+                                            current-entry))))))
+                              (when (> projected-length output-character-limit)
+                                (editor-error
+                                 "Ibuffer query-replace preview exceeds ~d characters"
+                                 output-character-limit))))
                           (buffer-list-query-replace-entry-replace
                            current-entry replacement)
                           (incf replacement-count))
@@ -3758,6 +3787,78 @@ same CL-PPCRE scan."
         (when undo-boundary-enabled-p
           (buffer-enable-undo-boundary buffer))
         (buffer-undo-boundary buffer)))))
+
+(defun buffer-list-query-replace-preview-text
+    (source-text before after case-fold-p regexp-p replacement-program scanner)
+  (when (> (length source-text) *buffer-list-query-replace-diff-input-limit*)
+    (editor-error "Ibuffer query-replace diff input exceeds ~d characters"
+                  *buffer-list-query-replace-diff-input-limit*))
+  (let ((preview (make-buffer nil :temporary t :enable-undo-p t)))
+    (unwind-protect
+         (progn
+           (insert-string (buffer-start-point preview) source-text)
+           (if scanner
+               (flet ((forward (point _pattern &optional limit)
+                        (declare (ignore _pattern))
+                        (search-forward-regexp point scanner limit))
+                      (backward (point _pattern &optional limit)
+                        (declare (ignore _pattern))
+                        (search-backward-regexp point scanner limit)))
+                 (buffer-list-query-replace-buffer
+                  preview before after #'forward #'backward
+                  case-fold-p regexp-p replacement-program scanner t
+                  *buffer-list-query-replace-diff-output-limit*))
+               (let ((lem/buffer/internal::*case-fold-search*
+                       (not case-fold-p)))
+                 (buffer-list-query-replace-buffer
+                  preview before after #'search-forward #'search-backward
+                  case-fold-p regexp-p nil nil t
+                  *buffer-list-query-replace-diff-output-limit*)))
+           (points-to-string (buffer-start-point preview)
+                             (buffer-end-point preview)))
+      (ignore-errors (delete-buffer preview)))))
+
+(defun buffer-list-query-replace-show-diff
+    (buffer before after case-fold-p regexp-p replacement-program scanner)
+  (let ((source-length
+          (- (position-at-point (buffer-end-point buffer))
+             (position-at-point (buffer-start-point buffer)))))
+    (when (> source-length *buffer-list-query-replace-diff-input-limit*)
+      (editor-error "Ibuffer query-replace diff input exceeds ~d characters"
+                    *buffer-list-query-replace-diff-input-limit*)))
+  (let* ((source-text
+           (points-to-string (buffer-start-point buffer)
+                             (buffer-end-point buffer)))
+         (preview-text
+           (buffer-list-query-replace-preview-text
+            source-text before after case-fold-p regexp-p
+            replacement-program scanner))
+         (label (buffer-name buffer))
+         (text
+           (vundo-unified-diff
+            source-text preview-text
+            (format nil "~a (current)" label)
+            (format nil "~a (replace)" label)))
+         (diff-buffer
+           (make-buffer *buffer-list-query-replace-diff-buffer-name*
+                        :enable-undo-p nil))
+         (source-window (current-window)))
+    (buffer-disable-undo diff-buffer)
+    (with-buffer-read-only diff-buffer nil
+      (erase-buffer diff-buffer)
+      (insert-string (buffer-start-point diff-buffer) text)
+      (buffer-start (buffer-point diff-buffer)))
+    (change-buffer-mode diff-buffer 'buffer-list-diff-mode)
+    (buffer-mark-saved diff-buffer)
+    (setf (buffer-read-only-p diff-buffer) t)
+    (pop-to-buffer diff-buffer)
+    (unless (and source-window
+                 (not (deleted-window-p source-window))
+                 (eq (window-buffer source-window) buffer))
+      (editor-error "Cannot display Ibuffer query-replace diff safely"))
+    (setf (current-window) source-window)
+    (redraw-display)
+    diff-buffer))
 
 (defun buffer-list-query-replace-restore-picker
     (component source-window source-buffer source-point source-view-point
@@ -4021,8 +4122,6 @@ same CL-PPCRE scan."
 
 (defparameter *buffer-list-diff-buffer-name* "*Ibuffer Diff*")
 (defparameter *buffer-list-diff-input-limit* (* 16 1024 1024))
-
-(declaim (ftype function vundo-unified-diff))
 
 (defun buffer-list-diff-file-text (pathname)
   (with-open-file (stream pathname

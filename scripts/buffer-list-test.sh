@@ -2568,10 +2568,12 @@ else
   fail query-regexp-undo "regexp query replacement was not one undo unit: $beta_regexp_undo"
 fi
 
-# GNU's in-loop response state is live rather than a yes/no prompt.  Comma
-# replaces without advancing; u can undo that current replacement; ^ revisits
-# the prior match; U restores all accepted matches and rewinds to the oldest;
-# e transfers match case while E applies the edited replacement literally.
+# GNU's in-loop response state is live rather than a yes/no prompt.  The d
+# response previews the complete hypothetical replacement without advancing;
+# comma replaces without advancing; u can undo that current replacement; ^
+# revisits the prior match; U restores all accepted matches and rewinds to the
+# oldest; e transfers match case while E applies the edited replacement
+# literally.
 lem_keys "$session" C-x C-b U o a
 lem_keys "$session" s n
 tmux_cmd send-keys -t "$session" -l 'buffer-list-query-alpha'
@@ -2583,6 +2585,14 @@ if lem_wait_for "$session" 'Query replace' 10 >/dev/null; then
   lem_keys "$session" Enter
 fi
 if lem_wait_for "$session" 'Replace "foo" with "zap"' 10 >/dev/null; then
+  lem_keys "$session" d
+  if lem_wait_for "$session" 'Ibuffer Query Replace Diff' 10 >/dev/null &&
+     lem_wait_for "$session" '\+zap alpha one' 10 >/dev/null &&
+     lem_wait_for "$session" 'Replace "foo" with "zap"' 10 >/dev/null; then
+    pass query-diff-response "d showed the whole-buffer replacement diff and retained the live prompt"
+  else
+    fail query-diff-response "d did not preserve a visible diff beside the live query prompt"
+  fi
   lem_keys "$session" , u y y
   if lem_wait_for "$session" 'foo alpha three' 10 >/dev/null; then
     lem_keys "$session" '^' u y
@@ -2604,7 +2614,7 @@ fi
 if lem_wait_for "$session" 'Query replace finished; 2 replacements in 1 buffer' 10 >/dev/null; then
   query_responses=$(report_query_state || true)
   if [[ "$query_responses" == *'alpha=modified:writable:foo alpha one\nCHANGED alpha two\nExact alpha three\n'* ]]; then
-    pass query-advanced-responses "comma, ^, u/U, e, and E retained GNU's live per-buffer response semantics"
+    pass query-advanced-responses "d, comma, ^, u/U, e, and E retained GNU's live per-buffer response semantics"
   else
     fail query-advanced-responses "advanced response state produced unexpected text: $query_responses"
   fi
@@ -2620,6 +2630,16 @@ if [[ "$alpha_response_undo" == *'text=foo alpha one\nFOO alpha two\nfoo alpha t
   pass query-advanced-undo "one Normal undo restored the complete query despite in-loop undo and rewind"
 else
   fail query-advanced-undo "advanced response edits escaped the single buffer undo unit: $alpha_response_undo"
+fi
+
+# GNU leaves the d preview displayed.  Dismiss it with its local q binding,
+# then remove the restored split so subsequent window-count cases begin from
+# their original two-window fixture.
+lem_keys "$session" C-x o q C-x 0
+if wait_for_absent 'Ibuffer Query Replace Diff'; then
+  pass query-diff-close "q dismissed the retained read-only preview"
+else
+  fail query-diff-close "the retained query-replace diff window did not close"
 fi
 
 # GNU regexp replacement expands the whole match, groups, the per-command
