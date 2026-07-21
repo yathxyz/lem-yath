@@ -4,6 +4,7 @@
       (lambda () (encode-universal-time 0 0 12 12 7 2026 0)))
 
 (defvar *agenda-test-report-serial* 0)
+(defvar *agenda-test-preview-report-serial* 0)
 (defvar *agenda-test-original-top-level-org-files* nil)
 (defvar *agenda-test-stale-source* nil)
 
@@ -113,7 +114,11 @@
      (if (agenda-scan-running-p buffer) "yes" "no")
      (if (agenda-refresh-pending-p buffer) "yes" "no"))
     (agenda-test-log
-     "OPEN-MOTION serial=~d tab=~a shift-return=~a gtab=~a gj=~a gk=~a Cj=~a Ck=~a"
+     (concatenate
+      'string
+      "OPEN-MOTION serial=~d tab=~a shift-return=~a gtab=~a "
+      "gj=~a gk=~a Cj=~a Ck=~a space=~a backspace=~a delete=~a "
+      "mret=~a P=~a")
      serial
      (agenda-test-command-name "Tab")
      (agenda-test-command-name "Shift-Return")
@@ -121,7 +126,12 @@
      (agenda-test-command-name "g j")
      (agenda-test-command-name "g k")
      (agenda-test-command-name "C-j")
-     (agenda-test-command-name "C-k"))
+     (agenda-test-command-name "C-k")
+     (agenda-test-command-name "Space")
+     (agenda-test-command-name "Backspace")
+     (agenda-test-command-name "Delete")
+     (agenda-test-command-name "M-Return")
+     (agenda-test-command-name "P"))
     (loop :for directory :in directories
           :for index :from 1
           :do (agenda-test-log "ROOT serial=~d index=~d path=~a"
@@ -282,6 +292,30 @@
    (symbol-name (buffer-major-mode (current-buffer)))
    (line-string (current-point))))
 
+(define-command lem-yath-test-agenda-preview-report () ()
+  (let ((serial (incf *agenda-test-preview-report-serial*))
+        (window *agenda-preview-window*)
+        (agenda-focus-p
+          (eq (buffer-major-mode (current-buffer))
+              'lem-yath-agenda-mode)))
+    (if (or (null window) (deleted-window-p window))
+        (agenda-test-log "PREVIEW serial=~d live=no" serial)
+        (with-current-window window
+          (agenda-test-log
+           (concatenate
+            'string
+            "PREVIEW serial=~d live=yes focus=~a file=~a point=~d view=~d "
+            "cursor-y=~d centered=~a")
+           serial
+           (if agenda-focus-p "agenda" "source")
+           (agenda-test-path (buffer-filename (current-buffer)))
+           (line-number-at-point (current-point))
+           (line-number-at-point (window-view-point window))
+           (lem-core::window-cursor-y window)
+           (if (= (lem-core::window-cursor-y window)
+                  (floor (lem-core::window-height-without-modeline window) 2))
+               "yes" "no"))))))
+
 (define-command lem-yath-test-agenda-return () ()
   (alexandria:if-let ((buffer (get-buffer *agenda-buffer-name*)))
     (switch-to-buffer buffer)
@@ -402,6 +436,8 @@
   'lem-yath-test-agenda-goto-timestamp-none)
 (define-key *lem-yath-agenda-vi-keymap* "C-c z"
   'lem-yath-test-agenda-clear-stale-source)
+(define-key *lem-yath-agenda-vi-keymap* "C-c b"
+  'lem-yath-test-agenda-preview-report)
 (define-key *lem-yath-agenda-vi-keymap* "F1"
   'lem-yath-test-agenda-goto-archive)
 (define-key *lem-yath-agenda-vi-keymap* "F3"

@@ -173,14 +173,14 @@ if lem_wait_for "$session" 'FLAGGING-NOTE \(\[\?\] for more info\): review//sour
 else
   fail flagged-note 'flagged-row movement did not echo the source property'
 fi
-send_keys '?'
+send_keys P
 lem_wait_for "$session" "Flagging note pushed to kill ring\. Press '\?' again" 10 >/dev/null || true
 send_keys C-c z f
 wait_report '^NOTE focus=T buffer=T multiline=T kill-raw=T$' || true
 if grep -q '^NOTE focus=T buffer=T multiline=T kill-raw=T$' "$LEM_YATH_AGENDA_DISPATCH_REPORT"; then
-  pass flagged-detail '? kept agenda focus, showed a multiline note, and copied its raw value'
+  pass flagged-detail 'P kept agenda focus, showed a multiline note, and copied its raw value'
 else
-  fail flagged-detail '? changed focus or produced the wrong detail/kill-ring representation'
+  fail flagged-detail 'P changed focus or produced the wrong detail/kill-ring representation'
 fi
 send_keys C-c z d
 wait_report '^STATE command=FLAGGED .*rows=1 ' || true

@@ -151,5 +151,7 @@
 
 (define-key *lem-yath-agenda-vi-keymap* "?"
   'lem-yath-agenda-show-flagging-note)
+(define-key *lem-yath-agenda-vi-keymap* "P"
+  'lem-yath-agenda-show-flagging-note)
 (define-key *lem-yath-agenda-mode-keymap* "?"
   'lem-yath-agenda-show-flagging-note)

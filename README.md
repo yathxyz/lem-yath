@@ -744,8 +744,10 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   stuck-project definition including raw `NEXTACTION` headings outside the
   configured TODO vocabulary. It also has
   modal Return/`gr`/q navigation, Evil-Org `Tab`/`g Tab`/Shift-Return source
-  visits in another window, decoration-skipping `gj`/`gk` and `C-j`/`C-k`
-  item motion, and Evil-Org-style `t` fast TODO selection plus
+  visits in another window, focus-retaining source preview on `SPC`, repeated
+  `SPC`/Backspace paging, `M-Return` source recentering, decoration-skipping
+  `gj`/`gk` and `C-j`/`C-k` item motion, and Evil-Org-style `t` fast TODO
+  selection plus
   `J`/`K` GNU Org priority cycling. Evil-Org `dd` and GNU `C-k` durably delete
   complete source subtrees, while `ce`, GNU `e`, and `C-c C-x e` set validated
   Effort properties. Agenda `H`/`L` and the GNU shifted-arrow routes move

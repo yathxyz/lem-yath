@@ -191,11 +191,18 @@ printf '%s\n' \
   'Existing target body.' \
   >"$work_file"
 
-printf '%s\n' \
-  '#+title: Public agenda' \
-  '#+ARCHIVE: custom-archive.org::* Archived' \
-  '* SOMEDAY Public visit sentinel' \
-  >"$public_file"
+{
+  printf '%s\n' \
+    '#+title: Public agenda' \
+    '#+ARCHIVE: custom-archive.org::* Archived'
+  for index in $(seq -w 1 40); do
+    printf '# preview prelude %s\n' "$index"
+  done
+  printf '%s\n' '* SOMEDAY Public visit sentinel'
+  for index in $(seq -w 1 60); do
+    printf 'Public preview body %s\n' "$index"
+  done
+} >"$public_file"
 
 printf '%s\n' \
   '* TODO MCP today sentinel' \
@@ -243,7 +250,7 @@ else
   grep -qF "FILE serial=1 index=2 path=$source_file" "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   grep -qF "FILE serial=1 index=3 path=$public_file" "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   grep -qF "FILE serial=1 index=4 path=$mcp_file" "$LEM_YATH_AGENDA_REPORT" || static_ok=0
-  grep -q '^OPEN-MOTION serial=1 tab=LEM-YATH-AGENDA-GOTO shift-return=LEM-YATH-AGENDA-GOTO gtab=LEM-YATH-AGENDA-GOTO gj=LEM-YATH-AGENDA-NEXT-ITEM gk=LEM-YATH-AGENDA-PREVIOUS-ITEM Cj=LEM-YATH-AGENDA-NEXT-ITEM Ck=LEM-YATH-AGENDA-PREVIOUS-ITEM$' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
+  grep -q '^OPEN-MOTION serial=1 tab=LEM-YATH-AGENDA-GOTO shift-return=LEM-YATH-AGENDA-GOTO gtab=LEM-YATH-AGENDA-GOTO gj=LEM-YATH-AGENDA-NEXT-ITEM gk=LEM-YATH-AGENDA-PREVIOUS-ITEM Cj=LEM-YATH-AGENDA-NEXT-ITEM Ck=LEM-YATH-AGENDA-PREVIOUS-ITEM space=LEM-YATH-AGENDA-SHOW-AND-SCROLL-UP backspace=LEM-YATH-AGENDA-SHOW-SCROLL-DOWN delete=LEM-YATH-AGENDA-SHOW-SCROLL-DOWN mret=LEM-YATH-AGENDA-RECENTER-SOURCE P=LEM-YATH-AGENDA-SHOW-FLAGGING-NOTE$' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   grep -q '^TAG-COMPLETION serial=1 known=alpha,ARCHIVE,localtag,movetag,parenttag,shared,targettag items=:alpha:,:localtag:$' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   [ "$(grep -c '^ENTRY serial=1 ' "$LEM_YATH_AGENDA_REPORT")" = 39 ] || static_ok=0
   grep -qE '^ENTRY serial=1 section=OVERDUE .*Overdue work sentinel' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
@@ -1047,6 +1054,15 @@ if wait_report_count '^STALE-SOURCE modified=yes first="# unsaved stale line" se
 else
   fail refile-stale "C-c C-w moved or saved from a stale agenda row"
 fi
+tmux_cmd send-keys -t "$session" Space
+sleep 0.4
+tmux_cmd send-keys -t "$session" F2
+if lem_capture "$session" | grep -q 'Agenda preview failed: Agenda source changed' &&
+   wait_report_count '^STALE-SOURCE modified=yes first="# unsaved stale line" second="\* NEXT Work unscheduled sentinel"$' 6; then
+  pass preview-stale "SPC refused to preview the wrong line from a stale agenda row"
+else
+  fail preview-stale "SPC followed a stale line or changed agenda focus"
+fi
 tmux_cmd send-keys -t "$session" C-c z
 sleep 0.2
 
@@ -1072,13 +1088,13 @@ if lem_wait_for "$session" 'Overdue work sentinel' 40 >/dev/null; then
   if wait_report '^POINT mode=LEM-YATH-AGENDA-MODE file=.* line=[0-9]+ text=.*$' &&
      ! grep -q 'Public visit sentinel' "$LEM_YATH_AGENDA_REPORT"; then
     tmux_cmd send-keys -t "$session" g j F6
-    if wait_report "^POINT mode=LEM-YATH-AGENDA-MODE file=$public_file line=3 .*Public visit sentinel"; then
+    if wait_report "^POINT mode=LEM-YATH-AGENDA-MODE file=$public_file line=43 .*Public visit sentinel"; then
       : >"$LEM_YATH_AGENDA_REPORT"
       tmux_cmd send-keys -t "$session" 2 g k F6
       if wait_report '^POINT mode=LEM-YATH-AGENDA-MODE file=.* line=[0-9]+ text=.*$' &&
          ! grep -q 'Public visit sentinel' "$LEM_YATH_AGENDA_REPORT"; then
         tmux_cmd send-keys -t "$session" 2 g j F6
-        if wait_report "^POINT mode=LEM-YATH-AGENDA-MODE file=$public_file line=3 .*Public visit sentinel"; then
+        if wait_report "^POINT mode=LEM-YATH-AGENDA-MODE file=$public_file line=43 .*Public visit sentinel"; then
           pass item-motion "gk/gj skip decoration and honor Evil counts between source rows"
         else
           fail item-motion "counted gj did not return across two source-backed rows"
@@ -1094,11 +1110,45 @@ if lem_wait_for "$session" 'Overdue work sentinel' 40 >/dev/null; then
   fi
 
   : >"$LEM_YATH_AGENDA_REPORT"
-  tmux_cmd send-keys -t "$session" F5 Tab
-  if lem_wait_for "$session" 'Public agenda' 10 >/dev/null; then
-    tmux_cmd send-keys -t "$session" F7
+  tmux_cmd send-keys -t "$session" Space C-c b
+  wait_report "^PREVIEW serial=1 live=yes focus=agenda file=$public_file point=43 " || true
+  preview_view_1="$(sed -n 's/^PREVIEW serial=1 .* view=\([0-9][0-9]*\) .*/\1/p' "$LEM_YATH_AGENDA_REPORT" | tail -1)"
+  if [ -n "$preview_view_1" ] && lem_capture "$session" | grep -q 'Public visit sentinel'; then
+    pass preview-show "SPC displayed the exact source row without leaving the agenda"
+  else
+    fail preview-show "SPC changed focus or displayed the wrong source row"
   fi
-  if wait_report "^SOURCE file=$public_file line=3 mode=ORG-MODE text=\"\\* SOMEDAY Public visit sentinel\"$"; then
+
+  tmux_cmd send-keys -t "$session" Space Space C-c b
+  wait_report "^PREVIEW serial=2 live=yes focus=agenda file=$public_file point=43 " || true
+  preview_view_2="$(sed -n 's/^PREVIEW serial=2 .* view=\([0-9][0-9]*\) .*/\1/p' "$LEM_YATH_AGENDA_REPORT" | tail -1)"
+  if [ -n "$preview_view_2" ] && [ "$preview_view_2" -gt "$preview_view_1" ]; then
+    pass preview-forward "a directly repeated SPC scrolled the remembered source window forward"
+  else
+    fail preview-forward "repeated SPC did not advance the source view"
+  fi
+
+  tmux_cmd send-keys -t "$session" BSpace C-c b
+  wait_report "^PREVIEW serial=3 live=yes focus=agenda file=$public_file point=43 " || true
+  preview_view_3="$(sed -n 's/^PREVIEW serial=3 .* view=\([0-9][0-9]*\) .*/\1/p' "$LEM_YATH_AGENDA_REPORT" | tail -1)"
+  if [ -n "$preview_view_3" ] && [ "$preview_view_3" -lt "$preview_view_2" ]; then
+    pass preview-backward "Backspace scrolled the remembered source window backward"
+  else
+    fail preview-backward "Backspace did not reverse the source view"
+  fi
+
+  tmux_cmd send-keys -t "$session" M-Enter C-c b
+  if wait_report "^PREVIEW serial=4 live=yes focus=agenda file=$public_file point=43 .* centered=yes$"; then
+    pass preview-recenter "M-Return centered the exact source row while retaining agenda focus"
+  else
+    fail preview-recenter "M-Return did not center the source row or changed focus"
+  fi
+
+  : >"$LEM_YATH_AGENDA_REPORT"
+  tmux_cmd send-keys -t "$session" F5 Tab
+  sleep 0.3
+  tmux_cmd send-keys -t "$session" F7
+  if wait_report "^SOURCE file=$public_file line=43 mode=ORG-MODE text=\"\\* SOMEDAY Public visit sentinel\"$"; then
     pass goto-other-window "Tab opened the exact agenda source in another window"
   else
     fail goto-other-window "Tab did not open the exact source-backed row"
@@ -1109,14 +1159,12 @@ if lem_wait_for "$session" 'Overdue work sentinel' 40 >/dev/null; then
   tmux_cmd send-keys -t "$session" F5
   sleep 0.2
   tmux_cmd send-keys -t "$session" F6
-  if wait_report "^POINT mode=LEM-YATH-AGENDA-MODE file=$public_file line=3 .*Public visit sentinel"; then
+  if wait_report "^POINT mode=LEM-YATH-AGENDA-MODE file=$public_file line=43 .*Public visit sentinel"; then
     tmux_cmd send-keys -t "$session" Enter
-    if lem_wait_for "$session" 'Public agenda' 10 >/dev/null; then
-      sleep 0.3
-      tmux_cmd send-keys -t "$session" F7
-    fi
+    sleep 0.3
+    tmux_cmd send-keys -t "$session" F7
   fi
-  if wait_report "^SOURCE file=$public_file line=3 mode=ORG-MODE text=\"\\* SOMEDAY Public visit sentinel\"$"; then
+  if wait_report "^SOURCE file=$public_file line=43 mode=ORG-MODE text=\"\\* SOMEDAY Public visit sentinel\"$"; then
     visit_ok=1
     pass visit "Return follows stored source properties to the exact duplicate-name file"
   else

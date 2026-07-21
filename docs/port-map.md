@@ -209,6 +209,12 @@ Status legend:
   in a non-selected `*Flagging Note*` split, and on a consecutive invocation
   offers to remove `FLAGGED`, `THEFLAGGINGNOTE`, and an emptied drawer. The
   source mutation saves immediately and participates in remote `u`.
+- **Agenda source preview**: `src/apps/agenda-preview.lisp` implements the
+  configured Evil-Org `SPC`, Backspace/Delete, and `M-Return` cluster. It shows
+  the exact source in another ordinary window without changing agenda focus,
+  pages only the remembered source on directly repeated commands, recenters
+  on demand, and fails closed if a live source insertion made the rendered
+  line identity stale. Evil-Org `P` aliases the full flagging-note command.
 - **Completion previews**: the grouped project picker and directory-local
   Elisp outline provide reversible Consult-style preview. Generic command,
   file, buffer, and LSP-symbol prompts still do not preview their targets.

@@ -934,6 +934,13 @@ the trailing text-ready space. The profile binds no other org-journal command
   exact source marker in another window; Return instead runs
   `org-agenda-switch-to` in the agenda window. `gj`/`gk` and `C-j`/`C-k` move
   between source-backed items rather than stopping on agenda decoration.
+- Evil-Org `SPC` displays the current source without leaving the agenda and a
+  directly repeated `SPC` pages that source forward; Backspace/Delete page the
+  remembered source backward. `M-Return` displays and recenters the exact row
+  while retaining agenda focus. Lem implements these in the isolated
+  `apps/agenda-preview.lisp` module and refuses stale stored line identities.
+- Evil-Org `P` and the stock base-map `?` both expose the full flagging-note
+  detail/removal workflow described by the agenda dispatcher inventory.
 - Lem now covers the configured mutation paths exposed by that map: `dd`
   deletes a complete subtree with GNU Org's multi-line confirmation threshold,
   `ce` sets `Effort`, and `H`/`L` move the selected planning or ordinary-event

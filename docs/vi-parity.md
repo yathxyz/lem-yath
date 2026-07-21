@@ -55,7 +55,10 @@ project rule and raw `TODO`/`NEXT`/`NEXTACTION` subtree tokens. Moving with
 `THEFLAGGINGNOTE`, including Org's stored `\\n` to `//` display conversion.
 Agenda `?` opens and copies the full note while retaining focus; a consecutive
 `?` offers the stock unflag operation, with the saved mutation available to
-remote `u` in the live source buffer.
+remote `u` in the live source buffer; Evil-Org `P` is the same command. `SPC`
+previews the selected row's exact source without taking focus, a directly
+repeated `SPC` and Backspace/Delete page its remembered window, and `M-Return`
+recenters that source. Stale rendered line identities fail closed.
 
 ## Remaining capability gaps
 
