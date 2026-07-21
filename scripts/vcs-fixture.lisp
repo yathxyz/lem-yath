@@ -1185,6 +1185,25 @@
                             candidates))
                     subjects)))))))
 
+(define-command lem-yath-test-vcs-log-action-state () ()
+  "Report whether a history action retained its configured log and anchor."
+  (let* ((buffer
+           (if (lem/legit::legit-status-active-p)
+               (window-buffer lem/legit::*peek-window*)
+               (current-buffer)))
+         (state (buffer-value buffer 'legit-log-state))
+         (point (buffer-point buffer))
+         (hash (text-property-at point :commit-hash))
+         (line (line-string point)))
+    (vcs-test-log
+     "LOG-ACTION log=~a status=~a state=~a hash=~a line=~a offset=~d"
+     (vcs-test-yes-no (string= (buffer-name buffer) "*legit-commits-log*"))
+     (vcs-test-yes-no (string= (buffer-name buffer) "*peek-legit*"))
+     (vcs-test-yes-no state)
+     (vcs-test-yes-no hash)
+     (vcs-test-encode line)
+     (if state (legit-log-state-offset state) -1))))
+
 (define-command lem-yath-test-vcs-cherry-position () ()
   (let* ((status-buffer
            (and (lem/legit::legit-status-active-p)
@@ -1720,6 +1739,7 @@
           (load (merge-pathnames "src/git-remote.lisp" source))
           (load (merge-pathnames "src/git-submodule.lisp" source))
           (load (merge-pathnames "src/git-subtree.lisp" source))
+          (load (merge-pathnames "src/git-log-actions.lisp" source))
           (load (merge-pathnames "src/git-blame.lisp" source))
           (load (merge-pathnames "src/apps/timemachine.lisp" source)))
         (let ((after (vcs-test-reload-state)))
@@ -1841,6 +1861,7 @@
 (define-key *global-keymap* "C-c v" 'lem-yath-test-vcs-rebase-state)
 (define-key *global-keymap* "C-c y" 'lem-yath-test-vcs-cherry-state)
 (define-key *global-keymap* "C-c Y" 'lem-yath-test-vcs-cherry-position)
+(define-key *global-keymap* "C-c L" 'lem-yath-test-vcs-log-action-state)
 (define-key lem/legit::*peek-legit-keymap*
   "C-c t" 'lem-yath-test-vcs-todo-preview)
 (define-key lem/legit::*peek-legit-keymap*
@@ -1861,6 +1882,8 @@
   "C-c y" 'lem-yath-test-vcs-cherry-state)
 (define-key lem/legit::*peek-legit-keymap*
   "C-c Y" 'lem-yath-test-vcs-cherry-position)
+(define-key lem/legit::*legit-commits-log-keymap*
+  "C-c L" 'lem-yath-test-vcs-log-action-state)
 (define-key lem/legit::*legit-diff-mode-keymap*
   "C-c d" 'lem-yath-test-vcs-porcelain-diff)
 (define-key lem/legit::*legit-diff-mode-keymap*

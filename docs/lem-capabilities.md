@@ -2184,6 +2184,10 @@ Magit-inspired. `M-x legit-status` bound **`C-x g`** (`legit/legit.lisp:65`).
   `HEAD`, related, local/all branches, all refs, three reflogs, and the visible
   shortlog sub-dispatch. Rows keep Legit's two-pane preview; `f`/`b`, `F`/`B`,
   `g r`, `=`, and `q` provide page, refresh, limit, and status restoration.
+  Same-repository synchronous actions that end in ordinary status refresh the
+  originating log and retain its selected commit, with a prior-line fallback
+  if the action moved that commit away; message, preview, list, and worktree
+  root transitions remain focused.
 - **Stash dispatch**: the configured Evil Collection default keeps Magit's
   lowercase `z` for the complete normally visible stash map in status and
   diff. `- u`/`- a` select untracked/all files;

@@ -518,7 +518,11 @@ opt in with `export EDITOR=lemclient VISUAL=lemclient GIT_EDITOR=lemclient`.
   Visual region whose endpoints are commit headings supplies the selected
   commits to cherry-pick/revert and the oldest selected boundary to branch
   spin-off/spin-out; detail rows are ignored and malformed or Block regions
-  retain the ordinary prompt. Bounded page loading lives on
+  retain the ordinary prompt. A synchronous action that finishes in ordinary
+  status for the same repository refreshes its originating log and restores
+  the commit hash at point, falling back to the prior line if that commit was
+  moved away. Message editors, previews, lists, and changed-worktree roots
+  remain active instead. Bounded page loading lives on
   `g f`/`g b`/`g F`/`g B`, so it no longer shadows fetch, pull, branch, or
   bisect. Evil Collection's lowercase `p`
   opens the matching Magit push dispatch in both panes. Its

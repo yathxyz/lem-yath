@@ -3264,6 +3264,18 @@ send_keys "$porcelain_session" A
 lem_wait_for "$porcelain_session" '\[Apply\]' \
   "$WAIT_TIMEOUT" >/dev/null || log_actions_visible=0
 send_keys "$porcelain_session" q
+log_action_before=$(report_count '^LOG-ACTION ')
+send_keys "$porcelain_session" C-c L
+if wait_report_count '^LOG-ACTION ' "$((log_action_before + 1))" &&
+   [[ $(latest_report '^LOG-ACTION ') == \
+      LOG-ACTION\ log=yes\ status=no\ state=yes\ hash=yes\ line=*porcelain-initial*\ offset=0 ]]; then
+  pass legit-log-action-cancel \
+    'canceling a log action retained the configured log and commit anchor'
+else
+  fail legit-log-action-cancel \
+    'canceling a log action lost its log state or selected commit' \
+    "$porcelain_session"
+fi
 send_keys "$porcelain_session" b
 lem_wait_for "$porcelain_session" '\[Branch\]' \
   "$WAIT_TIMEOUT" >/dev/null || log_actions_visible=0
@@ -4558,8 +4570,21 @@ else
     "$porcelain_session"
 fi
 
+log_action_before=$(report_count '^LOG-ACTION ')
+send_keys "$porcelain_session" C-c L
+if wait_report_count '^LOG-ACTION ' "$((log_action_before + 1))" &&
+   [[ $(latest_report '^LOG-ACTION ') == \
+      LOG-ACTION\ log=yes\ status=no\ state=yes\ hash=yes\ line=*cherry-region-two*\ offset=0 ]]; then
+  pass legit-cherry-log-refresh \
+    'a successful Visual cherry-pick refreshed its log and retained the selected commit'
+else
+  fail legit-cherry-log-refresh \
+    'a successful Visual cherry-pick dropped to status or lost its commit anchor' \
+    "$porcelain_session"
+fi
+
 cherry_region_prompted=0
-send_keys "$porcelain_session" l l
+send_keys "$porcelain_session" q l l
 if lem_wait_for "$porcelain_session" 'cherry-region-two' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" j V k _
@@ -4584,11 +4609,24 @@ else
     "$porcelain_session"
 fi
 
+log_action_before=$(report_count '^LOG-ACTION ')
+send_keys "$porcelain_session" C-c L
+if wait_report_count '^LOG-ACTION ' "$((log_action_before + 1))" &&
+   [[ $(latest_report '^LOG-ACTION ') == \
+      LOG-ACTION\ log=yes\ status=no\ state=yes\ hash=yes\ line=*cherry-region-two*\ offset=0 ]]; then
+  pass legit-revert-log-refresh \
+    'a successful Visual revert refreshed its log and retained the selected commit'
+else
+  fail legit-revert-log-refresh \
+    'a successful Visual revert dropped to status or lost its commit anchor' \
+    "$porcelain_session"
+fi
+
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard \
   "$cherry_main_head"
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" clean -fq -- \
   cherry-region.txt
-send_keys "$porcelain_session" g
+send_keys "$porcelain_session" q g
 
 send_keys "$porcelain_session" A A
 if lem_wait_for "$porcelain_session" 'Cherry-pick:' \
@@ -5451,7 +5489,7 @@ fi
   "$merge_main_hash"
 send_keys "$porcelain_session" g
 
-send_keys "$porcelain_session" m
+send_keys "$porcelain_session" l l m
 if lem_wait_for "$porcelain_session" '\[Merge\]' \
      "$WAIT_TIMEOUT" >/dev/null; then
   send_keys "$porcelain_session" p
@@ -5465,10 +5503,10 @@ if wait_until "$WAIT_TIMEOUT" porcelain_merge_clean_at_main &&
    lem_wait_for "$porcelain_session" 'merge-preview.txt' \
      "$WAIT_TIMEOUT" >/dev/null; then
   pass legit-merge-preview \
-    'm p rendered the prospective merge tree without changing repository state'
+    'log m p retained its prospective preview without changing repository state'
 else
   fail legit-merge-preview \
-    'merge preview mutated state or omitted the prospective branch change' \
+    'a log-origin merge preview was overwritten, mutated state, or omitted its change' \
     "$porcelain_session"
 fi
 
@@ -6340,6 +6378,20 @@ else
     "$porcelain_session"
 fi
 
+log_action_before=$(report_count '^LOG-ACTION ')
+send_keys "$porcelain_session" C-c L
+if wait_report_count '^LOG-ACTION ' "$((log_action_before + 1))" &&
+   [[ $(latest_report '^LOG-ACTION ') == \
+      LOG-ACTION\ log=yes\ status=no\ state=yes\ hash=yes\ line=*branch-spinoff-region-keep*\ offset=0 ]]; then
+  pass legit-branch-spinoff-log-refresh \
+    'Visual branch spin-off refreshed its source log and fell back when the commit moved'
+else
+  fail legit-branch-spinoff-log-refresh \
+    'Visual branch spin-off dropped to status or missed the vanished-commit fallback' \
+    "$porcelain_session"
+fi
+send_keys "$porcelain_session" q
+
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" checkout -q \
   branch-spinoff-source
 send_keys "$porcelain_session" g b
@@ -6521,6 +6573,11 @@ if [ "$pull_fixture_ready" = 1 ]; then
   else
     fail legit-pull-elsewhere \
       'F e lost the explicit remote branch, option boundary, or clean state' \
+      "$porcelain_session"
+  fi
+  if ! wait_legit "$porcelain_session" porcelain; then
+    fail legit-pull-elsewhere-ui \
+      'the elsewhere pull did not finish its synchronous status refresh' \
       "$porcelain_session"
   fi
 
@@ -7087,6 +7144,13 @@ fi
 "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" branch -f \
   worktree-checkout "$merge_main_hash"
 
+send_keys "$porcelain_session" l l
+if ! lem_wait_for "$porcelain_session" 'Current log' \
+     "$WAIT_TIMEOUT" >/dev/null; then
+  fail legit-worktree-log-origin \
+    'could not open the current log before the root-changing worktree action' \
+    "$porcelain_session"
+fi
 tmux_cmd send-keys -t "$porcelain_session" -l -- 'Z'
 if lem_wait_for "$porcelain_session" '\[Worktree\]' \
      "$WAIT_TIMEOUT" >/dev/null; then
@@ -7111,10 +7175,10 @@ if wait_until "$WAIT_TIMEOUT" test -f \
    lem_wait_for "$porcelain_session" 'Branch: worktree-checkout' \
      "$WAIT_TIMEOUT" >/dev/null; then
   pass legit-worktree-checkout \
-    'Z b created, registered, visited, and displayed a metacharacter path'
+    'log Z b created, registered, visited, and displayed a metacharacter path'
 else
   fail legit-worktree-checkout \
-    'Z b did not create and visit the selected branch worktree' \
+    'log Z b did not preserve the selected root-changing worktree visit' \
     "$porcelain_session"
 fi
 

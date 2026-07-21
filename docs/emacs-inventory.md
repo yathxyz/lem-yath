@@ -593,8 +593,12 @@ endpoints are commit headings supplies sibling commits in display order;
 detail rows are ignored, while malformed and Visual Block regions fall back to
 the ordinary prompt. Cherry actions reverse that newest-first display order,
 revert retains it, and branch spin uses the oldest selected commit as its reset
-boundary. Extra bounded pagination is namespaced under `g f`/`g b`/`g F`/`g B`
-instead of displacing those effective bindings.
+boundary. Same-repository synchronous actions that finish in ordinary status
+refresh the originating log and restore its commit hash, or its bounded prior
+line when the commit moved away. Intentional message, preview, list, and
+changed-worktree-root transitions are not replaced. Extra bounded pagination
+is namespaced under `g f`/`g b`/`g F`/`g B` instead of displacing those
+effective bindings.
 
 Status and diff panes expose the complete normally visible Magit `A`
 cherry-pick dispatch. `- m`, `= s`, `- F`, `- x`, `- e`, `- S`, and `+ s`
