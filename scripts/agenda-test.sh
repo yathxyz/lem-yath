@@ -238,9 +238,13 @@ else
   grep -qF "FILE serial=1 index=4 path=$mcp_file" "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   grep -q '^OPEN-MOTION serial=1 tab=LEM-YATH-AGENDA-GOTO shift-return=LEM-YATH-AGENDA-GOTO gtab=LEM-YATH-AGENDA-GOTO gj=LEM-YATH-AGENDA-NEXT-ITEM gk=LEM-YATH-AGENDA-PREVIOUS-ITEM Cj=LEM-YATH-AGENDA-NEXT-ITEM Ck=LEM-YATH-AGENDA-PREVIOUS-ITEM$' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   grep -q '^TAG-COMPLETION serial=1 known=alpha,ARCHIVE,localtag,movetag,parenttag,shared,targettag items=:alpha:,:localtag:$' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
-  [ "$(grep -c '^ENTRY serial=1 ' "$LEM_YATH_AGENDA_REPORT")" = 33 ] || static_ok=0
+  [ "$(grep -c '^ENTRY serial=1 ' "$LEM_YATH_AGENDA_REPORT")" = 39 ] || static_ok=0
   grep -qE '^ENTRY serial=1 section=OVERDUE .*Overdue work sentinel' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
+  grep -qE '^ENTRY serial=1 section=TODAY .*Overdue work sentinel.*\[DEADLINE 1d ago 2026-07-11\]' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   grep -qE '^ENTRY serial=1 section=TODAY .*Today work sentinel' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
+  grep -qE '^ENTRY serial=1 section=TODAY .*Upcoming work sentinel.*\[DEADLINE in 3d 2026-07-15\]' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
+  grep -qE '^ENTRY serial=1 section=TODAY .*Done dated sentinel.*\[SCHEDULED 2026-07-12\]' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
+  grep -qE '^ENTRY serial=1 section=TODAY .*Cancelled dated sentinel.*\[DEADLINE 2026-07-12\]' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   grep -qE '^ENTRY serial=1 section=TODAY .*Plain today sentinel' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   grep -qE '^ENTRY serial=1 section=TODAY .*MCP today sentinel' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   grep -qE '^ENTRY serial=1 section=UPCOMING .*Upcoming work sentinel' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
@@ -260,11 +264,13 @@ else
   grep -qE '^ENTRY serial=1 section=TODOS .*Public visit sentinel' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   grep -qE '^ENTRY serial=1 section=TODOS .*Body planning text sentinel' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   grep -qE '^ENTRY serial=1 section=TODOS .*Invalid planning sentinel' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
-  [ "$(grep -c '^ENTRY serial=1 .*Dual planning sentinel' "$LEM_YATH_AGENDA_REPORT")" = 2 ] || static_ok=0
+  [ "$(grep -c '^ENTRY serial=1 .*Dual planning sentinel' "$LEM_YATH_AGENDA_REPORT")" = 3 ] || static_ok=0
   grep -qE '^ENTRY serial=1 section=TODAY .*Dual planning sentinel.*\[SCHEDULED 2026-07-12\]' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
+  grep -qE '^ENTRY serial=1 section=TODAY .*Dual planning sentinel.*\[DEADLINE in 3d 2026-07-15\]' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   grep -qE '^ENTRY serial=1 section=UPCOMING .*Dual planning sentinel.*\[DEADLINE 2026-07-15\]' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
+  grep -qE '^ENTRY serial=1 section=TODAY .*Archive action sentinel.*\[DEADLINE in 2d 2026-07-14\]' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
   grep -qE '^WARNING serial=1 .*Invalid Org planning date.*2026-02-30' "$LEM_YATH_AGENDA_REPORT" || static_ok=0
-  if grep -qE '^ENTRY serial=1 .*Nested (work|public)|^ENTRY serial=1 .*Hidden file|^ENTRY serial=1 .*Uppercase extension|^ENTRY serial=1 .*Done dated|^ENTRY serial=1 .*Cancelled dated|^ENTRY serial=1 .*Far future|^ENTRY serial=1 .*Inactive event exclusion|^ENTRY serial=1 .*Comment (subtree|child|line) exclusion|^ENTRY serial=1 .*Archive(d| child) .*exclusion|^ENTRY serial=1 .*Source block exclusion' "$LEM_YATH_AGENDA_REPORT"; then
+  if grep -qE '^ENTRY serial=1 .*Nested (work|public)|^ENTRY serial=1 .*Hidden file|^ENTRY serial=1 .*Uppercase extension|^ENTRY serial=1 .*Far future|^ENTRY serial=1 .*Inactive event exclusion|^ENTRY serial=1 .*Comment (subtree|child|line) exclusion|^ENTRY serial=1 .*Archive(d| child) .*exclusion|^ENTRY serial=1 .*Source block exclusion' "$LEM_YATH_AGENDA_REPORT"; then
     static_ok=0
   fi
   if [ "$static_ok" = 1 ]; then
@@ -275,7 +281,7 @@ else
 fi
 
 # Add mutation-only targets after the baseline source/grouping assertions so
-# these focused commands do not weaken the established 33-row oracle.
+# these focused commands do not weaken the established 39-row oracle.
 printf '%s\n' \
   '* TODO Effort action sentinel' \
   '* TODO Delete action sentinel' \
@@ -289,13 +295,19 @@ printf '%s\n' \
   '* Time shift event sentinel <2026-07-13 Mon 23:30-23:45>' \
   >>"$work_file"
 tmux_cmd send-keys -t "$session" g r
-if ! lem_wait_for "$session" 'Effort action sentinel' 40 >/dev/null; then
+for _ in $(seq 1 120); do
+  tmux_cmd send-keys -t "$session" C-c m
+  grep -q '^MUTATIONS-READY$' "$LEM_YATH_AGENDA_REPORT" 2>/dev/null && break
+  sleep 0.1
+done
+tmux_cmd send-keys -t "$session" C-c e
+if ! lem_wait_for "$session" 'Effort action sentinel' 10 >/dev/null; then
   fail agenda-mutations-setup "new agenda mutation fixtures did not refresh"
 fi
 
 # Evil-Org ce and GNU C-c C-x e set a validated Effort property, preserve an
 # existing drawer, save immediately, and retain the logical agenda row.
-tmux_cmd send-keys -t "$session" C-c e c e
+tmux_cmd send-keys -t "$session" c e
 if lem_wait_for "$session" 'Effort:' 10 >/dev/null; then
   tmux_cmd send-keys -t "$session" -l 'not-a-duration'
   tmux_cmd send-keys -t "$session" Enter
@@ -789,8 +801,9 @@ if lem_wait_for "$session" 'Delay until \[2026-07-15\]' 10 >/dev/null; then
   tmux_cmd send-keys -t "$session" Enter
   if wait_file_line '^DEADLINE: <2026-07-16 Thu> SCHEDULED: <2026-07-15 Wed -3d>$' "$work_file" 2 &&
      wait_screen_absent 'Delay until' &&
-     lem_wait_for "$session" 'SCHEDULED 2026-07-15' 40 >/dev/null; then
-    pass agenda-delay "double prefix adds a persisted scheduled-delay cookie"
+     lem_wait_for "$session" 'DEADLINE 2026-07-16' 40 >/dev/null &&
+     wait_screen_absent 'Work unscheduled sentinel.*SCHEDULED 2026-07-15'; then
+    pass agenda-delay "double prefix hides a future schedule until its delay elapses"
   else
     fail agenda-delay "agenda scheduled-delay update did not save or refresh"
   fi
@@ -798,11 +811,28 @@ else
   fail agenda-delay-prompt "double prefix did not open the scheduled-delay prompt"
 fi
 
+# A zero-day delay is explicit Org syntax but does not suppress the base row.
+# Clear the positive delay so the remaining field-removal workflow can select
+# this heading continuously through its agenda rows.
+tmux_cmd send-keys -t "$session" C-u C-u C-c C-s
+if lem_wait_for "$session" 'Delay until \[2026-07-15\]' 10 >/dev/null; then
+  type_slow 2026-07-15
+  tmux_cmd send-keys -t "$session" Enter
+  if wait_file_line '^DEADLINE: <2026-07-16 Thu> SCHEDULED: <2026-07-15 Wed -0d>$' "$work_file" 2 &&
+     lem_wait_for "$session" 'SCHEDULED 2026-07-15' 40 >/dev/null; then
+    pass agenda-delay-zero "a zero-day delay keeps the scheduled base row visible"
+  else
+    fail agenda-delay-zero "zero-day scheduled-delay behavior differed"
+  fi
+else
+  fail agenda-delay-zero-prompt "double prefix did not reopen the delay prompt"
+fi
+
 tmux_cmd send-keys -t "$session" C-u C-u C-c C-d
 if lem_wait_for "$session" 'Warn starting from \[2026-07-16\]' 10 >/dev/null; then
   type_slow 2026-07-14
   tmux_cmd send-keys -t "$session" Enter
-  if wait_file_line '^DEADLINE: <2026-07-16 Thu -2d> SCHEDULED: <2026-07-15 Wed -3d>$' "$work_file" 2 &&
+  if wait_file_line '^DEADLINE: <2026-07-16 Thu -2d> SCHEDULED: <2026-07-15 Wed -0d>$' "$work_file" 2 &&
      wait_screen_absent 'Warn starting from' &&
      lem_wait_for "$session" 'DEADLINE 2026-07-16' 40 >/dev/null; then
     pass agenda-warning "double prefix adds a persisted deadline warning cookie"
@@ -814,7 +844,7 @@ else
 fi
 
 tmux_cmd send-keys -t "$session" C-u C-c C-d
-if wait_file_line '^SCHEDULED: <2026-07-15 Wed -3d>$' "$work_file" 2 &&
+if wait_file_line '^SCHEDULED: <2026-07-15 Wed -0d>$' "$work_file" 2 &&
    lem_wait_for "$session" 'SCHEDULED 2026-07-15' 40 >/dev/null; then
   pass agenda-remove-deadline "one prefix removes only the deadline and follows the schedule row"
 else
@@ -844,12 +874,16 @@ run_timestamp_prompt_tests() {
 # manual refreshes must therefore parse the modified live source buffer.
 printf '%s\n' \
   '* TODO Timestamp prompt planning sentinel' \
-  'SCHEDULED: <2026-07-14 Tue +1w -2d>' \
+  'SCHEDULED: <2026-07-14 Tue +1w -0d>' \
   '* Timestamp prompt event sentinel <2026-07-13 Mon 10:00-11:00 +1w -2d>' \
   '* TODO Timestamp prompt no-date sentinel' \
   >"$timestamp_file"
 tmux_cmd send-keys -t "$session" g r
-lem_wait_for "$session" 'Timestamp prompt planning sentinel' 40 >/dev/null || true
+for _ in $(seq 1 120); do
+  tmux_cmd send-keys -t "$session" C-c i
+  grep -q '^TIMESTAMP-READY$' "$LEM_YATH_AGENDA_REPORT" 2>/dev/null && break
+  sleep 0.1
+done
 tmux_cmd send-keys -t "$session" C-c v p
 if lem_wait_for "$session" 'Date \[2026-07-14\]' 10 >/dev/null; then
   type_slow '2026-07-16 09:15-10:30'
@@ -860,7 +894,7 @@ else
   fail agenda-date-prompt "p did not offer the represented planning timestamp"
 fi
 if lem_wait_for "$session" 'Timestamp prompt planning sentinel.*SCHEDULED 2026-07-16' 40 >/dev/null &&
-   grep -q '^SCHEDULED: <2026-07-14 Tue +1w -2d>$' "$timestamp_file"; then
+   grep -q '^SCHEDULED: <2026-07-14 Tue +1w -0d>$' "$timestamp_file"; then
   pass agenda-date-prompt "p changed the exact planning token without saving it"
 else
   fail agenda-date-prompt "p lost the planning row, suffix, or unsaved boundary"
@@ -1024,7 +1058,7 @@ visit_ok=0
 tmux_cmd send-keys -t "$session" Escape
 sleep 0.2
 tmux_cmd send-keys -t "$session" Space m a
-if lem_wait_for "$session" 'Public visit sentinel' 40 >/dev/null; then
+if lem_wait_for "$session" 'Overdue work sentinel' 40 >/dev/null; then
   : >"$LEM_YATH_AGENDA_REPORT"
   tmux_cmd send-keys -t "$session" F5 g k F6
   if wait_report '^POINT mode=LEM-YATH-AGENDA-MODE file=.* line=[0-9]+ text=.*$' &&
@@ -1091,10 +1125,14 @@ fi
 
 # Return to the agenda, mutate a top-level source, and coalesce repeated real gr keys.
 tmux_cmd send-keys -t "$session" F8
-lem_wait_for "$session" 'Overdue work sentinel' 10 >/dev/null || true
 printf '%s\n' '* TODO Refreshed top-level sentinel' >>"$work_file"
 tmux_cmd send-keys -t "$session" g r g r g r
-if lem_wait_for "$session" 'Refreshed top-level sentinel' 40 >/dev/null; then
+for _ in $(seq 1 120); do
+  tmux_cmd send-keys -t "$session" C-c f
+  grep -q '^REFRESH-READY$' "$LEM_YATH_AGENDA_REPORT" 2>/dev/null && break
+  sleep 0.1
+done
+if grep -q '^REFRESH-READY$' "$LEM_YATH_AGENDA_REPORT" 2>/dev/null; then
   tmux_cmd send-keys -t "$session" F4
   wait_report '^REPORT-DONE serial=3$' || true
   if grep -qE '^ENTRY serial=3 section=TODOS .*Refreshed top-level sentinel' "$LEM_YATH_AGENDA_REPORT"; then
@@ -1108,7 +1146,11 @@ fi
 
 # One failed root must warn without discarding healthy work/public entries.
 tmux_cmd send-keys -t "$session" F11
-lem_wait_for "$session" 'Injected agenda root failure' 40 >/dev/null || true
+for _ in $(seq 1 120); do
+  tmux_cmd send-keys -t "$session" C-c o
+  grep -q '^DISCOVERY-READY$' "$LEM_YATH_AGENDA_REPORT" 2>/dev/null && break
+  sleep 0.1
+done
 tmux_cmd send-keys -t "$session" F4
 if wait_report '^REPORT-DONE serial=4$' &&
    grep -qE '^ENTRY serial=4 .*Work unscheduled sentinel' "$LEM_YATH_AGENDA_REPORT" &&

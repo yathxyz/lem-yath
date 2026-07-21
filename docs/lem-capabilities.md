@@ -3353,6 +3353,19 @@ agenda occurrences across the visible horizon. COMMENT and ARCHIVE subtrees,
 drawers, source blocks, and comment lines are excluded, while completed
 headings can still contribute timestamp events as in GNU Org.
 
+`src/apps/agenda-reminder.lisp` separately projects the pinned stock Org
+planning reminders over that immutable parse result. Open deadlines appear
+under today from fourteen days before their due date and while overdue;
+timestamp-local warning cookies replace that boundary. Late open schedules are
+forwarded to today, while a positive schedule-delay cookie suppresses the base
+row until its threshold is reached. Zero-day delays retain the base row, the
+boundary is inclusive, completed planning rows remain visible only at their
+exact dates, and completed tasks never acquire reminder copies. A projected
+row keeps its source date and gains a separate display date, so visits,
+refresh identity, `H`/`L`, and other mutations still validate and edit the real
+planning token. Terminal labels state `in Nd` or `Nd ago`; exact GNU text
+leaders and urgency styling are presentation differences.
+
 Scanning runs away from the editor thread. Before launching a worker, refresh
 captures immutable text snapshots of modified live agenda-file buffers on the
 editor thread; parsing and filter-metadata enrichment therefore see unsaved
@@ -3377,8 +3390,10 @@ weekday, prepend a newly added field as Org does, and replace an existing field
 in place while preserving its time/repeater/warning suffix. From C-z Emacs
 state, one prefix removes the requested agenda planning field and two prefixes
 choose the warning/delay start date; both save immediately, revalidate the
-unchanged source field, refresh, and follow the heading to its remaining
-planning row or unscheduled TODO row. Evil-Org's `ct` and GNU Org's `C-c C-q`
+unchanged source field, refresh, and follow a visible reminder, remaining
+planning row, or unscheduled TODO row. A future positively delayed schedule
+falls back to the heading's deadline row when present because Org intentionally
+hides that scheduled row. Evil-Org's `ct` and GNU Org's `C-c C-q`
 both replace the current
 heading's local tags. The prompt starts from the existing suffix, completes
 canonical colon-delimited expressions from tags found across the configured
@@ -3492,6 +3507,13 @@ exact `p` defaults and planning/event replacement, time-range and suffix
 preservation, cancellation and no-date refusal, unsaved disk separation, one
 physical source undo, modified-live-buffer refresh, other-window source visits,
 decoration-skipping item motion, and cleanup.
+`scripts/agenda-reminder-test.sh` fixes today at a known date and checks the
+default fourteen-day boundary, its excluded fifteenth day, explicit warning
+cookies, active and hidden schedule delays, zero/base suppression behavior,
+dual planning, and completed rows through real ncurses Lem. It compares the
+source byte-for-byte after rendering, then physically presses Evil-Org `H` on
+a projected reminder and proves both source mutation and refreshed reminder
+point restoration.
 `scripts/agenda-undo-test.sh` separately drives the effective `u` binding and
 proves empty-history reporting, newest-first saved TODO/priority undo without a
 disk rewrite, intervening-local-edit ordering, exact unsaved timestamp restoration, per-row bulk ordering,
@@ -3611,7 +3633,8 @@ sources.
 
 This is a task summary, not a replacement for GNU Org's arbitrary agenda
 dispatcher. Diary sexps, hour repeaters, full time-grid and time-range
-presentation, exact scheduled-delay and deadline-prewarning reminder rendering,
+presentation, configurable reminder-policy variables and exact GNU reminder
+leaders/urgency ordering,
 configurable or cross-file refile targets, target creation/copy/reverse and
 prefix/cache variants, custom archive destinations and local archive
 sibling/tag commands, bulk archive-sibling/scatter/arbitrary-function/persistent-

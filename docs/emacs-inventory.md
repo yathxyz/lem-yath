@@ -903,6 +903,13 @@ the trailing text-ready space. The profile binds no other org-journal command
 ### Agenda
 - `org-agenda` on `SPC m a`.
 - Agenda sources are the top-level `.org` files in the three existing roots above; roam, journal, and other nested trees are not included by those directory entries.
+- The configuration leaves Org's reminder policy at its stock values:
+  deadlines warn for 14 days and remain overdue, schedules have no default
+  delay and remain forwarded when late, and completed planning rows appear
+  only on their exact dates. Timestamp-local `-Nd` cookies override the
+  deadline warning or scheduled delay. Lem reproduces those boundaries in its
+  summary and span views; reminder rows retain the real planning timestamp for
+  visits and edits while being displayed under today.
 - **org-super-agenda** (`org-super-agenda-mode 1`) — grouped agenda views (no custom groups defined in elisp; defaults).
 - **evil-org-agenda** keys set.
 - Evil-Org `Tab`, Shift-Return, and `g TAB` run `org-agenda-goto`, opening the

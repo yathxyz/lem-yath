@@ -126,7 +126,7 @@ send_chord C-z
 # marker and the complete rendered row set without touching source files.
 send_chord '*'
 send_chord C-c z r
-wait_report_count '^STATE state=normal marks=7 rendered=7 ' 1 || true
+wait_report_count '^STATE state=normal marks=8 rendered=8 ' 1 || true
 send_chord '~'
 send_chord C-c z r
 wait_report_count '^STATE state=normal marks=0 rendered=0 ' 1 || true

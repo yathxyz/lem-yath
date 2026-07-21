@@ -27,7 +27,8 @@
     "[^]\\s]+\\s+(\\d{2}):(\\d{2})\\](?:\\s+=>.*)?\\s*$")))
 
 (defstruct (agenda-clock-target (:constructor make-agenda-clock-target))
-  point file heading kind date time occurrence-index duplicate-index)
+  point file heading kind date time occurrence-index reminder-kind
+  duplicate-index)
 
 (defstruct (agenda-clock-record (:constructor make-agenda-clock-record))
   point file start-time)
@@ -362,6 +363,7 @@ insertions in the same source buffer."
      :date (text-property-at point :agenda-date)
      :time (text-property-at point :agenda-time)
      :occurrence-index (text-property-at point :agenda-occurrence-index)
+     :reminder-kind (text-property-at point :agenda-reminder-kind)
      :duplicate-index (text-property-at point :agenda-duplicate-index))))
 
 (defun agenda-clock-delete-target (target)
@@ -398,17 +400,19 @@ insertions in the same source buffer."
           (agenda-clock-target-date target)
           (agenda-clock-target-time target)
           (agenda-clock-target-occurrence-index target)
+          (agenda-clock-target-reminder-kind target)
           (agenda-clock-target-duplicate-index target))))
 
 (defun agenda-clock-target-entry-key (target)
-  "Return TARGET's current six-field agenda restoration key."
+  "Return TARGET's current seven-field agenda restoration key."
   (when (agenda-clock-target-valid-p target)
     (list (agenda-clock-target-file target)
           (line-number-at-point (agenda-clock-target-point target))
           (agenda-clock-target-kind target)
           (agenda-clock-target-date target)
           (agenda-clock-target-time target)
-          (agenda-clock-target-occurrence-index target))))
+          (agenda-clock-target-occurrence-index target)
+          (agenda-clock-target-reminder-kind target))))
 
 ;;; --- bulk marks ----------------------------------------------------------
 
@@ -427,6 +431,7 @@ insertions in the same source buffer."
 
 (defparameter *agenda-row-source-properties*
   '(:agenda-file :agenda-line :agenda-heading :agenda-kind :agenda-date
+    :agenda-display-date :agenda-reminder-kind :agenda-reminder-days
     :agenda-time :agenda-occurrence-index :agenda-duplicate-index))
 
 (defun agenda-bulk-set-row-prefix (point marked-p)
@@ -993,6 +998,7 @@ valid after an insertion even though the unrefreshed agenda row is numeric."
                                   (agenda-clock-target-date target)
                                   (agenda-clock-target-time target)
                                   (agenda-clock-target-occurrence-index target)
+                                  (agenda-clock-target-reminder-kind target)
                                   (agenda-clock-target-duplicate-index target)))))
               targets))
         (first targets))))

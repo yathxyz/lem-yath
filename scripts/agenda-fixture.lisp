@@ -157,6 +157,34 @@
   (move-point (current-point)
               (agenda-test-find-line "Effort action sentinel")))
 
+(define-command lem-yath-test-agenda-mutations-ready () ()
+  (handler-case
+      (progn
+        (agenda-test-find-line "Effort action sentinel")
+        (agenda-test-log "MUTATIONS-READY"))
+    (error () nil)))
+
+(define-command lem-yath-test-agenda-refresh-ready () ()
+  (handler-case
+      (progn
+        (agenda-test-find-line "Refreshed top-level sentinel")
+        (agenda-test-log "REFRESH-READY"))
+    (error () nil)))
+
+(define-command lem-yath-test-agenda-discovery-ready () ()
+  (handler-case
+      (progn
+        (agenda-test-find-line "Injected agenda root failure")
+        (agenda-test-log "DISCOVERY-READY"))
+    (error () nil)))
+
+(define-command lem-yath-test-agenda-timestamp-ready () ()
+  (handler-case
+      (progn
+        (agenda-test-find-line "Timestamp prompt planning sentinel")
+        (agenda-test-log "TIMESTAMP-READY"))
+    (error () nil)))
+
 (define-command lem-yath-test-agenda-goto-delete () ()
   (move-point (current-point)
               (agenda-test-find-line "Delete action sentinel")))
@@ -348,6 +376,14 @@
   'lem-yath-test-agenda-goto-work-todo)
 (define-key *lem-yath-agenda-vi-keymap* "C-c e"
   'lem-yath-test-agenda-goto-effort)
+(define-key *lem-yath-agenda-vi-keymap* "C-c m"
+  'lem-yath-test-agenda-mutations-ready)
+(define-key *lem-yath-agenda-vi-keymap* "C-c f"
+  'lem-yath-test-agenda-refresh-ready)
+(define-key *lem-yath-agenda-vi-keymap* "C-c o"
+  'lem-yath-test-agenda-discovery-ready)
+(define-key *lem-yath-agenda-vi-keymap* "C-c i"
+  'lem-yath-test-agenda-timestamp-ready)
 (define-key *lem-yath-agenda-vi-keymap* "C-c d"
   'lem-yath-test-agenda-goto-delete)
 (define-key *lem-yath-agenda-vi-keymap* "C-c k"

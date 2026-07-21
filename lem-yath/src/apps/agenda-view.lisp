@@ -78,8 +78,8 @@
   (stable-sort
    items
    (lambda (a b)
-     (let ((a-date (or (agenda-item-date a) ""))
-           (b-date (or (agenda-item-date b) ""))
+     (let ((a-date (or (agenda-item-effective-date a) ""))
+           (b-date (or (agenda-item-effective-date b) ""))
            (a-time (or (agenda-item-time a) ""))
            (b-time (or (agenda-item-time b) "")))
        (or (string< a-date b-date)
@@ -97,13 +97,16 @@
         (overdue '())
         (todos '()))
     (dolist (item items)
-      (let ((date (agenda-item-date item))
+      (let ((date (agenda-item-effective-date item))
             (keyword (agenda-item-keyword item)))
         (cond
           ((agenda-item-event-p item)
            (dolist (occurrence (agenda-event-occurrences item start end))
              (push occurrence
                    (gethash (agenda-item-date occurrence) by-date))))
+          ((and date (done-keyword-p keyword) (agenda-planning-item-p item))
+           (when (and (string<= start date) (string<= date end))
+             (push item (gethash date by-date))))
           ((and date (not (done-keyword-p keyword)))
            (cond
              ((string< date start) (push item overdue))
@@ -142,6 +145,7 @@
 
 (defun agenda-view-date-at-point (&optional (point (current-point)))
   (or (text-property-at point :agenda-view-date)
+      (text-property-at point :agenda-display-date)
       (text-property-at point :agenda-date)))
 
 (defun agenda-view-goto-rendered-date (buffer date)

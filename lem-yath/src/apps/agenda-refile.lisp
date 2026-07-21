@@ -165,7 +165,8 @@ Return the moved heading's new source line."
           (third entry-key)
           (fourth entry-key)
           (fifth entry-key)
-          (sixth entry-key))))
+          (sixth entry-key)
+          (seventh entry-key))))
 
 (define-command lem-yath-agenda-refile () ()
   "Refile the current agenda subtree under a same-file level-one heading."

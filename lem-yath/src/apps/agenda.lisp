@@ -55,6 +55,15 @@
 (defvar *agenda-post-render-functions* nil
   "Functions called with an agenda buffer after a successful render.")
 
+(defvar *agenda-item-projection-function* nil
+  "Optional function projecting parsed ITEMS for agenda display.
+
+The function receives ITEMS and NOW and returns display items.  Parsed cached
+items remain immutable so projections can add reminder rows safely.")
+
+(defvar *agenda-planning-restore-key-function* nil
+  "Optional function refining a planning edit's post-refresh row key.")
+
 ;;; --- parsing -------------------------------------------------------------
 
 (defstruct (agenda-item (:constructor make-agenda-item))
@@ -62,7 +71,8 @@
   keyword text file line heading date kind event-p end-date repeater time
   occurrence-index occurrence-count
   timestamp-line timestamp-source-line timestamp-start timestamp-raw
-  category tags effort top-headline)
+  category tags effort top-headline planning-suffix
+  display-date reminder-kind reminder-days)
 
 (defstruct (agenda-item-metadata (:constructor make-agenda-item-metadata))
   category tags effort top-headline)
@@ -81,8 +91,8 @@
 
 (defvar *planning-scanner*
   (ppcre:create-scanner
-   "(SCHEDULED|DEADLINE):\\s*<(\\d{4}-\\d{2}-\\d{2})")
-  "Matches a SCHEDULED/DEADLINE planning entry and its <YYYY-MM-DD ...> date.")
+   "(SCHEDULED|DEADLINE):\\s*<(\\d{4}-\\d{2}-\\d{2})([^>]*)>")
+  "Match a planning kind, date, and post-date timestamp syntax.")
 
 (defvar *planning-line-scanner*
   (ppcre:create-scanner "^\\s*(?:SCHEDULED|DEADLINE):")
@@ -148,7 +158,7 @@
           (push (cons directory condition) failures))))
     (values (nreverse files) (nreverse failures))))
 
-(defun agenda-item-with-planning (item kind date)
+(defun agenda-item-with-planning (item kind date suffix)
   (make-agenda-item
    :keyword (agenda-item-keyword item)
    :text (agenda-item-text item)
@@ -157,7 +167,8 @@
    :heading (agenda-item-heading item)
    :date date
    :kind kind
-   :event-p nil))
+   :event-p nil
+   :planning-suffix suffix))
 
 (defun agenda-timestamp-field (scanner contents)
   (multiple-value-bind (start end registers register-ends)
@@ -319,13 +330,14 @@ Ordinary active timestamps belong to their containing visible heading."
                                               (ppcre:scan
                                                *planning-line-scanner* line))))
                                    (when planning-p
-                                     (ppcre:do-register-groups (kind date)
+                                     (ppcre:do-register-groups
+                                         (kind date suffix)
                                          (*planning-scanner* line)
                                        (if (valid-iso-date-p date)
                                            (progn
                                              (push
                                               (agenda-item-with-planning
-                                               current kind date)
+                                               current kind date suffix)
                                               items)
                                              (setf current-planned-p t))
                                            (push
@@ -658,17 +670,26 @@ Ordinary active timestamps belong to their containing visible heading."
 (defun done-keyword-p (kw)
   (and kw (member kw *agenda-done-keywords* :test #'string=)))
 
+(defun agenda-item-effective-date (item)
+  "Return ITEM's projected display date or its source timestamp date."
+  (or (agenda-item-display-date item) (agenda-item-date item)))
+
+(defun agenda-planning-item-p (item)
+  (member (agenda-item-kind item) '("SCHEDULED" "DEADLINE")
+          :test #'string=))
+
 (defun group-items (items &optional (now (funcall *agenda-now-function*))
                                    start-date horizon-date)
   "Bucket ITEMS into (overdue today upcoming todos), each a list of items.
 Given the fixed YYYY-MM-DD format, plain string comparison is correct date
-comparison. Dated DONE/CANCELLED items are dropped from the dated sections."
+comparison. Completed planning rows remain visible on their exact dates, while
+completed unscheduled tasks stay out of the TODO section."
   (let ((today (or start-date (today-iso now)))
         (horizon (or horizon-date
                      (iso-plus-days *agenda-upcoming-days* now)))
         (overdue '()) (today-items '()) (upcoming '()) (todos '()))
     (dolist (item items)
-      (let ((date (agenda-item-date item))
+      (let ((date (agenda-item-effective-date item))
             (kw (agenda-item-keyword item)))
         (cond
           ((agenda-item-event-p item)
@@ -677,6 +698,11 @@ comparison. Dated DONE/CANCELLED items are dropped from the dated sections."
              (if (string= (agenda-item-date occurrence) today)
                  (push occurrence today-items)
                  (push occurrence upcoming))))
+          ((and date (done-keyword-p kw) (agenda-planning-item-p item))
+           (cond
+             ((string= date today) (push item today-items))
+             ((and (string< today date) (string<= date horizon))
+              (push item upcoming))))
           ((and date (not (done-keyword-p kw)))
            (cond
              ((string< date today) (push item overdue))
@@ -719,9 +745,13 @@ comparison. Dated DONE/CANCELLED items are dropped from the dated sections."
      (make-agenda-section :key :todos :title "TODOs" :items todos))))
 
 (defun agenda-effective-sections (buffer items now)
-  (if *agenda-sections-function*
-      (funcall *agenda-sections-function* buffer items now)
-      (agenda-default-sections items now)))
+  (let ((projected
+          (if *agenda-item-projection-function*
+              (funcall *agenda-item-projection-function* items now)
+              items)))
+    (if *agenda-sections-function*
+        (funcall *agenda-sections-function* buffer projected now)
+        (agenda-default-sections projected now))))
 
 (defun agenda-effective-header-label (buffer now)
   (if *agenda-header-label-function*
@@ -741,9 +771,21 @@ comparison. Dated DONE/CANCELLED items are dropped from the dated sections."
   (let ((planning
           (if (agenda-item-date item)
               (format nil "  [~a ~a~@[ ~a~]~@[ ~a~]]"
-                      (if (agenda-item-event-p item)
-                          "EVENT"
-                          (agenda-item-kind item))
+                      (cond
+                        ((agenda-item-event-p item) "EVENT")
+                        ((eq (agenda-item-reminder-kind item)
+                             :scheduled-past)
+                         (format nil "SCHEDULED ~dd ago"
+                                 (agenda-item-reminder-days item)))
+                        ((eq (agenda-item-reminder-kind item)
+                             :deadline-upcoming)
+                         (format nil "DEADLINE in ~dd"
+                                 (agenda-item-reminder-days item)))
+                        ((eq (agenda-item-reminder-kind item)
+                             :deadline-overdue)
+                         (format nil "DEADLINE ~dd ago"
+                                 (agenda-item-reminder-days item)))
+                        (t (agenda-item-kind item)))
                       (agenda-item-date item)
                       (agenda-item-time item)
                       (and (agenda-item-occurrence-index item)
@@ -766,7 +808,8 @@ comparison. Dated DONE/CANCELLED items are dropped from the dated sections."
         (agenda-item-kind item)
         (agenda-item-date item)
         (agenda-item-time item)
-        (agenda-item-occurrence-index item)))
+        (agenda-item-occurrence-index item)
+        (agenda-item-reminder-kind item)))
 
 (defun agenda-item-mark-key (item duplicate-index)
   "Return ITEM's identity including DUPLICATE-INDEX among identical rows."
@@ -782,6 +825,7 @@ comparison. Dated DONE/CANCELLED items are dropped from the dated sections."
           (text-property-at point :agenda-date)
           (text-property-at point :agenda-time)
           (text-property-at point :agenda-occurrence-index)
+          (text-property-at point :agenda-reminder-kind)
           (text-property-at point :agenda-duplicate-index))))
 
 (defun insert-agenda-section (buffer title items duplicate-counts
@@ -819,6 +863,12 @@ comparison. Dated DONE/CANCELLED items are dropped from the dated sections."
                                  (agenda-item-kind item))
               (put-text-property start point :agenda-date
                                  (agenda-item-date item))
+              (put-text-property start point :agenda-display-date
+                                 (agenda-item-effective-date item))
+              (put-text-property start point :agenda-reminder-kind
+                                 (agenda-item-reminder-kind item))
+              (put-text-property start point :agenda-reminder-days
+                                 (agenda-item-reminder-days item))
               (put-text-property start point :agenda-time
                                  (agenda-item-time item))
               (put-text-property start point :agenda-occurrence-index
@@ -871,7 +921,8 @@ comparison. Dated DONE/CANCELLED items are dropped from the dated sections."
           (text-property-at point :agenda-kind)
           (text-property-at point :agenda-date)
           (text-property-at point :agenda-time)
-          (text-property-at point :agenda-occurrence-index))))
+          (text-property-at point :agenda-occurrence-index)
+          (text-property-at point :agenda-reminder-kind))))
 
 (defun agenda-restore-entry-point (buffer key)
   "Move BUFFER's point to the first rendered row matching KEY."
@@ -1269,13 +1320,18 @@ EXPECTED-HEADING prevents a stale agenda row from changing a different line."
                          "DEADLINE"))
          (other-date (and (null preferred-date)
                           (org-planning-field-date heading other-kind))))
-    (cond
-      (preferred-date
-       (list file line preferred-kind preferred-date nil nil))
-      (other-date
-       (list file line other-kind other-date nil nil))
-      (t
-       (list file line nil nil nil nil)))))
+    (let ((default-key
+            (cond
+              (preferred-date
+               (list file line preferred-kind preferred-date nil nil nil))
+              (other-date
+               (list file line other-kind other-date nil nil nil))
+              (t
+               (list file line nil nil nil nil nil)))))
+      (if *agenda-planning-restore-key-function*
+          (funcall *agenda-planning-restore-key-function*
+                   file line heading preferred-kind default-key)
+          default-key))))
 
 (defun agenda-apply-source-planning
     (file line expected-heading kind expected-date expected-extra

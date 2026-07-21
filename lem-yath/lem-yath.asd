@@ -120,6 +120,7 @@
                 :components ((:file "documents")
                              (:file "agenda-undo")
                              (:file "agenda")
+                             (:file "agenda-reminder")
                              (:file "agenda-archive")
                              (:file "agenda-refile")
                              (:file "agenda-clock")
