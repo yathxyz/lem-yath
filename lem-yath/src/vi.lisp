@@ -64,6 +64,13 @@
                  right-count
                  (if (and (minusp right-count) (plusp remainder)) 1 0)))))))
 
+(defun lem-yath-evil-shift-right-column (column count)
+  "Return Evil's rounded indentation after shifting right COUNT times."
+  (if (minusp count)
+      (lem-yath-evil-shift-left-column column (- count))
+      (* *lem-yath-evil-shift-width*
+         (+ (floor column *lem-yath-evil-shift-width*) count))))
+
 (define-command (lem-yath-evil-shift-left-line
                  (:advice-classes editable-advice))
     (&optional (count 1)) (:universal)
@@ -79,6 +86,119 @@
          (lem-yath-evil-shift-left-column
           (lem-yath-line-indentation-column point)
           count)))))
+
+(define-command (lem-yath-evil-shift-right-line
+                 (:advice-classes editable-advice))
+    (&optional (count 1)) (:universal)
+  "Shift the current line right like Evil insert-state C-t."
+  (let ((point (current-point)))
+    (lem/buffer/indent::indent-line-1
+     point
+     (lem-yath-evil-shift-right-column
+      (lem-yath-line-indentation-column point)
+      count))))
+
+(defun lem-yath-evil-blank-line-p (point)
+  (every (lambda (character) (member character '(#\Space #\Tab)))
+         (line-string point)))
+
+(defun lem-yath-evil-copy-from-line-text (point direction count)
+  "Return COUNT characters at POINT's column from a nonblank line.
+DIRECTION is -1 for the nearest preceding line and 1 for the nearest following
+line.  Blank lines are skipped like Evil's insert-state C-y and C-e."
+  (let ((column (point-column point)))
+    (with-point ((source point))
+      (unless (line-offset source direction)
+        (return-from lem-yath-evil-copy-from-line-text nil))
+      (loop :while (lem-yath-evil-blank-line-p source)
+            :unless (line-offset source direction)
+              :do (return-from lem-yath-evil-copy-from-line-text nil))
+      (line-start source)
+      (move-to-column source column)
+      (let* ((actual-column (point-column source))
+             (tab-overshoot
+               (and (> actual-column column)
+                    (eql (character-at source -1) #\Tab)
+                    (min count (- actual-column column))))
+             (prefix (if tab-overshoot
+                         (make-string tab-overshoot :initial-element #\Space)
+                         ""))
+             (remaining (- count (or tab-overshoot 0))))
+        (when (and (> actual-column column) (null tab-overshoot))
+          (character-offset source -1))
+        (with-point ((end source)
+                     (limit source))
+          (line-end limit)
+          (loop :repeat remaining
+                :while (point< end limit)
+                :do (character-offset end 1))
+          (concatenate 'string prefix (points-to-string source end)))))))
+
+(defun lem-yath-evil-copy-from-line (direction count)
+  (alexandria:when-let
+      ((text (lem-yath-evil-copy-from-line-text
+              (current-point) direction count)))
+    (insert-string (current-point) text)))
+
+(define-command (lem-yath-evil-copy-from-above
+                 (:advice-classes editable-advice))
+    (&optional (count 1)) (:universal)
+  "Insert characters at the current column from the nearest line above."
+  (lem-yath-evil-copy-from-line -1 count))
+
+(define-command (lem-yath-evil-copy-from-below
+                 (:advice-classes editable-advice))
+    (&optional (count 1)) (:universal)
+  "Insert characters at the current column from the nearest line below."
+  (lem-yath-evil-copy-from-line 1 count))
+
+(defvar *lem-yath-evil-normal-once-buffer* nil)
+
+(defun lem-yath-evil-seal-insert-undo-command (buffer)
+  "End the current Insert undo unit while retaining Insert's grouping policy."
+  (buffer-enable-undo-boundary buffer)
+  (unwind-protect
+       (buffer-undo-boundary buffer)
+    (buffer-disable-undo-boundary buffer)))
+
+(define-command lem-yath-evil-execute-one-normal-command () ()
+  "Execute the next complete Normal-state command, then resume Insert state."
+  (let ((buffer (current-buffer)))
+    ;; Evil closes the insertion before C-o's Normal command.  Lem normally
+    ;; suppresses boundaries for the whole Insert state, so seal it explicitly.
+    (lem-yath-evil-seal-insert-undo-command buffer)
+    (setf *lem-yath-evil-normal-once-buffer* buffer))
+  ;; Keep the buffer's main state in Insert so the temporary Normal command
+  ;; resumes through the ordinary Insert lifecycle after one complete command.
+  (setf (lem-vi-mode/core::current-state) 'lem-vi-mode/states:normal))
+
+(defun lem-yath-evil-return-to-insert-after-normal-command ()
+  (when *lem-yath-evil-normal-once-buffer*
+    (let ((command-name
+            (alexandria:when-let ((command (this-command)))
+              (command-name command))))
+      (unless (eq command-name 'lem-yath-evil-execute-one-normal-command)
+        (let* ((buffer *lem-yath-evil-normal-once-buffer*)
+               (current-p (and (bufferp buffer)
+                               (not (deleted-buffer-p buffer))
+                               (eq buffer (current-buffer))))
+               (state (and current-p lem-vi-mode/core::*current-state*)))
+          (unless (and current-p
+                       (or (typep state 'lem-vi-mode/states:operator)
+                           (typep state 'lem-vi-mode/states::vi-modeline)))
+            (setf *lem-yath-evil-normal-once-buffer* nil)
+            (when (and current-p
+                       (not (typep state 'lem-vi-mode/states:insert)))
+              ;; Separate the Normal edit from the resumed insertion, matching
+              ;; Evil's undo order after `C-o d w` followed by inserted text.
+              (lem-yath-evil-seal-insert-undo-command buffer)
+              (setf (lem-vi-mode/core::current-state)
+                    'lem-vi-mode/states:insert))))))))
+
+(remove-hook *post-command-hook*
+             'lem-yath-evil-return-to-insert-after-normal-command)
+(add-hook *post-command-hook*
+          'lem-yath-evil-return-to-insert-after-normal-command -600)
 
 (define-command lem-yath-delete-back-to-indentation () ()
   "Delete from point back to indentation, like Evil insert-state C-u."

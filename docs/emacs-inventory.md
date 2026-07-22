@@ -31,11 +31,18 @@ Key environment:
 - `evil-undo-system 'undo-redo` (uses built-in `undo-redo`, NOT undo-tree).
 - `evil-want-C-u-delete t` (C-u deletes to indent in insert state).
 - Effective control-key defaults: normal/visual `C-u` starts a universal
-  argument because `evil-want-C-u-scroll` is nil; insert `C-d` shifts the
-  current line left by `evil-shift-width` 4; insert `C-v` and `C-q` quote the
-  next key. Org's insert-state `C-d` remains its higher-priority `org-metaleft`.
+  argument because `evil-want-C-u-scroll` is nil; insert `C-d`/`C-t` shift the
+  current line left/right by `evil-shift-width` 4; insert `C-o` executes one
+  complete Normal command; insert `C-y`/`C-e` copy at the current column from
+  the nearest nonblank line above/below; and insert `C-v`/`C-q` quote the next
+  key. Org's insert-state `C-d`/`C-t` remain its higher-priority Meta-left/right.
 - `evil-want-minibuffer nil` (Evil is not active in the minibuffer).
-- After `evil-maps` loads: `C-n` and `C-p` are **unbound** in `evil-motion-state-map`, `evil-insert-state-map`, `evil-emacs-state-map` (so they fall through to completion/global).
+- After `evil-maps` loads: `C-n` and `C-p` are **unbound** in
+  `evil-motion-state-map`, `evil-insert-state-map`, and
+  `evil-emacs-state-map`, so Insert/Visual/Emacs states fall through to
+  completion or ordinary line movement. The authored loop does not unbind
+  `evil-normal-state-map`; live Normal state therefore retains
+  `evil-paste-pop-next`/`evil-paste-pop`.
 - `evil-collection` installed and `(evil-collection-init)` called globally (all default integrations).
 - `evil-org` (with `evil-org-agenda-set-keys`) for org buffers.
 

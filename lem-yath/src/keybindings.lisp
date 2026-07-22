@@ -177,7 +177,12 @@
 (define-key lem-vi-mode:*visual-keymap* "C-c i" 'lem-yath-llm-send)
 (define-key lem-vi-mode:*insert-keymap* "C-u" 'lem-yath-delete-back-to-indentation)
 (define-key lem-vi-mode:*insert-keymap* "C-d" 'lem-yath-evil-shift-left-line)
+(define-key lem-vi-mode:*insert-keymap* "C-t" 'lem-yath-evil-shift-right-line)
 (define-key lem-vi-mode:*insert-keymap* "C-v" 'quoted-insert)
+(define-key lem-vi-mode:*insert-keymap* "C-o"
+  'lem-yath-evil-execute-one-normal-command)
+(define-key lem-vi-mode:*insert-keymap* "C-y" 'lem-yath-evil-copy-from-above)
+(define-key lem-vi-mode:*insert-keymap* "C-e" 'lem-yath-evil-copy-from-below)
 (define-key lem-vi-mode:*motion-keymap* "C-u"
   'lem/universal-argument:universal-argument)
 (define-key lem-vi-mode:*insert-keymap* "M-Backspace"

@@ -122,6 +122,10 @@ CONTROLFIX="$FIXTURE_DIR/lem-yath-itest-control.txt"
 SHIFTFIX="$FIXTURE_DIR/lem-yath-itest-shift.txt"
 QUOTEFIX="$FIXTURE_DIR/lem-yath-itest-quote.txt"
 ORGCONTROLFIX="$FIXTURE_DIR/lem-yath-itest-control.org"
+COPYCONTROLFIX="$FIXTURE_DIR/lem-yath-itest-copy-control.txt"
+ONENORMALFIX="$FIXTURE_DIR/lem-yath-itest-one-normal.txt"
+ONENORMALPROMPTFIX="$FIXTURE_DIR/lem-yath-itest-one-normal-prompt.txt"
+ORGRIGHTFIX="$FIXTURE_DIR/lem-yath-itest-right-control.org"
 
 printf 'first known line\nsecond known line\nthird known line\n' > "$SCRATCH"
 printf '(defun alpha ())\n(defun beta ())\n(defun gamma ())\n' > "$LISPFIX"
@@ -136,6 +140,10 @@ printf 'one\ntwo\nthree\nfour\nfive\nsix\n' > "$CONTROLFIX"
 printf '        alpha\n    beta\n' > "$SHIFTFIX"
 printf 'quote\n' > "$QUOTEFIX"
 printf '** Child\n' > "$ORGCONTROLFIX"
+printf 'ABOVE\n\nxx\n\nBELOW\n' > "$COPYCONTROLFIX"
+printf 'abc def\n' > "$ONENORMALFIX"
+printf 'abc def\n' > "$ONENORMALPROMPTFIX"
+printf '* Child\n' > "$ORGRIGHTFIX"
 
 # ===========================================================================
 # Check 1: Boot with a scratch file; vi NORMAL state shows in the modeline.
@@ -760,6 +768,106 @@ else
 fi
 
 # ===========================================================================
+# Check 24: Match the remaining unambiguous everyday Evil insert controls:
+# C-o executes one complete Normal command, C-t shifts right, and C-y/C-e copy
+# from the nearest nonblank line above/below.  Org keeps its local C-t binding.
+# ===========================================================================
+S24O="lem-yath-it24o-$id"
+S24P="lem-yath-it24p-$id"
+S24T="lem-yath-it24t-$id"
+S24C="lem-yath-it24c-$id"
+S24G="lem-yath-it24g-$id"
+control_o_ok=0
+control_o_undo_ok=0
+control_o_abort_ok=0
+control_o_prompt_ok=0
+control_t_ok=0
+control_copy_ok=0
+control_t_org_ok=0
+
+if boot_with_file "$S24O" "$ONENORMALFIX" '^abc def$' "24-insert-control-parity"; then
+  send_chord "$S24O" "i" "C-o" "d" "w"
+  if lem_wait_for "$S24O" 'INSERT' "$WAIT_TIMEOUT"; then
+    send_text "$S24O" "X"
+    send_chord "$S24O" Escape "C-x" "C-s"
+    sleep 0.5
+    if grep -qxF 'Xdef' "$ONENORMALFIX"; then
+      control_o_ok=1
+      send_chord "$S24O" "u" "C-x" "C-s"
+      sleep 0.5
+      grep -qxF 'def' "$ONENORMALFIX" && control_o_undo_ok=1
+      send_chord "$S24O" "i" "C-o" "C-g"
+      if lem_wait_for "$S24O" 'INSERT' "$WAIT_TIMEOUT"; then
+        send_text "$S24O" "X"
+        send_chord "$S24O" Escape "C-x" "C-s"
+        sleep 0.5
+        grep -qxF 'Xdef' "$ONENORMALFIX" && control_o_abort_ok=1
+      fi
+    fi
+  fi
+fi
+
+if boot_with_file "$S24P" "$ONENORMALPROMPTFIX" '^abc def$' "24-insert-control-parity"; then
+  send_chord "$S24P" "i" "C-o"
+  tmux_cmd send-keys -t "$S24P" M-x
+  if lem_wait_for "$S24P" 'Command:' "$WAIT_TIMEOUT"; then
+    send_text "$S24P" "forward-char"
+    tmux_cmd send-keys -t "$S24P" Enter
+    if lem_wait_for "$S24P" 'INSERT' "$WAIT_TIMEOUT"; then
+      send_text "$S24P" "X"
+      send_chord "$S24P" Escape "C-x" "C-s"
+      sleep 0.5
+      grep -qxF 'aXbc def' "$ONENORMALPROMPTFIX" && control_o_prompt_ok=1
+    fi
+  fi
+fi
+
+if boot_with_file "$S24T" "$SHIFTFIX" 'alpha' "24-insert-control-parity"; then
+  send_chord "$S24T" "A" "C-t" Escape "C-x" "C-s"
+  sleep 0.5
+  grep -qxF '            alpha' "$SHIFTFIX" && control_t_ok=1
+fi
+
+if boot_with_file "$S24C" "$COPYCONTROLFIX" '^ABOVE$' "24-insert-control-parity"; then
+  send_chord "$S24C" "j" "j" "A" "C-y" "C-e" Escape "C-x" "C-s"
+  sleep 0.5
+  sed -n '3p' "$COPYCONTROLFIX" | grep -qxF 'xxOO' && control_copy_ok=1
+fi
+
+if boot_with_file "$S24G" "$ORGRIGHTFIX" 'Child' "24-insert-control-parity"; then
+  tmux_cmd send-keys -t "$S24G" M-x
+  sleep "$KEY_DELAY"
+  send_text "$S24G" "org-mode"
+  tmux_cmd send-keys -t "$S24G" Enter
+  if lem_wait_for "$S24G" 'Org' "$WAIT_TIMEOUT"; then
+    send_chord "$S24G" "i" "C-t" Escape "C-x" "C-s"
+  fi
+  sleep 0.5
+  grep -qxF '** Child' "$ORGRIGHTFIX" && control_t_org_ok=1
+fi
+
+if [ "$control_o_ok" = 1 ] && [ "$control_o_undo_ok" = 1 ] &&
+   [ "$control_o_abort_ok" = 1 ] && [ "$control_o_prompt_ok" = 1 ] &&
+   [ "$control_t_ok" = 1 ] &&
+   [ "$control_copy_ok" = 1 ] && [ "$control_t_org_ok" = 1 ]; then
+  pass "24-insert-control-parity" \
+    "insert C-o/C-t/C-y/C-e match the live Evil configuration"
+else
+  fail "24-insert-control-parity" \
+    "insert-control mismatch (C-o=$control_o_ok undo=$control_o_undo_ok abort=$control_o_abort_ok prompt=$control_o_prompt_ok C-t=$control_t_ok copy=$control_copy_ok Org-C-t=$control_t_org_ok)" \
+    "$S24O"
+  echo "----- screen (one-Normal prompt $S24P) -----"
+  lem_capture "$S24P" 2>/dev/null || echo "(no screen)"
+  echo "----- screen (shift right $S24T) -----"
+  lem_capture "$S24T" 2>/dev/null || echo "(no screen)"
+  echo "----- screen (copy controls $S24C) -----"
+  lem_capture "$S24C" 2>/dev/null || echo "(no screen)"
+  echo "----- screen (Org C-t $S24G) -----"
+  lem_capture "$S24G" 2>/dev/null || echo "(no screen)"
+  echo "----------------------------------------"
+fi
+
+# ===========================================================================
 # Summary
 # ===========================================================================
 echo
@@ -770,7 +878,7 @@ order=(01-boot-normal 02-insert-roundtrip 03-leader-compile 04-gc-operator \
        12-visual-operators 13-doubled-operators 14-count-repeat \
        15-snipe-parity 16-insert-C-u 17-fill-paragraph 18-org-id \
        19-auto-fill-toggle 20-control-line-motion 21-expand-region \
-       22-Y-linewise 23-control-key-parity)
+       22-Y-linewise 23-control-key-parity 24-insert-control-parity)
 for k in "${order[@]}"; do
   printf '  %-26s %s\n' "$k" "${RESULT[$k]:-MISSING}"
 done
