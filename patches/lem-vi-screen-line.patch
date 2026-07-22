@@ -317,7 +317,17 @@ index 4c698df..8b57b8c 100644
  (define-state visual-block (visual) ()
    (:default-initargs
     :name "V-BLOCK"))
-@@ -132,6 +178,9 @@
+@@ -123,8 +169,7 @@
+            (setf (buffer-mark buffer) mark))))
+       (t
+        (setf (buffer-state buffer) new-state)
+-       (unless (buffer-mark-p buffer)
+-         (setf (buffer-mark buffer) (current-point)))))))
++       (setf (buffer-mark buffer) (current-point))))))
+ 
+ (define-command vi-visual-char (&optional (buffer (current-buffer))) ()
+   (enable-visual 'visual-char buffer))
+@@ -132,6 +177,9 @@
  (define-command vi-visual-line (&optional (buffer (current-buffer))) ()
    (enable-visual 'visual-line buffer))
 
@@ -327,7 +337,7 @@ index 4c698df..8b57b8c 100644
  (define-command vi-visual-block (&optional (buffer (current-buffer))) ()
    (enable-visual 'visual-block buffer))
 
-@@ -144,6 +193,9 @@
+@@ -144,6 +192,9 @@
  (defun visual-line-p (&optional (buffer (current-buffer)))
    (typep (buffer-state buffer) 'visual-line))
 
@@ -337,7 +347,7 @@ index 4c698df..8b57b8c 100644
  (defun visual-block-p (&optional (buffer (current-buffer)))
    (typep (buffer-state buffer) 'visual-block))
 
-@@ -159,6 +211,8 @@
+@@ -159,6 +210,8 @@
         (list start end))
        ((visual-block-p buffer)
         (list start end))
@@ -346,7 +356,7 @@ index 4c698df..8b57b8c 100644
        (t
         (when (point< end start)
           (rotatef start end))
-@@ -180,6 +234,9 @@
+@@ -180,6 +233,9 @@
             (visual-block-p buffer))
         (setf (buffer-mark buffer) start)
         (move-point (buffer-point buffer) end))

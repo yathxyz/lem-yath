@@ -410,11 +410,14 @@
             (lem/legit::pop-up-message (princ-to-string condition))
             nil))))))
 
-(defun legit-cherry-edit-stop-p (error-output)
-  (and (search "problem with the editor" error-output
-               :test #'char-equal)
-       (not (legit-cherry-unmerged-p))
-       (legit-cherry-index-changes-p)))
+(defun legit-cherry-edit-stop-p ()
+  "Return whether an editing cherry-pick stopped before committing.
+
+Use Git's sequencer state instead of matching version- and locale-dependent
+editor diagnostics.  The caller already knows that editing was requested and
+the bounded message reader validates Git's prepared COMMIT_EDITMSG."
+  (and (legit-cherry-pick-in-progress-p)
+       (not (legit-cherry-unmerged-p))))
 
 (defun run-legit-cherry-pick
     (arguments success-message &key edit-p gpg-sign pending-move)
@@ -437,7 +440,7 @@
          (message
           "Cherry-pick stopped; resolve conflicts, then continue, abort, or skip from A.")
          nil)
-        ((and edit-p (legit-cherry-edit-stop-p error-output))
+        ((and edit-p (legit-cherry-edit-stop-p))
          (legit-cherry-show-message-buffer gpg-sign directory)
          nil)
         ((legit-cherry-pick-in-progress-p)

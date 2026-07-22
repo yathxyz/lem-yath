@@ -2787,6 +2787,7 @@ start_phase() {
     lem_wait_for "$session" 'NORMAL' "$BOOT_TIMEOUT" >/dev/null
 }
 
+if [[ ${LEM_YATH_VCS_CHERRY_REGION_ONLY:-0} != 1 ]]; then
 colocated_session="lem-yath-vcs-colocated-$id"
 if start_phase colocated \
   "$LEM_YATH_VCS_COLOCATED_ROOT/nested/deeper/colocated.lisp" \
@@ -3497,6 +3498,7 @@ else
     "$git_session"
 fi
 lem_stop "$git_session"
+fi
 
 porcelain_session="lem-yath-vcs-porcelain-$id"
 if start_phase porcelain "$LEM_YATH_VCS_PORCELAIN_FILE" \
@@ -3515,6 +3517,12 @@ else
     "$porcelain_session"
 fi
 
+if [[ ${LEM_YATH_VCS_CHERRY_REGION_ONLY:-0} == 1 ]]; then
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" reset -q --hard HEAD
+  "$git_bin" -C "$LEM_YATH_VCS_PORCELAIN_ROOT" clean -q -fdx
+  send_keys "$porcelain_session" Escape Space g G
+  wait_legit "$porcelain_session" porcelain || true
+else
 send_keys "$porcelain_session" l
 if lem_wait_for "$porcelain_session" 'HEAD reflog' "$WAIT_TIMEOUT" \
      >/dev/null; then
@@ -4861,6 +4869,7 @@ else
     'the amended edit stop did not continue to a clean final history' \
     "$porcelain_session"
 fi
+fi
 
 if prepare_porcelain_cherry_fixture; then
   pass legit-cherry-fixture \
@@ -4899,8 +4908,8 @@ cherry_region_editors=0
 send_keys "$porcelain_session" l o
 if lem_wait_for "$porcelain_session" 'Log revision\(s\):' \
      "$WAIT_TIMEOUT" >/dev/null; then
-  enter_completion_prompt_value "$porcelain_session" test-cherry-region \
-    'Log revision\(s\):'
+  enter_completion_prompt_value_until "$porcelain_session" test-cherry-region \
+    'cherry-region-two'
 fi
 if lem_wait_for "$porcelain_session" 'cherry-region-two' \
      "$WAIT_TIMEOUT" >/dev/null; then
@@ -4953,6 +4962,18 @@ else
   fail legit-cherry-log-refresh \
     'a successful Visual cherry-pick dropped to status or lost its commit anchor' \
     "$porcelain_session"
+fi
+
+if [[ ${LEM_YATH_VCS_CHERRY_REGION_ONLY:-0} == 1 ]]; then
+  lem_stop "$porcelain_session"
+  printf '\n'
+  cat "$LEM_YATH_VCS_REPORT" 2>/dev/null || true
+  if ((failed)); then
+    echo 'VCS CHERRY REGION TEST FAILED'
+    exit 1
+  fi
+  echo 'VCS CHERRY REGION TEST PASSED'
+  exit 0
 fi
 
 cherry_region_prompted=0
