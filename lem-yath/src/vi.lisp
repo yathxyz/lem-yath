@@ -29,6 +29,57 @@
 
 ;;; --- insert-state editing --------------------------------------------------
 
+(defparameter *lem-yath-evil-shift-width* 4)
+
+(defvar *lem-yath-previous-command-name* nil)
+
+(defun lem-yath-remember-previous-command ()
+  (setf *lem-yath-previous-command-name*
+        (alexandria:when-let ((command (this-command)))
+          (command-name command))))
+
+(remove-hook *post-command-hook* 'lem-yath-remember-previous-command)
+(add-hook *post-command-hook* 'lem-yath-remember-previous-command -500)
+
+(defun lem-yath-previous-self-insert-p ()
+  (and *lem-yath-previous-command-name*
+       (member (symbol-name *lem-yath-previous-command-name*)
+               '("SELF-INSERT" "COMPLETION-SELF-INSERT")
+               :test #'string=)))
+
+(defun lem-yath-line-indentation-column (point)
+  (with-point ((indentation point))
+    (line-start indentation)
+    (skip-chars-forward indentation '(#\Space #\Tab))
+    (point-column indentation)))
+
+(defun lem-yath-evil-shift-left-column (column count)
+  "Return Evil's rounded indentation after shifting left COUNT times."
+  (let* ((width *lem-yath-evil-shift-width*)
+         (right-count (- count)))
+    (multiple-value-bind (quotient remainder) (floor column width)
+      (* width
+         (max 0
+              (+ quotient
+                 right-count
+                 (if (and (minusp right-count) (plusp remainder)) 1 0)))))))
+
+(define-command (lem-yath-evil-shift-left-line
+                 (:advice-classes editable-advice))
+    (&optional (count 1)) (:universal)
+  "Shift the current line left like Evil insert-state C-d."
+  (let ((point (current-point)))
+    (if (and (lem-yath-previous-self-insert-p)
+             (eql #\0 (character-at point -1)))
+        (progn
+          (delete-character point -1)
+          (lem/buffer/indent::indent-line-1 point 0))
+        (lem/buffer/indent::indent-line-1
+         point
+         (lem-yath-evil-shift-left-column
+          (lem-yath-line-indentation-column point)
+          count)))))
+
 (define-command lem-yath-delete-back-to-indentation () ()
   "Delete from point back to indentation, like Evil insert-state C-u."
   (with-point ((line-start (current-point))

@@ -30,6 +30,10 @@ Key environment:
   screen rows, while `gj/gk` and `g0/g$` retain logical-line access.
 - `evil-undo-system 'undo-redo` (uses built-in `undo-redo`, NOT undo-tree).
 - `evil-want-C-u-delete t` (C-u deletes to indent in insert state).
+- Effective control-key defaults: normal/visual `C-u` starts a universal
+  argument because `evil-want-C-u-scroll` is nil; insert `C-d` shifts the
+  current line left by `evil-shift-width` 4; insert `C-v` and `C-q` quote the
+  next key. Org's insert-state `C-d` remains its higher-priority `org-metaleft`.
 - `evil-want-minibuffer nil` (Evil is not active in the minibuffer).
 - After `evil-maps` loads: `C-n` and `C-p` are **unbound** in `evil-motion-state-map`, `evil-insert-state-map`, `evil-emacs-state-map` (so they fall through to completion/global).
 - `evil-collection` installed and `(evil-collection-init)` called globally (all default integrations).

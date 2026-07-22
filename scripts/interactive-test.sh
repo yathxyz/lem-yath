@@ -6,8 +6,8 @@
 # is dumped. The script exits nonzero if any check fails. All tmux sessions are
 # killed on exit (trap), even on Ctrl-C / error.
 #
-# Session names are unique per invocation via LEM_YATH_CHECK_ID so it is safe to run
-# concurrently with other testers and with the boot/compile checks.
+# Session names and fixture directories are unique per invocation, so it is safe
+# to run concurrently with other testers and with the boot/compile checks.
 #
 # Usage:  LEM_YATH_CHECK_ID=itest ./scripts/interactive-test.sh
 set -uo pipefail
@@ -34,6 +34,7 @@ cleanup() {
   for s in "${SESSIONS[@]:-}"; do
     [ -n "$s" ] && tmux_cmd kill-session -t "$s" 2>/dev/null
   done
+  [ -n "${FIXTURE_DIR:-}" ] && rm -rf -- "$FIXTURE_DIR"
 }
 trap cleanup EXIT INT TERM
 
@@ -107,15 +108,20 @@ lem_wait_for_count() { # lem_wait_for_count <session> <ere> <expected> [timeout]
 # ===========================================================================
 # Fixtures
 # ===========================================================================
-SCRATCH=/tmp/lem-yath-itest.txt
-LISPFIX=/tmp/lem-yath-itest.lisp
-PYFIX=/tmp/lem-yath-itest.py
-SNIPEFIX=/tmp/lem-yath-itest-snipe.txt
-SNIPEREPEATFIX=/tmp/lem-yath-itest-snipe-repeat.txt
-INDENTFIX=/tmp/lem-yath-itest-indent.txt
-FILLFIX=/tmp/lem-yath-itest-fill.txt
-ORGFIX=/tmp/lem-yath-itest.org
-EXPANDFIX=/tmp/lem-yath-itest-expand.txt
+FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/lem-yath-itest.XXXXXX")"
+SCRATCH="$FIXTURE_DIR/lem-yath-itest.txt"
+LISPFIX="$FIXTURE_DIR/lem-yath-itest.lisp"
+PYFIX="$FIXTURE_DIR/lem-yath-itest.py"
+SNIPEFIX="$FIXTURE_DIR/lem-yath-itest-snipe.txt"
+SNIPEREPEATFIX="$FIXTURE_DIR/lem-yath-itest-snipe-repeat.txt"
+INDENTFIX="$FIXTURE_DIR/lem-yath-itest-indent.txt"
+FILLFIX="$FIXTURE_DIR/lem-yath-itest-fill.txt"
+ORGFIX="$FIXTURE_DIR/lem-yath-itest.org"
+EXPANDFIX="$FIXTURE_DIR/lem-yath-itest-expand.txt"
+CONTROLFIX="$FIXTURE_DIR/lem-yath-itest-control.txt"
+SHIFTFIX="$FIXTURE_DIR/lem-yath-itest-shift.txt"
+QUOTEFIX="$FIXTURE_DIR/lem-yath-itest-quote.txt"
+ORGCONTROLFIX="$FIXTURE_DIR/lem-yath-itest-control.org"
 
 printf 'first known line\nsecond known line\nthird known line\n' > "$SCRATCH"
 printf '(defun alpha ())\n(defun beta ())\n(defun gamma ())\n' > "$LISPFIX"
@@ -126,6 +132,10 @@ printf '    alpha beta\n' > "$INDENTFIX"
 printf 'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega\n' > "$FILLFIX"
 printf '* Heading\nBody\n' > "$ORGFIX"
 printf 'one two (alpha beta) three\n\nnext\n' > "$EXPANDFIX"
+printf 'one\ntwo\nthree\nfour\nfive\nsix\n' > "$CONTROLFIX"
+printf '        alpha\n    beta\n' > "$SHIFTFIX"
+printf 'quote\n' > "$QUOTEFIX"
+printf '** Child\n' > "$ORGCONTROLFIX"
 
 # ===========================================================================
 # Check 1: Boot with a scratch file; vi NORMAL state shows in the modeline.
@@ -674,6 +684,82 @@ if boot_with_file "$S22" "$SCRATCH" 'first known line' "22-Y-linewise"; then
 fi
 
 # ===========================================================================
+# Check 23: Match the effective Evil control-key defaults that differ from
+# Lem's stock Vim bindings: normal C-u is a universal argument, insert C-d
+# shifts left with Evil rounding and its freshly typed zero shortcut, and
+# insert C-v quotes the following physical key.
+# ===========================================================================
+S23U="lem-yath-it23u-$id"
+S23D="lem-yath-it23d-$id"
+S23V="lem-yath-it23v-$id"
+S23O="lem-yath-it23o-$id"
+control_u_ok=0
+control_d_ok=0
+control_v_ok=0
+control_d_org_ok=0
+
+if boot_with_file "$S23U" "$CONTROLFIX" '^one$' "23-control-key-parity"; then
+  tmux_cmd send-keys -t "$S23U" "C-u"
+  if lem_wait_for "$S23U" 'C-u 4' "$WAIT_TIMEOUT"; then
+    send_chord "$S23U" "j" "i"
+    send_text "$S23U" "U"
+    send_chord "$S23U" Escape
+    lem_capture "$S23U" | grep -qE '^Ufive[[:space:]]*$' && control_u_ok=1
+  fi
+fi
+
+if boot_with_file "$S23D" "$SHIFTFIX" 'alpha' "23-control-key-parity"; then
+  send_chord "$S23D" "A" "C-d" Escape "j" "I"
+  send_text "$S23D" "0"
+  send_chord "$S23D" "C-d" Escape
+  sleep 0.5
+  shift_screen="$(lem_capture "$S23D")"
+  if grep -qE '^    alpha[[:space:]]*$' <<<"$shift_screen" &&
+     grep -qE '^beta[[:space:]]*$' <<<"$shift_screen"; then
+    control_d_ok=1
+  fi
+fi
+
+if boot_with_file "$S23O" "$ORGCONTROLFIX" 'Child' "23-control-key-parity"; then
+  tmux_cmd send-keys -t "$S23O" M-x
+  sleep "$KEY_DELAY"
+  send_text "$S23O" "org-mode"
+  tmux_cmd send-keys -t "$S23O" Enter
+  if lem_wait_for "$S23O" 'Org' "$WAIT_TIMEOUT"; then
+    send_chord "$S23O" "i" "C-d" Escape
+    send_chord "$S23O" "C-x" "C-s"
+  fi
+  sleep 0.5
+  grep -qxF '* Child' "$ORGCONTROLFIX" && control_d_org_ok=1
+fi
+
+if boot_with_file "$S23V" "$QUOTEFIX" '^quote$' "23-control-key-parity"; then
+  send_chord "$S23V" "A" "C-v" "C-a"
+  send_text "$S23V" "Z"
+  send_chord "$S23V" Escape "C-x" "C-s"
+  sleep 0.5
+  quote_hex="$(od -An -tx1 "$QUOTEFIX" | tr -d '[:space:]')"
+  [[ "$quote_hex" == '71756f7465015a0a' ]] && control_v_ok=1
+fi
+
+if [ "$control_u_ok" = 1 ] && [ "$control_d_ok" = 1 ] &&
+   [ "$control_v_ok" = 1 ] && [ "$control_d_org_ok" = 1 ]; then
+  pass "23-control-key-parity" \
+    "normal C-u and insert C-d/C-v match the live Evil configuration"
+else
+  fail "23-control-key-parity" \
+    "control-key mismatch (C-u=$control_u_ok C-d=$control_d_ok C-v=$control_v_ok Org-C-d=$control_d_org_ok)" \
+    "$S23D"
+  echo "----- screen (universal argument $S23U) -----"
+  lem_capture "$S23U" 2>/dev/null || echo "(no screen)"
+  echo "----- screen (quoted insert $S23V) -----"
+  lem_capture "$S23V" 2>/dev/null || echo "(no screen)"
+  echo "----- screen (Org C-d $S23O) -----"
+  lem_capture "$S23O" 2>/dev/null || echo "(no screen)"
+  echo "----------------------------------------------"
+fi
+
+# ===========================================================================
 # Summary
 # ===========================================================================
 echo
@@ -684,7 +770,7 @@ order=(01-boot-normal 02-insert-roundtrip 03-leader-compile 04-gc-operator \
        12-visual-operators 13-doubled-operators 14-count-repeat \
        15-snipe-parity 16-insert-C-u 17-fill-paragraph 18-org-id \
        19-auto-fill-toggle 20-control-line-motion 21-expand-region \
-       22-Y-linewise)
+       22-Y-linewise 23-control-key-parity)
 for k in "${order[@]}"; do
   printf '  %-26s %s\n' "$k" "${RESULT[$k]:-MISSING}"
 done
