@@ -12,6 +12,14 @@
 (setf lem/line-numbers:*relative-line* t)
 (setf (variable-value 'lem/line-numbers:line-numbers :global) t)
 
+;; Emacs' display-line-numbers-mode has no mode-line lighter.  Lem exposes the
+;; globally active rendering provider as "Line numbers", including in prose
+;; buffers where this configuration deliberately renders no number column.
+(defmethod lem-core::mode-hide-from-modeline
+    ((mode (eql 'lem/line-numbers::line-numbers-mode)))
+  (declare (ignore mode))
+  t)
+
 (defparameter *rainbow-delimiter-attributes*
   #(lem-lisp-mode/paren-coloring:paren-color-1
     lem-lisp-mode/paren-coloring:paren-color-2

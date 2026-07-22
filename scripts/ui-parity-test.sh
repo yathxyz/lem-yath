@@ -653,7 +653,9 @@ fi
 lem_keys "$session" Escape
 sleep 0.3
 lem_keys "$session" v
-if lem_wait_for "$session" 'VISUAL' 3 >/dev/null; then
+sleep 0.3
+lem_keys "$session" F6
+if wait_report '^VI-STATE current=VISUAL buffer=VISUAL$' 3; then
   lem_keys "$session" Space
   if lem_wait_for "$session" 'lem-yath-avy-goto-char' 2 >/dev/null; then
     pass visual-leader "the shared leader popup also appears in visual state"

@@ -10,6 +10,17 @@
     (apply #'format stream control arguments)
     (terpri stream)))
 
+(define-command lem-yath-test-ui-vi-state () ()
+  (ui-parity-log
+   "VI-STATE current=~a buffer=~a"
+   (lem-vi-mode/core::state-name (lem-vi-mode/core:current-state))
+   (lem-vi-mode/core::state-name
+    (lem-vi-mode/core:buffer-state (current-buffer)))))
+
+;; Keep the visual-state assertion independent of modeline width.  The test
+;; still enters VISUAL with a physical `v`; F6 only reports the resulting state.
+(define-key *global-keymap* "F6" 'lem-yath-test-ui-vi-state)
+
 (define-minor-mode lem-yath-test-left-gutter-mode
     (:name "UI parity fixture gutter"))
 
@@ -412,6 +423,9 @@
       (check (lem-core::mode-active-p
               (current-buffer) 'lem-yath-git-gutter-mode)
              "programming-buffer-git-gutter-started")
+      (check (lem-core::mode-hide-from-modeline
+              'lem/line-numbers::line-numbers-mode)
+             "line-number-lighter-hidden")
       (check (not (member 'lem-git-gutter::git-gutter-mode
                           (lem-core::active-global-minor-modes)))
              "upstream-global-git-gutter-disabled")
