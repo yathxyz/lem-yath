@@ -129,6 +129,14 @@ ORGRIGHTFIX="$FIXTURE_DIR/lem-yath-itest-right-control.org"
 LASTINSERTFIX="$FIXTURE_DIR/lem-yath-itest-last-insert.txt"
 CHARREGISTERFIX="$FIXTURE_DIR/lem-yath-itest-char-register.txt"
 LINEREGISTERFIX="$FIXTURE_DIR/lem-yath-itest-line-register.txt"
+NAMEDREGISTERFIX="$FIXTURE_DIR/lem-yath-itest-named-register.txt"
+APPENDREGISTERFIX="$FIXTURE_DIR/lem-yath-itest-append-register.txt"
+BLACKHOLEREGISTERFIX="$FIXTURE_DIR/lem-yath-itest-blackhole-register.txt"
+VISUALREGISTERFIX="$FIXTURE_DIR/lem-yath-itest-visual-register.txt"
+LINENAMEDREGISTERFIX="$FIXTURE_DIR/lem-yath-itest-line-named-register.txt"
+REPEATREGISTERFIX="$FIXTURE_DIR/lem-yath-itest-repeat-register.txt"
+READONLYREGISTERFIX="$FIXTURE_DIR/lem-yath-itest-readonly-register.txt"
+DELETEREGISTERFIX="$FIXTURE_DIR/lem-yath-itest-delete-register.txt"
 
 printf 'first known line\nsecond known line\nthird known line\n' > "$SCRATCH"
 printf '(defun alpha ())\n(defun beta ())\n(defun gamma ())\n' > "$LISPFIX"
@@ -150,6 +158,14 @@ printf '* Child\n' > "$ORGRIGHTFIX"
 printf 'base\n\n' > "$LASTINSERTFIX"
 printf 'TOKEN\nhere\n' > "$CHARREGISTERFIX"
 printf 'TOKEN\nhere\n' > "$LINEREGISTERFIX"
+printf 'ZERO\ncat dog\nsink\n' > "$NAMEDREGISTERFIX"
+printf 'red blue green\nsink\n' > "$APPENDREGISTERFIX"
+printf 'HISTORY\nKEEP\ntrash here\nsink\n' > "$BLACKHOLEREGISTERFIX"
+printf 'alpha beta\nsink\n' > "$VISUALREGISTERFIX"
+printf 'LINE\nsink\n' > "$LINENAMEDREGISTERFIX"
+printf 'cat\njunk\nsink\n' > "$REPEATREGISTERFIX"
+printf 'keep text\n' > "$READONLYREGISTERFIX"
+printf 'one two\nsink\n' > "$DELETEREGISTERFIX"
 
 # ===========================================================================
 # Check 1: Boot with a scratch file; vi NORMAL state shows in the modeline.
@@ -927,6 +943,102 @@ else
 fi
 
 # ===========================================================================
+# Check 26: Match core Evil register selection through physical keys.  Named
+# characterwise, linewise, and Visual writes remain typed; uppercase names
+# append; blackhole deletion preserves unnamed/numbered history; selected
+# numbered reads work; and dot-repeat retains the selected register and count.
+# ===========================================================================
+S26N="lem-yath-it26n-$id"
+S26A="lem-yath-it26a-$id"
+S26B="lem-yath-it26b-$id"
+S26V="lem-yath-it26v-$id"
+S26L="lem-yath-it26l-$id"
+S26R="lem-yath-it26r-$id"
+S26I="lem-yath-it26i-$id"
+S26D="lem-yath-it26d-$id"
+named_register_ok=0
+append_register_ok=0
+blackhole_register_ok=0
+visual_register_ok=0
+line_named_register_ok=0
+repeat_register_ok=0
+readonly_register_ok=0
+delete_register_ok=0
+
+if boot_with_file "$S26N" "$NAMEDREGISTERFIX" '^ZERO$' "26-normal-registers"; then
+  send_chord "$S26N" "0" "y" "e" "j" "0" '"' "a" "y" "e" \
+    "j" '$' '"' "a" "p" '"' "0" "p" "C-x" "C-s"
+  sleep 0.5
+  cmp -s "$NAMEDREGISTERFIX" <(printf 'ZERO\ncat dog\nsinkcatZERO\n') && named_register_ok=1
+fi
+
+if boot_with_file "$S26A" "$APPENDREGISTERFIX" '^red blue green$' "26-normal-registers"; then
+  send_chord "$S26A" "0" '"' "a" "y" "e" "w" '"' "A" "y" "e" \
+    "j" '$' '"' "a" "p" "C-x" "C-s"
+  sleep 0.5
+  cmp -s "$APPENDREGISTERFIX" <(printf 'red blue green\nsinkredblue\n') && append_register_ok=1
+fi
+
+if boot_with_file "$S26B" "$BLACKHOLEREGISTERFIX" '^HISTORY$' "26-normal-registers"; then
+  send_chord "$S26B" "d" "d" "0" "y" "e" "j" "0" '"' "_" "d" "e" \
+    "j" '$' "p" '"' "1" "P" "C-x" "C-s"
+  sleep 0.5
+  cmp -s "$BLACKHOLEREGISTERFIX" <(printf 'KEEP\n here\nHISTORY\nsinkKEEP\n') && blackhole_register_ok=1
+fi
+
+if boot_with_file "$S26V" "$VISUALREGISTERFIX" '^alpha beta$' "26-normal-registers"; then
+  send_chord "$S26V" "v" "e" '"' "b" "y" "j" "0" "v" "e" \
+    '"' "b" "p" "C-x" "C-s"
+  sleep 0.5
+  cmp -s "$VISUALREGISTERFIX" <(printf 'alpha beta\nalpha\n') && visual_register_ok=1
+fi
+
+if boot_with_file "$S26L" "$LINENAMEDREGISTERFIX" '^LINE$' "26-normal-registers"; then
+  send_chord "$S26L" '"' "a" "y" "y" "j" '"' "a" "p" "C-x" "C-s"
+  sleep 0.5
+  cmp -s "$LINENAMEDREGISTERFIX" <(printf 'LINE\nsink\nLINE\n') && line_named_register_ok=1
+fi
+
+if boot_with_file "$S26R" "$REPEATREGISTERFIX" '^cat$' "26-normal-registers"; then
+  send_chord "$S26R" "0" '"' "a" "y" "e" "j" "0" "y" "e" \
+    "j" '$' '"' "a" "2" "p" "." "C-x" "C-s"
+  sleep 0.5
+  cmp -s "$REPEATREGISTERFIX" <(printf 'cat\njunk\nsinkcatcatcatcat\n') && repeat_register_ok=1
+fi
+
+if boot_with_file "$S26I" "$READONLYREGISTERFIX" '^keep text$' "26-normal-registers"; then
+  send_chord "$S26I" '"' "%" "d" "w" "0" '"' "_" "p" "i"
+  send_text "$S26I" "X"
+  send_chord "$S26I" Escape "C-x" "C-s"
+  sleep 0.5
+  cmp -s "$READONLYREGISTERFIX" <(printf 'Xkeep text\n') && readonly_register_ok=1
+fi
+
+if boot_with_file "$S26D" "$DELETEREGISTERFIX" '^one two$' "26-normal-registers"; then
+  send_chord "$S26D" "0" '"' "a" "d" "e" "j" '$' \
+    '"' "a" "p" '"' "1" "p" "C-x" "C-s"
+  sleep 0.5
+  cmp -s "$DELETEREGISTERFIX" <(printf ' two\nsinkoneone\n') && delete_register_ok=1
+fi
+
+if [ "$named_register_ok" = 1 ] && [ "$append_register_ok" = 1 ] &&
+   [ "$blackhole_register_ok" = 1 ] && [ "$visual_register_ok" = 1 ] &&
+   [ "$line_named_register_ok" = 1 ] && [ "$repeat_register_ok" = 1 ] &&
+   [ "$readonly_register_ok" = 1 ] && [ "$delete_register_ok" = 1 ]; then
+  pass "26-normal-registers" \
+    "named, appended, blackhole, typed, counted, and repeated registers match Evil"
+else
+  fail "26-normal-registers" \
+    "register mismatch (named=$named_register_ok append=$append_register_ok blackhole=$blackhole_register_ok visual=$visual_register_ok line=$line_named_register_ok repeat=$repeat_register_ok readonly=$readonly_register_ok delete=$delete_register_ok)" \
+    "$S26N"
+  for session in "$S26A" "$S26B" "$S26V" "$S26L" "$S26R" "$S26I" "$S26D"; do
+    echo "----- screen ($session) -----"
+    lem_capture "$session" 2>/dev/null || echo "(no screen)"
+  done
+  echo "--------------------------------"
+fi
+
+# ===========================================================================
 # Summary
 # ===========================================================================
 echo
@@ -938,7 +1050,7 @@ order=(01-boot-normal 02-insert-roundtrip 03-leader-compile 04-gc-operator \
        15-snipe-parity 16-insert-C-u 17-fill-paragraph 18-org-id \
        19-auto-fill-toggle 20-control-line-motion 21-expand-region \
        22-Y-linewise 23-control-key-parity 24-insert-control-parity \
-       25-insert-registers)
+       25-insert-registers 26-normal-registers)
 for k in "${order[@]}"; do
   printf '  %-26s %s\n' "$k" "${RESULT[$k]:-MISSING}"
 done

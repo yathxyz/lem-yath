@@ -115,20 +115,30 @@ Each unmatched delimiter becomes a one-character hole between regions."
 
 (defun structural-store-register (text type deletion-p start end)
   "Store TEXT in Vim's registers with TYPE and deletion semantics."
-  (copy-to-clipboard-with-killring text)
-  (let* ((register-type (if (member type '(:line :block)) type :char))
-         (item (lem-vi-mode/registers::make-yank text register-type)))
-    (cond
-      ((not deletion-p)
-       (setf lem-vi-mode/registers::*yank-text* item
-             lem-vi-mode/registers::*unnamed-register* #\0))
-      ((and (= (line-number-at-point start) (line-number-at-point end))
-            (not (member type '(:line :block))))
-       (setf lem-vi-mode/registers::*small-deletion-register* item
-             lem-vi-mode/registers::*unnamed-register* #\-))
-      (t
-       (lem/common/ring:ring-push lem-vi-mode/registers::*deletion-history* item)
-       (setf lem-vi-mode/registers::*unnamed-register* #\1)))))
+  (let ((target (lem-vi-mode/registers:take-selected-register)))
+    (lem-vi-mode/registers::ensure-writable-register target)
+    (unless (and target (char= target #\_))
+      (copy-to-clipboard-with-killring text)
+      (let* ((register-type (if (member type '(:line :block)) type :char))
+             (item (lem-vi-mode/registers::make-yank text register-type)))
+        (cond
+          ((and target
+                (lem-vi-mode/registers:named-register-p target))
+           (when deletion-p
+             (lem/common/ring:ring-push
+              lem-vi-mode/registers::*deletion-history* item))
+           (lem-vi-mode/registers::write-explicit-register target item))
+          ((not deletion-p)
+           (setf lem-vi-mode/registers::*yank-text* item
+                 lem-vi-mode/registers::*unnamed-register* #\0))
+          ((and (= (line-number-at-point start) (line-number-at-point end))
+                (not (member type '(:line :block))))
+           (setf lem-vi-mode/registers::*small-deletion-register* item
+                 lem-vi-mode/registers::*unnamed-register* #\-))
+          (t
+           (lem/common/ring:ring-push
+            lem-vi-mode/registers::*deletion-history* item)
+           (setf lem-vi-mode/registers::*unnamed-register* #\1)))))))
 
 (defun structural-safe-manipulate (start end type &key delete)
   "Yank or DELETE the balanced portions of START..END and return their text."
@@ -357,6 +367,19 @@ Each unmatched delimiter becomes a one-character hole between regions."
 (define-key lem-paredit-mode:*paredit-mode-keymap* "M-r"
   'lem-paredit-mode:paredit-raise)
 (define-key lem-paredit-mode:*paredit-mode-keymap* "M-t" 'transpose-sexps)
+
+(define-command (lem-yath-structural-doublequote-dispatch
+                 (:advice-classes lem-vi-mode/core:vi-command)
+                 (:initargs :repeat t))
+    (&optional count) (:universal-nil)
+  "Keep Paredit smart quotes in Insert state and Evil registers elsewhere."
+  (if (typep (lem-vi-mode/core:current-state)
+             'lem-vi-mode/states:insert)
+      (lem-paredit-mode:paredit-insert-doublequote)
+      (call-command 'lem-vi-mode/commands:vi-use-register count)))
+
+(define-key lem-paredit-mode:*paredit-mode-keymap* "\""
+  'lem-yath-structural-doublequote-dispatch)
 
 ;;; --- Lispyville additional/additional-insert commands --------------------
 

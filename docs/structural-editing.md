@@ -56,7 +56,9 @@ For an operator region, Lem scans syntax-aware delimiter pairs while ignoring
 delimiters inside strings and comments.  It performs the operation on the
 ordered subregions between unmatched delimiters, exactly matching
 Lispyville's safe-region rule.  Yank/delete registers retain the concatenated
-safe text and the appropriate character/line type.
+safe text and the appropriate character/line type. Normal/Visual `"` uses the
+same named, append, blackhole, numbered-read, count, and repeat semantics as
+ordinary buffers; Insert-state `"` continues to use Paredit's smart quote.
 
 `scripts/structural-test.sh` drives a real ncurses Lem in tmux.  It covers every
 configured theme above, numeric counts, register paste behavior, mode

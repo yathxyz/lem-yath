@@ -522,6 +522,21 @@ else
   fail 20-smart-quote "smart quote behavior diverged" "$STRUCT_SESSION"
 fi
 
+# 21: register prefixes flow through Lispyville's delimiter-safe operators.
+named_register=/tmp/lem-yath-struct-named-register.lisp
+printf '%s\n' '(alpha beta)' 'sink' > "$named_register"
+named_register_ok=0
+if start 21-named-register "$named_register" 'alpha beta'; then
+  keys "$STRUCT_SESSION" '"' a y y j '"' a p
+  [ "$(lem_capture "$STRUCT_SESSION" | grep -cE '^[[:space:][:digit:]]*\(alpha beta\)[[:space:]]*$')" = 2 ] &&
+    named_register_ok=1
+fi
+if [ "$named_register_ok" = 1 ]; then
+  pass 21-named-register "named line registers survive delimiter-safe yank and paste"
+else
+  fail 21-named-register "structural operators lost the selected register or its type" "$STRUCT_SESSION"
+fi
+
 echo
 if [ "$FAILED" = 0 ]; then
   echo "STRUCTURAL TEST PASSED"

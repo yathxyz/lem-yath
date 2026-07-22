@@ -53,6 +53,7 @@
               ./patches/lem-completion-groups.patch
               ./patches/lem-completion-marginalia-layout.patch
               ./patches/lem-vi-screen-line.patch
+              ./patches/lem-vi-register-selection.patch
               ./patches/lem-centered-content-width.patch
               ./patches/lem-word-boundary-wrap.patch
               ./patches/lem-git-worktree.patch
