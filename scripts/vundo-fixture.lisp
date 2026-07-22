@@ -225,7 +225,7 @@
       (check (eq 'lem-yath-vundo
                  (leader-binding-command lem-vi-mode:*visual-keymap* "u"))
              "visual-SPC-u")
-      (check (eq 'lem-vi-mode/commands:vi-undo
+      (check (eq 'lem-yath-project-grep-normal-undo
                  (vundo-test-command-binding
                   lem-vi-mode:*normal-keymap* "u"))
              "ordinary-u")
