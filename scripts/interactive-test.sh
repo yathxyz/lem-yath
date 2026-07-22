@@ -573,11 +573,15 @@ if boot_with_file "$S15R" "$SNIPEREPEATFIX" 'ab xx ab yy ab' "15-snipe-parity"; 
   send_text "$S15R" "X"
   tmux_cmd send-keys -t "$S15R" Escape
   sleep "$KEY_DELAY"
-  lem_capture "$S15R" | grep -qE '^[[:space:][:digit:]]*ab xx ab yy Xab[[:space:]]*$' && snipe_repeat_ok=1
+  lem_wait_for "$S15R" \
+    '^[[:space:][:digit:]]*ab xx ab yy Xab[[:space:]]*$' \
+    "$WAIT_TIMEOUT" && snipe_repeat_ok=1
 fi
 if boot_with_file "$S15O" "$SNIPEFIX" 'alpha beta gamma' "15-snipe-parity"; then
   send_chord "$S15O" "d" "z" "b" "e"
-  lem_capture "$S15O" | grep -qE '^[[:space:][:digit:]]*ta gamma[[:space:]]*$' && snipe_operator_ok=1
+  lem_wait_for "$S15O" \
+    '^[[:space:][:digit:]]*ta gamma[[:space:]]*$' \
+    "$WAIT_TIMEOUT" && snipe_operator_ok=1
 fi
 if [ "$snipe_repeat_ok" = 1 ] && [ "$snipe_operator_ok" = 1 ]; then
   pass "15-snipe-parity" "s repeat and inclusive operator z matched evil-snipe"
@@ -636,14 +640,24 @@ fi
 S18="lem-yath-it18-$id"
 if boot_with_file "$S18" "$ORGFIX" 'Heading' "18-org-id"; then
   send_chord "$S18" "Space" "m" "I"
-  sleep 0.6
-  tmux_cmd send-keys -t "$S18" Escape
-  sleep "$KEY_DELAY"
-  tmux_cmd send-keys -t "$S18" "j"
-  sleep "$KEY_DELAY"
-  org_screen="$(lem_capture "$S18")"
+  org_id=""
+  if lem_wait_for "$S18" \
+       'Created Org ID: [0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-4[0-9A-Fa-f]{3}-[89AaBb][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}' \
+       "$WAIT_TIMEOUT"; then
+    org_id="$(lem_capture "$S18" | grep -oEi \
+      '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}' | head -n 1)"
+  fi
+  # Org may conceal a freshly inserted property drawer.  Exercise the normal
+  # global visibility cycle through overview, contents, and all before reading
+  # it from the TUI.
+  send_chord "$S18" "BTab" "BTab" "BTab"
+  org_screen=""
+  if [ -n "$org_id" ] && \
+     lem_wait_for "$S18" ':PROPERTIES:' "$WAIT_TIMEOUT"; then
+    org_screen="$(lem_capture "$S18")"
+  fi
   if echo "$org_screen" | grep -q ':PROPERTIES:' && \
-     echo "$org_screen" | grep -qiE ':ID: [0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}' && \
+     echo "$org_screen" | grep -qiF ":ID: $org_id" && \
      echo "$org_screen" | grep -q ':END:'; then
     pass "18-org-id" "SPC m I created a UUID property"
   else
@@ -677,30 +691,84 @@ if boot_with_file "$S19" "$FILLFIX" 'alpha beta gamma' "19-auto-fill-toggle"; th
 fi
 
 # ===========================================================================
-# Check 20: C-n/C-p retain ordinary line movement instead of Lem's vi yank-pop
-#   overrides.
+# Check 20: Match the live Emacs state split: Normal C-n/C-p retain Evil
+#   paste cycling, while Insert, Visual, and Emacs states use logical lines.
 # ===========================================================================
-S20="lem-yath-it20-$id"
-if boot_with_file "$S20" "$SCRATCH" 'first known line' "20-control-line-motion"; then
-  tmux_cmd send-keys -t "$S20" "C-n"
-  sleep "$KEY_DELAY"
-  tmux_cmd send-keys -t "$S20" "i"
-  send_text "$S20" "X"
-  tmux_cmd send-keys -t "$S20" Escape
-  sleep "$KEY_DELAY"
-  tmux_cmd send-keys -t "$S20" "C-p"
-  sleep "$KEY_DELAY"
-  tmux_cmd send-keys -t "$S20" "i"
-  send_text "$S20" "Y"
-  tmux_cmd send-keys -t "$S20" Escape
-  sleep "$KEY_DELAY"
-  control_screen="$(lem_capture "$S20")"
-  if echo "$control_screen" | grep -q 'Yfirst known line' && \
-     echo "$control_screen" | grep -q 'Xsecond known line'; then
-    pass "20-control-line-motion" "C-n/C-p moved between logical lines"
-  else
-    fail "20-control-line-motion" "C-n/C-p did not retain line movement" "$S20"
+S20N="lem-yath-it20n-$id"
+S20I="lem-yath-it20i-$id"
+S20V="lem-yath-it20v-$id"
+S20E="lem-yath-it20e-$id"
+normal_pop_ok=0
+insert_motion_ok=0
+visual_motion_ok=0
+emacs_motion_ok=0
+if boot_with_file "$S20N" "$SCRATCH" 'first known line' "20-control-state-split"; then
+  send_chord "$S20N" "y" "y" "j" "y" "y" "j" "p"
+  if lem_wait_for_count "$S20N" \
+       '^[[:space:][:digit:]]*second known line[[:space:]]*$' 2 \
+       "$WAIT_TIMEOUT"; then
+    tmux_cmd send-keys -t "$S20N" "C-p"
+    if lem_wait_for_count "$S20N" \
+         '^[[:space:][:digit:]]*first known line[[:space:]]*$' 2 \
+         "$WAIT_TIMEOUT"; then
+      normal_screen="$(lem_capture "$S20N")"
+      if [ "$(grep -cE '^[[:space:][:digit:]]*second known line[[:space:]]*$' \
+               <<<"$normal_screen")" = 1 ]; then
+        tmux_cmd send-keys -t "$S20N" "C-n"
+        if lem_wait_for_count "$S20N" \
+             '^[[:space:][:digit:]]*second known line[[:space:]]*$' 2 \
+             "$WAIT_TIMEOUT"; then
+          normal_screen="$(lem_capture "$S20N")"
+          if [ "$(grep -cE '^[[:space:][:digit:]]*first known line[[:space:]]*$' \
+                   <<<"$normal_screen")" = 1 ]; then
+            normal_pop_ok=1
+          fi
+        fi
+      fi
+    fi
   fi
+fi
+if boot_with_file "$S20I" "$SCRATCH" 'first known line' "20-control-state-split"; then
+  send_chord "$S20I" "i" "C-n"
+  send_text "$S20I" "X"
+  if lem_wait_for "$S20I" 'Xsecond known line' "$WAIT_TIMEOUT"; then
+    send_chord "$S20I" "Left" "C-p"
+    send_text "$S20I" "Y"
+    tmux_cmd send-keys -t "$S20I" Escape
+    lem_wait_for "$S20I" 'Yfirst known line' "$WAIT_TIMEOUT" && \
+      insert_motion_ok=1
+  fi
+fi
+if boot_with_file "$S20V" "$SCRATCH" 'first known line' "20-control-state-split"; then
+  send_chord "$S20V" "v" "C-n" "Escape" "i"
+  send_text "$S20V" "X"
+  tmux_cmd send-keys -t "$S20V" Escape
+  if lem_wait_for "$S20V" 'Xsecond known line' "$WAIT_TIMEOUT"; then
+    send_chord "$S20V" "v" "C-p" "Escape" "i"
+    send_text "$S20V" "Y"
+    tmux_cmd send-keys -t "$S20V" Escape
+    lem_wait_for "$S20V" 'Yfirst known line' "$WAIT_TIMEOUT" && \
+      visual_motion_ok=1
+  fi
+fi
+if boot_with_file "$S20E" "$SCRATCH" 'first known line' "20-control-state-split"; then
+  send_chord "$S20E" "C-z" "C-n"
+  send_text "$S20E" "X"
+  if lem_wait_for "$S20E" 'Xsecond known line' "$WAIT_TIMEOUT"; then
+    send_chord "$S20E" "Left" "C-p"
+    send_text "$S20E" "Y"
+    lem_wait_for "$S20E" 'Yfirst known line' "$WAIT_TIMEOUT" && \
+      emacs_motion_ok=1
+  fi
+fi
+if [ "$normal_pop_ok" = 1 ] && [ "$insert_motion_ok" = 1 ] && \
+   [ "$visual_motion_ok" = 1 ] && [ "$emacs_motion_ok" = 1 ]; then
+  pass "20-control-state-split" \
+    "Normal paste cycling and Insert/Visual/Emacs line motion match Evil"
+else
+  fail "20-control-state-split" \
+    "C-n/C-p state split mismatch (normal=$normal_pop_ok insert=$insert_motion_ok visual=$visual_motion_ok emacs=$emacs_motion_ok)" \
+    "$S20N"
 fi
 
 # ===========================================================================
@@ -1196,7 +1264,7 @@ order=(01-boot-normal 02-insert-roundtrip 03-leader-compile 04-gc-operator \
        09-native-change 10-evil-surround 11-visual-leader \
        12-visual-operators 13-doubled-operators 14-count-repeat \
        15-snipe-parity 16-insert-C-u 17-fill-paragraph 18-org-id \
-       19-auto-fill-toggle 20-control-line-motion 21-expand-region \
+       19-auto-fill-toggle 20-control-state-split 21-expand-region \
        22-Y-linewise 23-control-key-parity 24-insert-control-parity \
        25-insert-registers 26-normal-registers 27-dot-register \
        28-insert-digraphs 29-special-registers 30-expression-register)

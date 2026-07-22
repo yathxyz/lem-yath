@@ -661,6 +661,7 @@
                   export TZDIR=${pkgs.tzdata}/share/zoneinfo
                   export LEM_YATH_ASPELL_PROGRAM=${lib.getExe' aspellRuntime "aspell"}
                   export LEM_YATH_TIMEOUT_PROGRAM=${lib.getExe' pkgs.coreutils "timeout"}
+                  export LEM_YATH_EVIL_DIGRAPHS=${evilDigraphs}
                   export LEM_YATH_SMTP_SUBMIT_PROGRAM=${smtpSubmit}/bin/lem-yath-smtp-submit
                   export LEM_YATH_NOTMUCH_DRAFT_PROGRAM=${smtpSubmit}/bin/lem-yath-smtp-submit
                   export LEM_YATH_SNIPPET_DIRS="${self}/lem-yath/snippets:${yasnippet-snippets}/snippets"
@@ -714,6 +715,7 @@
                 export TZDIR=${pkgs.tzdata}/share/zoneinfo
                 export LEM_YATH_ASPELL_PROGRAM=${lib.getExe' aspellRuntime "aspell"}
                 export LEM_YATH_TIMEOUT_PROGRAM=${lib.getExe' pkgs.coreutils "timeout"}
+                export LEM_YATH_EVIL_DIGRAPHS=${evilDigraphs}
                 export LEM_YATH_SMTP_SUBMIT_PROGRAM=${smtpSubmit}/bin/lem-yath-smtp-submit
                 export LEM_YATH_NOTMUCH_DRAFT_PROGRAM=${smtpSubmit}/bin/lem-yath-smtp-submit
                 export LEM_YATH_SNIPPET_DIRS="${self}/lem-yath/snippets:${yasnippet-snippets}/snippets"
@@ -785,7 +787,9 @@
             orderless-completion-test = mkTestApp "lem-yath-orderless-completion-test" "orderless-completion-test.sh";
             snippet-test = mkTestApp "lem-yath-snippet-test" "snippet-test.sh";
             lsp-snippet-test = mkTestApp "lem-yath-lsp-snippet-test" "lsp-snippet-test.sh";
-            interactive-test = mkTestApp "lem-yath-interactive-test" "interactive-test.sh";
+            interactive-test =
+              mkTestAppWithLem lemYath "lem-yath-interactive-test"
+                "interactive-test.sh";
             expreg-test = mkTestApp "lem-yath-expreg-test" "expreg-test.sh";
             surround-test = mkTestApp "lem-yath-surround-test" "surround-test.sh";
             structural-test = mkTestAppWithLem lemYath "lem-yath-structural-test" "structural-test.sh";
@@ -930,7 +934,8 @@
             orderless-completion = mkCheck "orderless-completion" "orderless-completion-test.sh";
             snippets = mkCheck "snippets" "snippet-test.sh";
             lsp-snippets = mkCheck "lsp-snippets" "lsp-snippet-test.sh";
-            interactive = mkCheck "interactive" "interactive-test.sh";
+            interactive =
+              mkCheckWithLem lemYath "interactive" "interactive-test.sh";
             expreg = mkCheck "expreg" "expreg-test.sh";
             surround = mkCheck "surround" "surround-test.sh";
             structural = mkCheckWithLem lemYath "structural" "structural-test.sh";

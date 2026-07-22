@@ -372,10 +372,11 @@ Each unmatched delimiter becomes a one-character hole between regions."
                  (:advice-classes lem-vi-mode/core:vi-command)
                  (:initargs :repeat t))
     (&optional count) (:universal-nil)
-  "Keep Paredit smart quotes in Insert state and Evil registers elsewhere."
-  (if (typep (lem-vi-mode/core:current-state)
-             'lem-vi-mode/states:insert)
-      (lem-paredit-mode:paredit-insert-doublequote)
+  "Keep Paredit smart quotes in Emacs/Insert state and Evil registers in Vi."
+  (if (or (not (typep (current-global-mode) 'lem-vi-mode:vi-mode))
+          (typep (lem-vi-mode/core:current-state)
+                 'lem-vi-mode/states:insert))
+      (call-command 'lem-paredit-mode:paredit-insert-doublequote nil)
       (call-command 'lem-vi-mode/commands:vi-use-register count)))
 
 (define-key lem-paredit-mode:*paredit-mode-keymap* "\""

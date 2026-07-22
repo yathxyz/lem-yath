@@ -194,12 +194,15 @@
 (define-key lem-vi-mode:*insert-keymap* "C-w"
   'lem-yath-structural-kill-last-word)
 
-;; The Emacs config unbinds Evil's C-n/C-p overrides so they retain ordinary
-;; line movement (and completion keymaps can take precedence when active).
-(define-key lem-vi-mode:*normal-keymap* "C-n" 'next-line)
-(define-key lem-vi-mode:*normal-keymap* "C-p" 'previous-line)
+;; The Emacs config unbinds Evil's C-n/C-p overrides in motion, insert, and
+;; Emacs states, but its authored loop omits Normal state.  Preserve that live
+;; split explicitly so reloading after another config cannot change it.
+(define-key lem-vi-mode:*normal-keymap* "C-n" 'yank-pop-next)
+(define-key lem-vi-mode:*normal-keymap* "C-p" 'yank-pop)
 (define-key lem-vi-mode:*insert-keymap* "C-n" 'next-line)
 (define-key lem-vi-mode:*insert-keymap* "C-p" 'previous-line)
+(define-key lem-vi-mode:*visual-keymap* "C-n" 'next-line)
+(define-key lem-vi-mode:*visual-keymap* "C-p" 'previous-line)
 
 ;; normal state: C-c c opens the project-aware Claude Code query buffer
 (define-key lem-vi-mode:*normal-keymap* "C-c c" 'lem-yath-claude-code)
