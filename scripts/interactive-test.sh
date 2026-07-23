@@ -406,6 +406,22 @@ if boot_with_file "$S9" "$SNIPEFIX" 'alpha beta gamma' "09-native-change"; then
 fi
 
 # ===========================================================================
+# Check 9b: C-w in insert state uses Vim word boundaries through the configured
+#   non-structural dispatcher. From the end of the line it removes "gamma",
+#   not merely its final character.
+# ===========================================================================
+S9W="lem-yath-it9w-$id"
+if boot_with_file "$S9W" "$SNIPEFIX" 'alpha beta gamma' "09-insert-C-w"; then
+  tmux_cmd send-keys -t "$S9W" A C-w Escape
+  if lem_wait_for "$S9W" '^[[:space:][:digit:]]*alpha beta[[:space:]]*$' "$WAIT_TIMEOUT" && \
+     lem_wait_for "$S9W" 'NORMAL' "$WAIT_TIMEOUT"; then
+    pass "09-insert-C-w" "insert C-w deleted the complete preceding word"
+  else
+    fail "09-insert-C-w" "insert C-w did not produce 'alpha beta '" "$S9W"
+  fi
+fi
+
+# ===========================================================================
 # Check 10: evil-surround standard keys. Cover ys/ds/cs plus the padded `(`
 #   variant used by evil-surround.
 # ===========================================================================
@@ -1261,7 +1277,7 @@ echo
 echo "================ SUMMARY ================"
 order=(01-boot-normal 02-insert-roundtrip 03-leader-compile 04-gc-operator \
        05-snipe 06-find-file 07-mx-prescient 08-native-delete \
-       09-native-change 10-evil-surround 11-visual-leader \
+       09-native-change 09-insert-C-w 10-evil-surround 11-visual-leader \
        12-visual-operators 13-doubled-operators 14-count-repeat \
        15-snipe-parity 16-insert-C-u 17-fill-paragraph 18-org-id \
        19-auto-fill-toggle 20-control-state-split 21-expand-region \
