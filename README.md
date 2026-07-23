@@ -1,5 +1,12 @@
 # lem-yath: emacs → lem
 
+> [!IMPORTANT]
+> This standalone repository was retired on 2026-07-23. Development continues
+> in the `yathxyz/lem` fork at `extensions/lem-yath`; its complete history was
+> imported there without squashing. This checkout remains a read-only historical
+> snapshot, anchored by tag `lem-yath-pre-monorepo-2026-07-23`. The daemon/client
+> direction is specified in the fork at `docs/daemon-client.md`.
+
 A faithful port of my Nix-managed Emacs configuration
 (`~/proj/nix/computer/portable/dot_config/emacs`, ~9,100 lines of elisp,
 ~100 packages)
