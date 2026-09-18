@@ -790,10 +790,19 @@
                (utility-composed
                  (vcs-test-composed-gutter-content utility 1))
                (timer-scheduled nil)
+               (timer-reused nil)
                (transition-off nil)
                (transition-clean nil))
           (with-point ((point (buffer-start-point code)))
-            (lem-yath-git-gutter-after-change point point 0))
+            (lem-yath-git-gutter-after-change point point 0)
+            (let ((first-timer
+                    (lem-git-gutter::buffer-git-gutter-timer code)))
+              (lem-yath-git-gutter-after-change point point 0)
+              (setf timer-reused
+                    (and first-timer
+                         (eq first-timer
+                             (lem-git-gutter::buffer-git-gutter-timer
+                              code))))))
           (setf timer-scheduled
                 (not (null (lem-git-gutter::buffer-git-gutter-timer code))))
           (vcs-test-gutter-operation
@@ -831,7 +840,7 @@
            (concatenate
             'string
             "GUTTER code-programming=~a code-mode=~a added=~a modified=~a "
-            "deleted=~a initial=~a timer=~a transition-off=~a "
+            "deleted=~a initial=~a timer=~a timer-reused=~a transition-off=~a "
             "transition-clean=~a restored=~a markdown-programming=~a "
             "markdown-mode=~a markdown=~a "
             "markdown-composed=~a markdown-state=~a utility-programming=~a "
@@ -844,6 +853,7 @@
            (vcs-test-yes-no deleted)
            (vcs-test-yes-no initial)
            (vcs-test-yes-no timer-scheduled)
+           (vcs-test-yes-no timer-reused)
            (vcs-test-yes-no transition-off)
            (vcs-test-yes-no transition-clean)
            (vcs-test-yes-no restored)

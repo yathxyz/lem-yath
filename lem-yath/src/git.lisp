@@ -4221,28 +4221,31 @@ When TOGGLE-P is true, selecting the identical row again clears CATEGORY."
   (let ((buffer (point-buffer start)))
     (when (and (buffer-filename buffer)
                (lem-yath-git-gutter-mode-active-p buffer))
-      (alexandria:when-let
-          ((existing (lem-git-gutter::buffer-git-gutter-timer buffer)))
-        (stop-timer existing))
-      (let (timer)
-        (setf timer
-              (start-timer
-               (make-idle-timer
-                (lambda ()
-                  (when (and (not (deleted-buffer-p buffer))
-                             (eq timer
-                                 (lem-git-gutter::buffer-git-gutter-timer
-                                  buffer)))
-                    (setf (lem-git-gutter::buffer-git-gutter-timer buffer)
-                          nil)
-                    (when (and (buffer-filename buffer)
-                               (programming-buffer-p buffer)
-                               (lem-yath-git-gutter-mode-active-p buffer))
-                      (lem-git-gutter::update-git-gutter-for-buffer buffer))))
-                :name "lem-yath-git-gutter-update")
-               lem-git-gutter:*git-gutter-update-delay*
-               :repeat nil)
-              (lem-git-gutter::buffer-git-gutter-timer buffer) timer)))))
+      ;; An idle timer does not count down while input is arriving, so the
+      ;; first pending timer already provides the desired debounce.  Replacing
+      ;; it after every character only adds timer locks and allocation to the
+      ;; editor's hottest path, without delaying the eventual refresh any
+      ;; further.
+      (unless (lem-git-gutter::buffer-git-gutter-timer buffer)
+        (let (timer)
+          (setf timer
+                (start-timer
+                 (make-idle-timer
+                  (lambda ()
+                    (when (and (not (deleted-buffer-p buffer))
+                               (eq timer
+                                   (lem-git-gutter::buffer-git-gutter-timer
+                                    buffer)))
+                      (setf (lem-git-gutter::buffer-git-gutter-timer buffer)
+                            nil)
+                      (when (and (buffer-filename buffer)
+                                 (programming-buffer-p buffer)
+                                 (lem-yath-git-gutter-mode-active-p buffer))
+                        (lem-git-gutter::update-git-gutter-for-buffer buffer))))
+                  :name "lem-yath-git-gutter-update")
+                 lem-git-gutter:*git-gutter-update-delay*
+                 :repeat nil)
+                (lem-git-gutter::buffer-git-gutter-timer buffer) timer))))))
 
 (defun lem-yath-git-gutter-kill-buffer (&optional (buffer (current-buffer)))
   (when (or (lem-yath-git-gutter-mode-active-p buffer)
